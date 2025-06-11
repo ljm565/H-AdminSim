@@ -2,7 +2,7 @@
 
 
 ### Recent updates 📣
-* *June 2025 (v0.0.1)*: Create chat demo codes through FastAPI communication.
+* *June 2025 (v0.0.1)*: Create chat demo codes using FastAPI communication.
 
 &nbsp;
 
