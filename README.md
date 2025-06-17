@@ -69,13 +69,5 @@ python3 src/run/train.py --config config/example_llama3.1_full.yaml --mode train
 ## Tutorials & Documentations 🔍
 1. [Getting Started](./docs/1_getting_started.md)
 2. [How to perform CRUD on FHIR](./docs/2_fhir_crud.md)
-<!-- 2. [Data Preparation](./docs/2_data_preparation.md)
-3. [Training](./docs/3_training.md) -->
 
 &nbsp;
-
-&nbsp;
-
-<!-- ## Bug Reports
-If an error occurs while executing the code, check if any of the cases below apply.
-* [Bug Cases](./docs/bugs.md) -->

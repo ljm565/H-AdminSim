@@ -1,5 +1,5 @@
 # Getting Started
-In this project, you can build a Docker image or Ananconda environment for an LLM training.
+Here, we configure the environment first.
 
 &nbsp;
 
@@ -15,7 +15,8 @@ docker build -t ${IMAGE_NAME} .
 ### 2. Run Docker Container
 Then, you can make a Docker container using the following command:
 ```bash
-docker run -it -d --name ${CONTAINER_NAME} --gpus all --shm-size=2g -v ${PATH_TO_BE_MOUNTED}:${MOUNT_PATH} -v ${PATH_OF_HUGGINGFACE_HUB_CACHE_FOLDER}:/root/.cache/ -v ${PATH_OF_NLTK_DATA_FOLDER}:/root/nltk_data ${IMAGE_NAME}
+docker run -it -d --name ${CONTAINER_NAME} --gpus all --shm-size=2g -v ${LOCAL_REPOSITORY_PATH}:${MOUNT_PATH} -v ${PATH_OF_HUGGINGFACE_HUB_CACHE_FOLDER}:/root/.cache/ ${IMAGE_NAME}
+
 docker exec -it ${CONTAINER_NAME} /bin/bash
 ```
 
