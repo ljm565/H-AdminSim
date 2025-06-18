@@ -1,0 +1,17 @@
+# Base
+seed: 9999
+
+# FHIR server url
+fhir_url: http://localhost:8080/fhir
+
+# Data configs
+time_config:
+    start_hour: 8
+    end_hour: 18
+    interval_hours: 0.5
+
+doctor_config:
+    num_doctors: 10
+        
+
+
