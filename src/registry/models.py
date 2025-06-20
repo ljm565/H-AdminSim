@@ -38,17 +38,18 @@ class Department:
         self.doctor: list[Doctor] = []
 
 
-    def add_doctor(self, doctor_name: str):
+    def add_doctor(self, doctor_name: str, schedule):
         """
         Add a doctor to the department.
         
         Args:
             doctor_name (str): Name of the doctor to add.
+            schedule: TODO
         
         Returns:
             Doctor: The newly created Doctor object.
         """
-        doctor = Doctor(doctor_name, self)
+        doctor = Doctor(doctor_name, self, schedule)
         self.doctor.append(doctor)
         return doctor
 
@@ -66,10 +67,11 @@ class Department:
 
 
 class Doctor:
-    def __init__(self, name: str, department: Department):
+    def __init__(self, name: str, department: Department, schedule):
         self.name = name
         self.department = department
+        self.schedule = schedule
 
 
     def __repr__(self):
-        return f"Doctor(name={self.name}, department={self.department.name})"
+        return f"Doctor(name={self.name}, department={self.department.name}), schedule={self.schedule})"
