@@ -7,9 +7,7 @@ from argparse import ArgumentParser
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
 from tools import DataSynthesizer
-from utils import log
-from utils.random_utils import random_uuid
-from utils.filesys_utils import json_load, get_files
+
 
 
 def env_setup(config):
