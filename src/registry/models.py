@@ -11,7 +11,7 @@ class Hospital:
         self.department: list[Department] = []
 
 
-    def add_department(self, department_name: str):
+    def add_department(self, department_name: str, **kwargs):
         """
         Add a department to the hospital.
 
@@ -21,7 +21,7 @@ class Hospital:
         Returns:
             Department: The newly created Department object.
         """
-        dept = Department(department_name)
+        dept = Department(department_name, **kwargs)
         self.department.append(dept)
         return dept
 
@@ -39,12 +39,14 @@ class Hospital:
 
 
 class Department:
-    def __init__(self, name: str):
+    def __init__(self, name: str, **kwargs):
         self.name = name
         self.doctor: list[Doctor] = []
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
 
-    def add_doctor(self, doctor_name: str, schedule):
+    def add_doctor(self, doctor_name: str, **kwargs):
         """
         Add a doctor to the department.
         
@@ -55,7 +57,7 @@ class Department:
         Returns:
             Doctor: The newly created Doctor object.
         """
-        doctor = Doctor(doctor_name, self, schedule)
+        doctor = Doctor(doctor_name, self, **kwargs)
         self.doctor.append(doctor)
         return doctor
 
@@ -73,10 +75,11 @@ class Department:
 
 
 class Doctor:
-    def __init__(self, name: str, department: Department, schedule):
+    def __init__(self, name: str, department: Department, **kwargs):
         self.name = name
         self.department = department
-        self.schedule = schedule
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
 
     def __repr__(self):
