@@ -5,8 +5,10 @@ seed: 9999
 fhir_url: http://localhost:8080/fhir
 
 # Data configs
+project: ./synthetic_data/
+data_name: hospital_easy
 hospital_data:
-    hospital_n: 1
+    hospital_n: 3
     interval_hour: 0.5
     start_hour:
         min: 6
@@ -19,4 +21,4 @@ hospital_data:
         max: 5    
     doctor_per_department:
         min: 1
-        max: 1
+        max: 5

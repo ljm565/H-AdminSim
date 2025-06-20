@@ -21,6 +21,7 @@ def padded_int(n: int, total_digit_l: int = 3) -> str:
     return str(n).zfill(total_digit_l)
 
 
+
 def to_dict(obj) -> dict:
     """
     Convert an object to a dictionary representation.

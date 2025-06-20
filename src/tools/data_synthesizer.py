@@ -1,48 +1,34 @@
+import os
 import random
 import numpy as np
 from typing import Optional, Tuple
 
 import registry
 from registry import Hospital
-from utils import Information
-from utils.filesys_utils import txt_load
+from utils import Information, colorstr
 from utils.common_utils import padded_int, to_dict
 from utils.random_utils import generate_random_names
+from utils.filesys_utils import txt_load, json_save, yaml_save, make_project_dir
 
 
 
 class DataSynthesizer:
     def __init__(self, config):
-        self._config = config
-
+        # Initialize configuration, path and save directory
+        self._config = config        
+        self._save_dir = make_project_dir(self._config)
+        self._data_save_dir = self._save_dir / 'data'
+        yaml_save(self._save_dir / 'args.yaml', self._config)
+        os.makedirs(self._data_save_dir, exist_ok=True)
+        
     
     def synthesize(self):
         hospitals = self.make_hospital(self._config.hospital_data.hospital_n)
-        for hospital in hospitals:
-            metadata, hospital_obj = self.define_hospital_info(self._config, hospital)
-    
-
-    # def build_data(self, metadata: Information, hospital_obj: Hospital) -> dict:
-    #     # """
-    #     # Build the data structure for the hospital based on the metadata and hospital object.
-
-    #     # Args:
-    #     #     metadata (Information): Metadata about the hospital.
-    #     #     hospital_obj (Hospital): Hospital object containing its structure.
-
-    #     # Returns:
-    #     #     dict: A dictionary representation of the hospital data.
-    #     # """
-    #     for department_obj in hospital_obj.department:
-    #         doctor = []
-    #         department = department_obj.name
-    #         for doctor_obj in department_obj.doctor:
-    #             doctor.append(doctor_obj.name)
+        for i, hospital in enumerate(hospitals):
+            data, hospital_obj = self.define_hospital_info(self._config, hospital)
+            json_save(self._data_save_dir / f'hospital_{padded_int(i)}.json', to_dict(data))
 
 
-        
-
-            
     def define_hospital_info(self, config, hospital_name: str) -> Tuple[Information, Hospital]:
         """
         Define the metadata and structure of a hospital, including its departments and doctors.
@@ -75,26 +61,10 @@ class DataSynthesizer:
             config.hospital_data.department_per_hospital.min,
             config.hospital_data.department_per_hospital.max
         )
-        doctor_n = 0
-        
-        # Define hospital department and doctoral information
-        departments = self.make_departments(department_n)
-        for department in departments:
-            # Add department to hospital
-            department_obj = hospital_obj.add_department(department)
-            
-            # Add doctors to department
-            doctors = self.make_doctors(
-                random.randint(
-                    config.hospital_data.doctor_per_department.min,
-                    config.hospital_data.doctor_per_department.max
-                )
-            )
-            for doctor in doctors:
-                department_obj.add_doctor(doctor)
-            doctor_n += len(doctors)
+        doctor_n_per_department = [random.randint(config.hospital_data.doctor_per_department.min, config.hospital_data.doctor_per_department.max) 
+                                   for _ in range(department_n)]
+        doctor_n = sum(doctor_n_per_department)
 
-        # Update meatdata
         metadata = Information(
             hospital_name=hospital_name,
             department_num=department_n,
@@ -105,8 +75,44 @@ class DataSynthesizer:
                 inteveal_hour=interval_hour
             )
         )
+
+        # Define detailed hospital department and doctoral information
+        department_info, doctor_info = dict(), dict()
+        departments = self.make_departments(department_n)
+        doctors = self.make_doctors(doctor_n)   # Doctor names are unique across all departments
+        for department, doc_n in zip(departments, doctor_n_per_department):
+            # Add department to hospital
+            department_info[department] = {'doctor': []}
+            department_obj = hospital_obj.add_department(department)
+            
+            # Add doctors to department
+            for _ in range(doc_n):
+                doctor = doctors.pop()
+                department_obj.add_doctor(doctor)
+                department_info[department]['doctor'].append(doctor)
+                doctor_info[doctor] = {
+                    'department': department,
+                    'schedule': 0
+                }
+            
+        # Finalize data structure
+        data = Information(
+            metadata=metadata,
+            department=department_info,
+            doctor=doctor_info,
+        )
+
+        # Data sanity check
+        if len(data.department) != metadata.department_num:
+            raise AssertionError(colorstr('red', 'Department number mismatch'))
+        if len(data.department) != len(set(doc['department'] for doc in data.doctor.values())):
+            raise AssertionError(colorstr('red', 'Department number mismatch'))
+        if len(data.doctor) != metadata.docotor_num:
+            raise AssertionError(colorstr('red', 'Doctor number mismatch'))
+        if len(data.doctor) != sum(len(dept['doctor']) for dept in data.department.values()):
+            raise AssertionError(colorstr('red', 'Doctor number mismatch'))
         
-        return metadata, hospital_obj
+        return data, hospital_obj
 
 
     def make_hospital(self, hospital_n: int, file_path: Optional[str] = None) -> list[str]:

@@ -20,6 +20,19 @@ def json_load(path: str):
 
 
 
+def json_save(path: str, data: dict) -> None:
+    """
+    Save json file.
+
+    Args:
+        path (str): Path to the json file.
+        data (dict): Data to save.
+    """
+    with open(path, 'w') as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+
+
+
 def yaml_save(file:str='data.yaml', data:Any=None) -> None:
     """
     Save data to an YAML file.
