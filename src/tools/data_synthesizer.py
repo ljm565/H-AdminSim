@@ -2,12 +2,11 @@ import os
 import random
 import numpy as np
 from tqdm import tqdm
-from typing import Optional, Tuple
+from typing import Optional
 
 import registry
-from registry import Hospital
 from utils import Information, log, colorstr
-from utils.common_utils import padded_int, to_dict
+from utils.common_utils import *
 from utils.random_utils import generate_random_names
 from utils.filesys_utils import txt_load, json_save, yaml_save, make_project_dir
 
@@ -33,7 +32,8 @@ class DataSynthesizer:
         try:
             hospitals = self.make_hospital(self._config.hospital_data.hospital_n)
             for i, hospital in tqdm(enumerate(hospitals), desc='Synthesizing data', total=len(hospitals)):
-                data, hospital_obj = self.define_hospital_info(self._config, hospital)
+                data = self.define_hospital_info(self._config, hospital)
+                hospital_obj = convert_info_to_obj(data)
                 json_save(self._data_save_dir / f'hospital_{padded_int(i)}.json', to_dict(data))
             log(f"Total {len(hospitals)} data synthesizing completed. Path: `{self._data_save_dir}`", color=True)
             return True
@@ -43,16 +43,16 @@ class DataSynthesizer:
             return False
 
 
-    def define_hospital_info(self, config, hospital_name: str) -> Tuple[Information, Hospital]:
+    def define_hospital_info(self, config, hospital_name: str) -> Information:
         """
-        Define the metadata and structure of a hospital, including its departments and doctors.
+        Define the synthetic hospital data, including its departments and doctors.
 
         Args:
             config (Config): Configuration object containing hospital data settings.
             hospital_name (str): Name of the hospital to be defined.
 
         Returns:
-            Tuple[Information, Hospital]: Metadata about the hospital and a Hospital object containing its structure.
+            Information: Synthetic data about the hospital.
         """
         # Define hosptial metadata
         interval_hour = config.hospital_data.interval_hour
@@ -88,14 +88,6 @@ class DataSynthesizer:
                 inteveal_hour=interval_hour
             )
         )
-        hospital_obj = Hospital(
-            hospital_name,
-            time={
-                'start_hour': start_hour,
-                'end_hour': end_hour,
-                'interval_hour': interval_hour
-            }
-        )
 
         # Define detailed hospital department and doctoral information
         department_info, doctor_info = dict(), dict()
@@ -104,16 +96,14 @@ class DataSynthesizer:
         for department, doc_n in zip(departments, doctor_n_per_department):
             # Add department to hospital
             department_info[department] = {'doctor': []}
-            department_obj = hospital_obj.add_department(department)
             
             # Add doctors to department
             for _ in range(doc_n):
                 doctor = doctors.pop()
-                department_obj.add_doctor(doctor)
                 department_info[department]['doctor'].append(doctor)
                 doctor_info[doctor] = {
                     'department': department,
-                    'schedule': 0
+                    'schedule': 0   # TODO: Define random schedule for each doctor
                 }
             
         # Finalize data structure
@@ -133,7 +123,7 @@ class DataSynthesizer:
         if len(data.doctor) != sum(len(dept['doctor']) for dept in data.department.values()):
             raise AssertionError(colorstr('red', 'Doctor number mismatch'))
         
-        return data, hospital_obj
+        return data
 
 
     def make_hospital(self, hospital_n: int, file_path: Optional[str] = None) -> list[str]:
