@@ -2,7 +2,7 @@ import os
 import random
 import numpy as np
 from tqdm import tqdm
-from typing import Optional
+from typing import Optional, Tuple
 
 import registry
 from utils import Information, log, colorstr
@@ -22,12 +22,15 @@ class DataSynthesizer:
         os.makedirs(self._data_save_dir, exist_ok=True)
         
     
-    def synthesize(self) -> bool:
+    def synthesize(self) -> Tuple[Information, Hospital]:
         """
         Synthesize hospital data based on the configuration settings.
 
+        Raises:
+            e: Exception if data synthesis fails.
+
         Returns:
-            bool: True if data synthesis is successful, False otherwise.
+            Tuple[Information, Hospital]: A tuple containing the synthesized hospital data as an Information object and a Hospital object.
         """
         try:
             hospitals = self.make_hospital(self._config.hospital_data.hospital_n)
@@ -36,11 +39,11 @@ class DataSynthesizer:
                 hospital_obj = convert_info_to_obj(data)
                 json_save(self._data_save_dir / f'hospital_{padded_int(i)}.json', to_dict(data))
             log(f"Total {len(hospitals)} data synthesizing completed. Path: `{self._data_save_dir}`", color=True)
-            return True
+            return data, hospital_obj
         
         except Exception as e:
             log(f"Data synthesizing failed: {e}", level='error')
-            return False
+            raise e
 
 
     def define_hospital_info(self, config, hospital_name: str) -> Information:
@@ -81,7 +84,7 @@ class DataSynthesizer:
         metadata = Information(
             hospital_name=hospital_name,
             department_num=department_n,
-            docotor_num=doctor_n,
+            doctor_num=doctor_n,
             time=Information(
                 start_hour=start_hour,
                 end_hour=end_hour,
@@ -118,7 +121,7 @@ class DataSynthesizer:
             raise AssertionError(colorstr('red', 'Department number mismatch'))
         if len(data.department) != len(set(doc['department'] for doc in data.doctor.values())):
             raise AssertionError(colorstr('red', 'Department number mismatch'))
-        if len(data.doctor) != metadata.docotor_num:
+        if len(data.doctor) != metadata.doctor_num:
             raise AssertionError(colorstr('red', 'Doctor number mismatch'))
         if len(data.doctor) != sum(len(dept['doctor']) for dept in data.department.values()):
             raise AssertionError(colorstr('red', 'Doctor number mismatch'))

@@ -31,13 +31,12 @@ def main(args):
 
     # Initialize data synthesizer
     data_synthesizer = DataSynthesizer(config)
-    status = data_synthesizer.synthesize()
-    if status == True:
+    try:
+        data, hospital_obj = data_synthesizer.synthesize()
         log(f"Data synthesis completed successfully", color=True)
-    else:
+    except Exception as e:
         log("Data synthesis failed.", level='error')
-        raise status
-    
+        raise e
     
 
 if __name__ == '__main__':
