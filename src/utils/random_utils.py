@@ -74,4 +74,4 @@ def generate_random_names(n: int, first_name_file: str, last_name_file: str) -> 
         first_name = random.choice(registry.FIRST_NAMES)
         last_name = random.choice(registry.LAST_NAMES)
         names.add(f"{first_name} {last_name}")
-    return list(names)
+    return sorted(list(names))
