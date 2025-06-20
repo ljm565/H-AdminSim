@@ -31,3 +31,4 @@ config_lora/
 # Output folders
 output/*
 data_examples/*
+synthetic_data/*
