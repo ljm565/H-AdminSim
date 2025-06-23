@@ -5,6 +5,7 @@ from tqdm import tqdm
 from typing import Optional, Tuple
 
 import registry
+from tasks import ScheduleAssigner
 from utils import Information, log, colorstr
 from utils.common_utils import *
 from utils.random_utils import generate_random_names
@@ -93,6 +94,9 @@ class DataSynthesizer:
             )
         )
 
+        # Define SchedulerAssigner class to randomly assign schedules to each doctor
+        scheduler = ScheduleAssigner(start_hour, end_hour, interval_hour)
+
         # Define detailed hospital department and doctoral information
         department_info, doctor_info = dict(), dict()
         departments = self.make_departments(department_n)
@@ -107,7 +111,13 @@ class DataSynthesizer:
                 department_info[department]['doctor'].append(doctor)
                 doctor_info[doctor] = {
                     'department': department,
-                    'schedule': 0   # TODO: Define random schedule for each doctor
+                    'schedule': scheduler(
+                        self.compute_doctor_schedule_ratio(
+                            config.hospital_data.doctor_has_schedule_prob,
+                            config.hospital_data.schedule_coverage_ratio.min,
+                            config.hospital_data.schedule_coverage_ratio.max
+                        )
+                    )
                 }
             
         # Finalize data structure
@@ -184,3 +194,25 @@ class DataSynthesizer:
         doctors = [f'Dr. {name}' for name in generate_random_names(doctor_n, first_name_file_path, last_name_file_path)]
         random.shuffle(doctors)
         return doctors
+    
+
+    def compute_doctor_schedule_ratio(self, 
+                                      doctor_has_schedule_prob: float,
+                                      coverage_min: float,
+                                      coverage_max: float) -> float:
+        """
+        Determine the final schedule ratio for a doctor.
+
+        Args:
+            doctor_has_schedule_prob (float): Probability that a doctor has any schedule.
+            coverage_min (float): Minimum proportion of total available hours the schedule can occupy.
+            coverage_max (float): Maximum proportion of total available hours the schedule can occupy.
+
+        Returns:
+            float: The final schedule ratio. 0.0 if the doctor has no schedule. A float in [coverage_min, coverage_max] if the doctor has a schedule.
+        """
+        has_schedule = random.random() < doctor_has_schedule_prob
+        if not has_schedule:
+            return 0.0
+
+        return random.uniform(coverage_min, coverage_max)

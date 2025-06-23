@@ -22,3 +22,8 @@ hospital_data:
     doctor_per_department:
         min: 1
         max: 5
+    doctor_has_schedule_prob: 0.3
+    schedule_coverage_ratio:
+        min: 0.01
+        max: 0.2
+

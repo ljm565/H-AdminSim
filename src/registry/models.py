@@ -55,7 +55,7 @@ class Department:
         
         Args:
             doctor_name (str): Name of the doctor to add.
-            schedule: TODO
+            schedule (list[list[float]]): Doctor's fixed schedule time.
         
         Returns:
             Doctor: The newly created Doctor object.
