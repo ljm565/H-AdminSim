@@ -112,7 +112,7 @@ class DataSynthesizer:
                 doctor_info[doctor] = {
                     'department': department,
                     'schedule': scheduler(
-                        self.compute_doctor_schedule_ratio(
+                        self.random_prob(
                             config.hospital_data.doctor_has_schedule_prob,
                             config.hospital_data.schedule_coverage_ratio.min,
                             config.hospital_data.schedule_coverage_ratio.max
@@ -196,10 +196,10 @@ class DataSynthesizer:
         return doctors
     
 
-    def compute_doctor_schedule_ratio(self, 
-                                      doctor_has_schedule_prob: float,
-                                      coverage_min: float,
-                                      coverage_max: float) -> float:
+    def random_prob(self, 
+                    doctor_has_schedule_prob: float,
+                    coverage_min: float,
+                    coverage_max: float) -> float:
         """
         Determine the final schedule ratio for a doctor.
 
