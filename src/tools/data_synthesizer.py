@@ -8,7 +8,7 @@ import registry
 from tasks import ScheduleAssigner
 from utils import Information, log, colorstr
 from utils.common_utils import *
-from utils.filesys_utils import txt_load, json_save, yaml_save, make_project_dir
+from utils.filesys_utils import txt_load, yaml_save, make_project_dir, json_save_fast
 from utils.random_utils import generate_random_names, convert_time_to_segment, generate_random_prob
 
 
@@ -24,12 +24,16 @@ class DataSynthesizer:
         os.makedirs(self._data_save_dir, exist_ok=True)
         
     
-    def synthesize(self, return_obj: bool = False) -> Tuple[Information, Hospital]:
+    def synthesize(self,
+                   return_obj: bool = False,
+                   sanity_check: bool = False) -> Tuple[Information, Hospital]:
         """
         Synthesize hospital data based on the configuration settings.
 
         Args:
             return_obj (bool): Whether to return the hospital data object.
+            sanity_check (bool): Whether generated data and Hospital ojbect compatiable.
+                                 You can use this option when you develop the codes.
 
         Raises:
             e: Exception if data synthesis fails.
@@ -37,14 +41,18 @@ class DataSynthesizer:
         Returns:
             Tuple[Information, Hospital]: A tuple containing the synthesized hospital data as an Information object and a Hospital object.
         """
+        if sanity_check:
+            return_obj = True
+
         try:
             hospitals = DataSynthesizer.hospital_list_generator(self._config.hospital_data.hospital_n)
             for i, hospital in tqdm(enumerate(hospitals), desc='Synthesizing data', total=len(hospitals)):
                 data = DataSynthesizer.define_hospital_info(self._config, hospital)
                 hospital_obj = convert_info_to_obj(data) if return_obj else None
-                # new_data = convert_obj_to_info(hospital_obj)
-                # assert to_dict(data) == to_dict(new_data)
-                json_save(self._data_save_dir / f'hospital_{padded_int(i, len(str(self._n)))}.json', to_dict(data))
+                if sanity_check:
+                    new_data = convert_obj_to_info(hospital_obj)
+                    assert to_dict(data) == to_dict(new_data)
+                json_save_fast(self._data_save_dir / f'hospital_{padded_int(i, len(str(self._n)))}.json', to_dict(data))
             log(f"Total {len(hospitals)} data synthesizing completed. Path: `{self._data_save_dir}`", color=True)
             return data, hospital_obj
         
@@ -66,21 +74,21 @@ class DataSynthesizer:
             Information: Synthetic data about the hospital.
         """
         # Define hosptial metadata
-        interval_hour = config.hospital_data.interval_hour
-        start_hour = random.choice(
+        interval_hour = float(config.hospital_data.interval_hour)
+        start_hour = float(random.choice(
             np.arange(
                 config.hospital_data.start_hour.min,
                 config.hospital_data.start_hour.max+interval_hour,  # Ensure the end hour is inclusive
                 interval_hour
             )
-        )
-        end_hour = random.choice(
+        ))
+        end_hour = float(random.choice(
             np.arange(
                 config.hospital_data.end_hour.min,
                 config.hospital_data.end_hour.max+interval_hour,  # Ensure the end hour is inclusive
                 interval_hour
             )
-        )
+        ))
         department_n = random.randint(
             config.hospital_data.department_per_hospital.min,
             config.hospital_data.department_per_hospital.max

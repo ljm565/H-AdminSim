@@ -32,7 +32,7 @@ def main(args):
     # Initialize data synthesizer
     data_synthesizer = DataSynthesizer(config)
     try:
-        data, hospital_obj = data_synthesizer.synthesize()
+        data, hospital_obj = data_synthesizer.synthesize(sanity_check=args.sanity_check)
         log(f"Data synthesis completed successfully", color=True)
     except Exception as e:
         log("Data synthesis failed.", level='error')
@@ -42,6 +42,7 @@ def main(args):
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('-c', '--config', type=str, required=True, help='Path to the configuration file')
+    parser.add_argument('--sanity_check', action='store_true', required=False, help='Check whether generated data and Hospital object compatiable')
     args = parser.parse_args()
 
     main(args)

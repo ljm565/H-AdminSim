@@ -1,5 +1,6 @@
 import os
 import json
+import orjson
 from typing import Any
 from pathlib import Path
 
@@ -30,6 +31,19 @@ def json_save(path: str, data: dict) -> None:
     """
     with open(path, 'w') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
+
+
+
+def json_save_fast(path: str, data: dict) -> None:
+    """
+    Save json file more faster.
+
+    Args:
+        path (str): Path to the json file.
+        data (dict): Data to save.
+    """
+    with open(path, 'wb') as f:
+        f.write(orjson.dumps(data, option=orjson.OPT_INDENT_2))
 
 
 

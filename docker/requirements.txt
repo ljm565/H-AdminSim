@@ -14,3 +14,4 @@ dotenv==0.9.9
 openai==1.84.0
 google-genai==1.19.0
 pillow==11.2.1
+orjson==3.10.18
