@@ -3,14 +3,14 @@ sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
 from openai import OpenAI
 from dotenv import load_dotenv
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 from utils.image_preprocess_utils import *
 
 
 
 class GPTClient:
-    def __init__(self, model:str):
+    def __init__(self, model: str):
         self._init_environment()
         self.model = model
 
@@ -24,21 +24,21 @@ class GPTClient:
 
     
     def __make_payload(self,
-                      user_prompt:str,
-                      system_prompt:str=None,
-                      image_path:str=None,
-                      image_size:Tuple[int]=None) -> List[dict]:
+                      user_prompt: str,
+                      system_prompt: Optional[str] = None,
+                      image_path: Optional[str] = None,
+                      image_size: Optional[Tuple[int]] = None) -> List[dict]:
         """
         Create a payload for API calls to the GPT model.
 
         Args:
             user_prompt (str): User prompt.
-            system_prompt (str, optional): System prompt. Defaults to None.
-            image_path (str, optional): Image path if you need to send image. Defaults to None.
-            image_size (Tuple[int], optional): Image size to be resized. Defaults to None.
+            system_prompt (Optional[str], optional): System prompt. Defaults to None.
+            image_path (Optional[str], optional): Image path if you need to send image. Defaults to None.
+            image_size (Optional[Tuple[int]], optional): Image size to be resized. Defaults to None.
 
         Returns:
-            List[dict]: _description_
+            List[dict]: Payload including prompts and image data.
         """
         payloads = list()
         user_contents = {"role": "user", "content": []}
@@ -70,24 +70,23 @@ class GPTClient:
 
 
     def __call__(self,
-                   user_prompt:str,
-                   system_prompt:str=None,
-                   image_path:str=None,
-                   image_size:Tuple[int]=None,
+                   user_prompt: str,
+                   system_prompt: Optional[str] = None,
+                   image_path: Optional[str] = None,
+                   image_size: Optional[Tuple[int]] = None,
                    **kwargs) -> dict:
         """
-         ends a chat completion request to the model with optional image input and system prompt.
+        Sends a chat completion request to the model with optional image input and system prompt.
 
         Args:
             user_prompt (str): The main user prompt or query to send to the model.
-            image_path (str, optional): Path to an image file to be included in the prompt. Defaults to None.
-            system_prompt (str, optional): An optional system-level prompt to set context or behavior. Defaults to None.
-            image_size (Tuple[int], optional): The target image size in (width, height) format, if resizing is needed. Defaults to None.
-            **kwargs: Additional keyword arguments to pass to the OpenAI `chat.completions.create` API.
+            system_prompt (Optional[str], optional): An optional system-level prompt to set context or behavior. Defaults to None.
+            image_path (Optional[str], optional): Path to an image file to be included in the prompt. Defaults to None.
+            image_size (Optional[Tuple[int]], optional): The target image size in (width, height) format, if resizing is needed. Defaults to None.
 
         Raises:
             FileNotFoundError: If `image_path` is provided but the file does not exist.
-            Exception: Any exception raised during the API call is re-raised.
+            e: Any exception raised during the API call is re-raised.
 
         Returns:
             dict: The content of the model's response message.

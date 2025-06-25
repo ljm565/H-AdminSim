@@ -24,7 +24,7 @@ class FHIRManager:
         return response
 
 
-    def create(self, resource_type:str, resource_data:dict, headers=None):
+    def create(self, resource_type: str, resource_data: dict, headers=None):
         _id = resource_data.get('id')
         fhir_url = f'{self.fhir_url}/{resource_type}/{_id}'
         response = requests.put(
@@ -37,7 +37,7 @@ class FHIRManager:
         return self.__logging(response)
     
     
-    def read(self, resource_type:str, id:str, headers=None):
+    def read(self, resource_type: str, id: str, headers=None):
         fhir_url = f'{self.fhir_url}/{resource_type}/{id}'
         response = requests.get(
             fhir_url,
@@ -48,7 +48,7 @@ class FHIRManager:
         return self.__logging(response)
     
 
-    def update(self, resource_type:str, id:str, resource_data, headers=None):
+    def update(self, resource_type: str, id: str, resource_data, headers=None):
         fhir_url = f'{self.fhir_url}/{resource_type}/{id}'
         response = requests.put(
             fhir_url,
@@ -60,7 +60,7 @@ class FHIRManager:
         return self.__logging(response)
 
 
-    def delete(self, resource_type:str, id:str):
+    def delete(self, resource_type: str, id: str):
         fhir_url = f'{self.fhir_url}/{resource_type}/{id}'
         response = requests.delete(
             fhir_url

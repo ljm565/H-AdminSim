@@ -8,14 +8,32 @@ from utils import log
 
 
 
-def txt_load(path: str):
+def txt_load(path: str) -> str:
+    """
+    Load and return the content of a text file.
+
+    Args:
+        path (str): Path to the text file.
+
+    Returns:
+        str: The full content of the text file as a string.
+    """
     with open(path, 'r') as f:
         content = f.read()
     return content    
 
 
 
-def json_load(path: str):
+def json_load(path: str) -> Any:
+    """
+    Load and parse a JSON file.
+
+    Args:
+        path (str): Path to the JSON file.
+
+    Returns:
+        Any: The parsed Python object (usually a dict or list) from the JSON file.
+    """
     with open(path, 'r') as f:
         return json.load(f)
 
@@ -47,7 +65,7 @@ def json_save_fast(path: str, data: dict) -> None:
 
 
 
-def yaml_save(file:str='data.yaml', data:Any=None) -> None:
+def yaml_save(file: str='data.yaml', data: Any = None) -> None:
     """
     Save data to an YAML file.
 
@@ -63,7 +81,7 @@ def yaml_save(file:str='data.yaml', data:Any=None) -> None:
 
 
 
-def get_files(path:str, ext:str=None) -> list[str]:
+def get_files(path: str, ext: str = None) -> list[str]:
     """
     Get all files in a directory with a specific extension.
 
@@ -107,7 +125,9 @@ def make_project_dir(config) -> Path:
     save_dir = os.path.join(project, name)
     if os.path.exists(save_dir):
         log(f'{prefix}: Project {save_dir} already exists. New folder will be created.')
-        save_dir = os.path.join(project, name + str(len(os.listdir(project))+1))
+        name = name + str(len(os.listdir(project))+1)
+        config.data_name = name
+        save_dir = os.path.join(project, name)
     
     os.makedirs(project, exist_ok=True)
     os.makedirs(save_dir)

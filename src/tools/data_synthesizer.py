@@ -31,8 +31,8 @@ class DataSynthesizer:
         Synthesize hospital data based on the configuration settings.
 
         Args:
-            return_obj (bool): Whether to return the hospital data object.
-            sanity_check (bool): If you want to check whether the generated data are compatible with the `Hospital` object,
+            return_obj (bool, optional): Whether to return the hospital data object.
+            sanity_check (bool, optional): If you want to check whether the generated data are compatible with the `Hospital` object,
                                  you can use this option.
 
         Raises:
@@ -67,7 +67,7 @@ class DataSynthesizer:
         Define the synthetic hospital data, including its departments and doctors.
 
         Args:
-            config (Config): Configuration object containing hospital data settings.
+            config: Configuration object containing hospital data settings.
             hospital_name (str): Name of the hospital to be defined.
 
         Returns:
@@ -184,7 +184,7 @@ class DataSynthesizer:
         
         Args:
             hospital_n (int): Number of hospitals to generate.
-            file_path (Optional[str]): Path to a file containing hospital names. If provided, it will be used to load names.
+            file_path (Optional[str], optional): Path to a file containing hospital names. If provided, it will be used to load names.
         
         Returns:
             list[str]: List of hospital names in the format "Hospital 001", "Hospital 002", etc.
@@ -206,7 +206,7 @@ class DataSynthesizer:
         
         Args:
             department_n (int): Number of departments to generate.
-            file_path (Optional[str]): Path to a file containing department names. If provided, it will be used to load names.
+            file_path (Optional[str], optional): Path to a file containing department names. If provided, it will be used to load names.
         
         Returns:
             list[str]: List of department names in the format "Department 001", "Department 002", etc.
@@ -229,9 +229,9 @@ class DataSynthesizer:
         
         Args:
             n (int): Number of doctors to generate.
-            first_name_file_path (str): Path to a file containing first names. Defaults to 'asset/names/firstname.txt'.
-            last_name_file_path (str): Path to a file containing last names. Defaults to 'asset/names/lastname.txt'.
-            prefix (Optional[str]): Prefix for to be generated names.
+            first_name_file_path (str, optional): Path to a file containing first names. Defaults to 'asset/names/firstname.txt'.
+            last_name_file_path (str, optional): Path to a file containing last names. Defaults to 'asset/names/lastname.txt'.
+            prefix (Optional[str], optional): Prefix for to be generated names.
         
         Returns:
             list[str]: List of doctor names in the format "Doctor 001", "Doctor 002", etc.

@@ -36,7 +36,7 @@ class ScheduleAssigner:
 
         Args:
             p (float): Proportion of total segments to assign, between 0 and 1.
-            segments (Optional[segments]): Specific segemnts. Defaults to None.
+            segments (Optional[list[list[int]]], optional): Specific segemnts. Defaults to None.
 
         Returns:
             list[list[int]]: A list of groups, where each group is a list of consecutive segment indices.
@@ -83,7 +83,7 @@ class ScheduleAssigner:
         Args:
             p (float): Proportion of remaining segments to sample and assign.
             max_chunk_size (int): The maximum time segment size for each appointment.
-            segments (Optional[segments]): Specific segemnts. Defaults to None.
+            segments (Optional[list[list[int]]], optional): Specific segemnts. Defaults to None.
 
         Returns:
             list[list[int]]: Newly assigned segments from the remaining pool, grouped consecutively.
@@ -134,8 +134,8 @@ class ScheduleAssigner:
 
         Args:
             p (float): Proportion of total segments to select, between 0 and 1.
-            is_appointment (bool): Whether the generated schedules are for appointments. Defaults to False.
-            segments (Optional[segments]): Specific segemnts. Defaults to None.
+            is_appointment (bool, optional): Whether the generated schedules are for appointments. Defaults to False.
+            segments (Optional[list[list[int]]], optional): Specific segemnts. Defaults to None.
 
         Returns:
             list[list[float]]: A list of grouped time segments. Each group is a list of time segemnt values.

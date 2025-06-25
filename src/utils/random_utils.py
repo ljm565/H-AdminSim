@@ -8,14 +8,17 @@ from utils.filesys_utils import txt_load
 
 
 
-def random_uuid(is_develop:bool=False) -> str:
-    """_summary_
+def random_uuid(is_develop: bool = False) -> str:
+    """
+    Generate ranodm UUID
 
     Args:
-        is_develop (bool, optional): _description_. Defaults to False.
+        is_develop (bool, optional): If True, generates a UUID using fully random bytes
+                                     to support reproducibility during development or debugging.
+                                     Defaults to False.
 
     Returns:
-        str: _description_
+        str: The generated UUID
     """
     if is_develop:
         # For development purposes, generate controlled random UUID
@@ -116,9 +119,7 @@ def generate_random_names(n: int, first_name_file: str, last_name_file: str) -> 
 
 
 
-def generate_random_prob(has_schedule_prob: float, 
-                          coverage_min: float, 
-                          coverage_max: float) -> float:
+def generate_random_prob(has_schedule_prob: float, coverage_min: float, coverage_max: float) -> float:
     """
     Determine the final schedule ratio for a doctor.
 
