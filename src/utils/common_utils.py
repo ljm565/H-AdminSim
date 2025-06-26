@@ -1,6 +1,7 @@
 import pytz
-from typing import Optional, Union
+from decimal import Decimal, getcontext
 from datetime import datetime, timedelta
+from typing import Optional, Union, Tuple
 
 import registry
 from registry import Hospital
@@ -213,3 +214,89 @@ def get_iso_time(time_hour: Union[int, float],
     if utc_offset:
         return f'{date}T{time}{utc_offset}'
     return f'{date}T{time}'
+
+
+
+def convert_time_to_segment(start: float, 
+                            end: float, 
+                            interval: float, 
+                            time_range: Optional[list[float]] = None) -> list[int]:
+    """
+    Generate time segment indices between a start and end time, using a specified interval.
+
+    This function divides a time range (e.g., 0 to 24 hours) into equal segments 
+    and returns a list of integer indices representing those segments.
+
+    Args:
+        start (float): Start time in hours (e.g., 0.0 for 00:00).
+        end (float): End time in hours (e.g., 24.0 for 24:00).
+        interval (float): Time interval in hours (e.g., 0.5 for 30 minutes).
+        time_range (Optional[list[float]], optional): If provided, should be a list of two floats 
+            [start_time, end_time]. Only segments within this subrange are returned.
+
+    Returns:
+        list[int]: List of segment indices, where each index corresponds to a time slot.
+
+    Example:
+        >>> generate_time_segments(0, 24, 0.5)
+        [0, 1, 2, ..., 47]  # Represents 48 half-hour segments from 00:00 to 24:00
+    """
+    assert start < end, log("Start time must be less than end time", "error")
+    assert interval > 0, log("Interval must be greater than 0", "error")
+    
+    getcontext().prec = 10
+    num_segments = int((end - start) / interval)
+
+    if time_range == None:
+        return list(range(num_segments))
+
+    # Sanity check for time_range
+    assert len(time_range) == 2, log("Time range must be composed of two float values", "error")
+    assert time_range[0] >= start and time_range[1] <= end, log("Time range must be within overall time bounds", "error")
+    assert time_range[0] < time_range[1], log("Start time of `time_range` must be less than its end time", "error")
+    
+    start_idx = int((Decimal(str(time_range[0])) - Decimal(str(start))) / Decimal(str(interval)))
+    end_idx = int((Decimal(str(time_range[1])) - Decimal(str(start))) / Decimal(str(interval)))
+
+    return list(range(start_idx, end_idx))
+
+
+
+def convert_segment_to_time(start: float, 
+                            end: float, 
+                            interval: float, 
+                            segments: list[int]) -> Tuple[float, float]:
+    """
+    Convert segment indices back to actual time values based on the given start time and interval.
+
+    Args:
+        start (float): Start time in hours (e.g., 0.0 for 00:00).
+        end (float): End time in hours (e.g., 24.0 for 24:00).
+        interval (float): Time interval in hours (e.g., 0.5 for 30 minutes).
+        segments (list[int]): List of segment indices to convert (e.g., [0, 1, 2]).
+
+    Returns:
+        list[float]: List of time values (in hours) corresponding to the given segments.
+
+    Example:
+        >>> convert_segment_to_time(0, 24, 0.5, [0, 1, 2])
+        [0.0, 0.5, 1.0]
+    """
+    assert start < end, log("Start time must be less than end time", "error")
+    assert interval > 0, log("Interval must be greater than 0", "error")
+
+    getcontext().prec = 10
+    max_segments = int((end - start) / interval) - 1
+    
+    # Sanity checking
+    for s in segments:
+        assert 0 <= s <= max_segments, log(f"Segment index {s} out of range", "error")
+
+    if len(segments) > 1:
+        for i in range(1, len(segments)):
+            assert segments[i] == segments[i-1] + 1, log("Segment indices must be continuous (i.e., increasing by 1)", "error")
+    
+    seg_start = Decimal(str(start)) + Decimal(str(segments[0] * interval))
+    seg_end = min(Decimal(str(start)) + Decimal(str((segments[-1] + 1) * interval)), end)
+
+    return float(seg_start), float(seg_end)

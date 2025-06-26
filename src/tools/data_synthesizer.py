@@ -8,8 +8,8 @@ import registry
 from tasks import ScheduleAssigner
 from utils import Information, log, colorstr
 from utils.common_utils import *
+from utils.random_utils import generate_random_names, generate_random_prob
 from utils.filesys_utils import txt_load, yaml_save, make_project_dir, json_save_fast
-from utils.random_utils import generate_random_names, convert_time_to_segment, generate_random_prob
 
 
 
@@ -104,7 +104,7 @@ class DataSynthesizer:
             time=Information(
                 start_hour=start_hour,
                 end_hour=end_hour,
-                inteveal_hour=interval_hour
+                interval_hour=interval_hour
             )
         )
 
