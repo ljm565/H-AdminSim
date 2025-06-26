@@ -2,6 +2,7 @@
 
 
 ### Recent updates 📣
+* *June 2025 (v0.2.0)*: Added function to map synthetic data to some *workflow* resource types in FHIR
 * *June 2025 (v0.1.2)*: The data synthesis speed has been improved, and a sanity check feature has been added during synthesis.
 * *June 2025 (v0.1.1)*: Added random patient data synthesizing codes and completed sanity check.
 * *June 2025 (v0.1.0)*: Added random hospital data synthesizing codes and completed sanity check.
