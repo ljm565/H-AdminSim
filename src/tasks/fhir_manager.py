@@ -77,5 +77,6 @@ class FHIRManager:
 # PostgreSQL
 # docker exec -it jmlee_fhir_db psql -U admin -d hapi
 # SELECT * FROM hfj_resource WHERE res_type = 'Patient' LIMIT 1;
+# SELECT * FROM HFJ_RES_VER WHERE RES_ID = 925754;
 
     

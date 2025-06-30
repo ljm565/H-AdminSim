@@ -68,3 +68,15 @@ python3 src/run/synthesize_data.py --config config/data_synthesis.yaml --sanity_
 ```
 
 &nbsp;
+
+
+### 2. Convert the Synthesized Data to FHIR Format
+You can convert the synthesized JSON data to FHIR format.
+> [!NOTE]
+> If the data synthesis is completed, an `args.yaml` file will be generated in the synthesized data folder, and this file is required.
+```bash
+# Converting command example
+python3 src/run/convert_to_fhir.py --config ${SYNTHETIC_DATA_FOLDER}/args.yaml --output_dir ${SYNTHETIC_DATA_FOLDER}/fhir_data
+```
+
+&nbsp;
