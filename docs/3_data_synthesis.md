@@ -78,5 +78,11 @@ You can convert the synthesized JSON data to FHIR format.
 # Converting command example
 python3 src/run/convert_to_fhir.py --config ${SYNTHETIC_DATA_FOLDER}/args.yaml --output_dir ${SYNTHETIC_DATA_FOLDER}/fhir_data
 ```
+Supported resource types:
+> - `Practitioner`
+> - `Patient`
+> - `Schedule`
+> - `Slot`
+> - `Appointment`
 
 &nbsp;
