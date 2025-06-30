@@ -8,7 +8,6 @@ from utils.filesys_utils import json_load, json_save_fast
 from utils.common_utils import (
     get_iso_time,
     get_utc_offset,
-    padded_int,
     convert_time_to_segment,
     convert_segment_to_time,
 )
@@ -25,6 +24,18 @@ class DataConverter:
 
     @staticmethod
     def data_to_practitioner(data: dict, output_dir: Optional[str] = None) -> list[dict]:
+        """
+        Convert synthetic hospital data into `Practitioner` FHIR resources. 
+
+        Args:
+            data (dict): Synthetic hospital data containing doctor information.
+            output_dir (Optional[str], optional): Directory path to save the converted Practitioner resources 
+                                                  as `.fhir.json` files. If None, the resources are not saved to disk.
+                                                  Defaults to None.
+
+        Returns:
+            list[dict]: A list of converted FHIR Practitioner resource objects.
+        """
         save_dir = None
         if output_dir:
             os.makedirs(os.path.join(output_dir, 'practitioner'), exist_ok=True)
@@ -61,6 +72,18 @@ class DataConverter:
 
     @staticmethod
     def data_to_patient(data: dict, output_dir: Optional[str] = None) -> list[dict]:
+        """
+        Convert synthetic hospital data into `Patient` FHIR resources. 
+
+        Args:
+            data (dict): Synthetic hospital data containing doctor information.
+            output_dir (Optional[str], optional): Directory path to save the converted Patient resources 
+                                                  as `.fhir.json` files. If None, the resources are not saved to disk.
+                                                  Defaults to None.
+
+        Returns:
+            list[dict]: A list of converted FHIR Patient resource objects.
+        """
         save_dir = None
         if output_dir:
             os.makedirs(os.path.join(output_dir, 'patient'), exist_ok=True)
@@ -96,6 +119,18 @@ class DataConverter:
 
     @staticmethod
     def data_to_schedule(data: dict, output_dir: Optional[str] = None) -> list[dict]:
+        """
+        Convert synthetic hospital data into `Schedule` FHIR resources. 
+
+        Args:
+            data (dict): Synthetic hospital data containing doctor information.
+            output_dir (Optional[str], optional): Directory path to save the converted Schedule resources 
+                                                  as `.fhir.json` files. If None, the resources are not saved to disk.
+                                                  Defaults to None.
+
+        Returns:
+            list[dict]: A list of converted FHIR Schedule resource objects.
+        """
         save_dir = None
         if output_dir:
             os.makedirs(os.path.join(output_dir, 'schedule'), exist_ok=True)
@@ -135,6 +170,18 @@ class DataConverter:
 
     @staticmethod
     def data_to_slot(data: dict, output_dir: Optional[str] = None) -> list[dict]:
+        """
+        Convert synthetic hospital data into `Slot` FHIR resources. 
+
+        Args:
+            data (dict): Synthetic hospital data containing doctor information.
+            output_dir (Optional[str], optional): Directory path to save the converted Slot resources 
+                                                  as `.fhir.json` files. If None, the resources are not saved to disk.
+                                                  Defaults to None.
+
+        Returns:
+            list[dict]: A list of converted FHIR Slot resource objects.
+        """
         save_dir = None
         if output_dir:
             os.makedirs(os.path.join(output_dir, 'slot'), exist_ok=True)
@@ -213,6 +260,18 @@ class DataConverter:
 
     @staticmethod
     def data_to_appointment(data: dict, output_dir: Optional[str] = None) -> list[dict]:
+        """
+        Convert synthetic hospital data into `Appointment` FHIR resources. 
+
+        Args:
+            data (dict): Synthetic hospital data containing doctor information.
+            output_dir (Optional[str], optional): Directory path to save the converted Appointment resources 
+                                                  as `.fhir.json` files. If None, the resources are not saved to disk.
+                                                  Defaults to None.
+
+        Returns:
+            list[dict]: A list of converted FHIR Appointment resource objects.
+        """
         save_dir = None
         if output_dir:
             os.makedirs(os.path.join(output_dir, 'appointment'), exist_ok=True)
