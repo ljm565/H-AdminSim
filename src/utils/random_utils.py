@@ -3,6 +3,7 @@ import uuid
 import random
 
 import registry
+from utils import log
 from utils.filesys_utils import txt_load
 
 
@@ -74,13 +75,14 @@ def generate_random_prob(has_schedule_prob: float, coverage_min: float, coverage
 
 
 
-def generate_random_symptoms(department: str, asset_folder: str) -> str:
+def generate_random_symptom(department: str, asset_folder: str, verbose: bool = True) -> str:
     """
     Generate a string of random symptom from pre-defined data file.
 
     Args:
         department (str): A name of hospital department.
         asset_folder (str): A directory of pre-defined symptom data.
+        verbose (bool): If True, print a warning message when no matching department is found. Defaults to True.
 
     Returns:
         str: A randomly selected symptom.
@@ -97,4 +99,6 @@ def generate_random_symptoms(department: str, asset_folder: str) -> str:
     if department in registry.SYMPTOM_MAP:
         return random.choice(registry.SYMPTOM_MAP[department])
     
+    if verbose:
+        log(f'No matched department {department}. `${{PLACEHOLDER}}` string will return.', 'warning')
     return '${PLACEHOLDER}'
