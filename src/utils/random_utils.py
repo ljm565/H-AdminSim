@@ -4,7 +4,7 @@ import random
 
 import registry
 from utils import log
-from utils.filesys_utils import txt_load
+from utils.filesys_utils import txt_load, json_load
 
 
 
@@ -75,26 +75,20 @@ def generate_random_prob(has_schedule_prob: float, coverage_min: float, coverage
 
 
 
-def generate_random_symptom(department: str, asset_folder: str, verbose: bool = True) -> str:
+def generate_random_symptom(department: str, symptom_file_path: str, verbose: bool = True) -> str:
     """
     Generate a string of random symptom from pre-defined data file.
 
     Args:
         department (str): A name of hospital department.
-        asset_folder (str): A directory of pre-defined symptom data.
+        symptom_file_path (str): A path of pre-defined symptom data.
         verbose (bool): If True, print a warning message when no matching department is found. Defaults to True.
 
     Returns:
         str: A randomly selected symptom.
     """
-    if not len(registry.SYMPTOM_MAP):
-        for root, _, files in os.walk(asset_folder):
-            for file in files:
-                if file.endswith(".txt"):
-                    dep = os.path.splitext(os.path.basename(file))[0].lower()
-                    registry.SYMPTOM_MAP[dep] = [symptom for symptom in txt_load(os.path.join(root, file)).split('\n') if symptom.strip()]
-                    
-        print(registry.SYMPTOM_MAP)
+    if registry.SYMPTOM_MAP is None:
+        registry.SYMPTOM_MAP = json_load(symptom_file_path)
     
     if department in registry.SYMPTOM_MAP:
         return random.choice(registry.SYMPTOM_MAP[department])

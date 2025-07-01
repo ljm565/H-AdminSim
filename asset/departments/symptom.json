@@ -1,0 +1,28 @@
+{
+  "cardiology": [
+    "Chest pain and shortness of breath",
+    "Irregular heartbeat or palpitations",
+    "Swelling in legs or ankles (possible heart failure)"
+
+  ],
+  "dermatology": [
+    "Itchy or red skin rash",
+    "Acne or persistent skin bumps",
+    "Unusual skin mole or lesion changes"
+  ],
+  "gastroenterology": [
+    "Persistent abdominal pain or bloating",
+    "Chronic diarrhea or constipation",
+    "Blood in stool or black-colored stool"
+  ],
+  "neurology": [
+    "Frequent headaches or migraines",
+    "Numbness or weakness in limbs",
+    "Seizures or episodes of unconsciousness"
+  ],
+  "orthopedics": [
+    "Joint pain or stiffness (e.g., in the knees or shoulders)",
+    "Difficulty walking due to back or leg pain",
+    "Swollen or fractured limbs from injury"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "cardiology": [
+    "Interventional Cardiology",
+    "Electrophysiology",
+    "Heart Failure and Transplantation"
+  ],
+  "dermatology": [
+    "Pediatric Dermatology",
+    "Dermatologic Surgery",
+    "Cosmetic Dermatology"
+  ],
+  "gastroenterology": [
+    "Hepatology",
+    "Pancreatobiliary Medicine",
+    "Inflammatory Bowel Disease"
+  ],
+  "neurology": [
+    "Stroke and Cerebrovascular Disorders",
+    "Epilepsy",
+    "Neuromuscular Medicine"
+  ],
+  "orthopedics": [
+    "Spine Surgery",
+    "Sports Medicine",
+    "Joint Replacement"
+  ]
+}
