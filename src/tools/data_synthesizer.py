@@ -81,20 +81,20 @@ class DataSynthesizer:
         """
         # Define hosptial metadata
         interval_hour = float(config.hospital_data.interval_hour)
-        start_hour = float(random.choice(
+        start_hour = float(round(random.choice(
             np.arange(
                 config.hospital_data.start_hour.min,
                 config.hospital_data.start_hour.max+interval_hour,  # Ensure the end hour is inclusive
                 interval_hour
             )
-        ))
-        end_hour = float(random.choice(
+        ), 4))
+        end_hour = float(round(random.choice(
             np.arange(
                 config.hospital_data.end_hour.min,
                 config.hospital_data.end_hour.max+interval_hour,  # Ensure the end hour is inclusive
                 interval_hour
             )
-        ))
+        ), 4))
         department_n = random.randint(
             config.hospital_data.department_per_hospital.min,
             config.hospital_data.department_per_hospital.max
