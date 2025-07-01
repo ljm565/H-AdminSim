@@ -59,7 +59,10 @@ class DataConverter:
                         'given': [' '.join(names[1:-1])],
                         'prefix': [names[0]]
                     }
-                ]
+                ],
+                'gender': doctor_values['gender'],
+                'telecom': doctor_values['telecom'],
+                'birthDate': doctor_values['birthDate']
             }
             practitioners.append(practitioner_obj)
 
@@ -111,7 +114,10 @@ class DataConverter:
                         'family': names[-1],
                         'given': [' '.join(names[:-1])],
                     }
-                ]
+                ],
+                'gender': patient_values['gender'],
+                'telecom': patient_values['telecom'],
+                'birthDate': patient_values['birthDate']
             }
             patients.append(patient_obj)
 
