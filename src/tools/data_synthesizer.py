@@ -8,8 +8,14 @@ import registry
 from tasks import ScheduleAssigner
 from utils import Information, log, colorstr
 from utils.common_utils import *
-from utils.random_utils import generate_random_names, generate_random_prob
-from utils.filesys_utils import txt_load, yaml_save, make_project_dir, json_save_fast
+from utils.filesys_utils import json_load, txt_load, yaml_save, make_project_dir, json_save_fast
+from utils.random_utils import (
+    generate_random_names,
+    generate_random_prob,
+    generate_random_telecom,
+    generate_random_date,
+    generate_random_code,
+)
 
 
 
@@ -133,6 +139,13 @@ class DataSynthesizer:
                 doctor_info[doctor] = {
                     'department': department,
                     'schedule': schedule_times,
+                    'gender': generate_random_code('gender'),
+                    'telecom': [{
+                        'system': 'phone',
+                        'value': generate_random_telecom(),
+                        'use': generate_random_code('use')
+                    }],
+                    'birthDate': generate_random_date()
                 }
 
                 # Add patient information per doctor
@@ -153,6 +166,13 @@ class DataSynthesizer:
                         'department': department,
                         'attending_physician': doctor,
                         'schedule': appointment,
+                        'gender': generate_random_code('gender'),
+                        'telecom': [{
+                            'system': 'phone',
+                            'value': generate_random_telecom(),
+                            'use': generate_random_code('use')
+                        }],
+                        'birthDate': generate_random_date()
                     }
             
         # Finalize data structure
@@ -200,21 +220,27 @@ class DataSynthesizer:
     
     @staticmethod
     def department_list_generator(department_n: int,
-                                  file_path: Optional[str] = None) -> list[str]:
+                                  file_path: Optional[str] = 'asset/departments/department.json') -> list[str]:
         """
         Generate a list of department names based on the number of departments.
         
         Args:
             department_n (int): Number of departments to generate.
             file_path (Optional[str], optional): Path to a file containing department names. If provided, it will be used to load names.
+                                                 Defaults to 'asset/departments/department.json'.
         
         Returns:
             list[str]: List of department names in the format "Department 001", "Department 002", etc.
         """
         if file_path:
             if registry.DEPARTMENTS is None:
-                registry.DEPARTMENTS = [word.capitalize() for word in txt_load(file_path).split('\n') if word.strip()]
-            return [f"{random.choice(registry.DEPARTMENTS)}" for _ in range(department_n)]
+                registry.DEPARTMENTS = list(json_load(file_path).keys())
+            
+            if department_n > len(registry.DEPARTMENTS):
+                raise ValueError(f"Requested {department_n} departments, but only {len(registry.DEPARTMENTS)} available in {file_path}.")
+        
+            return random.sample(registry.DEPARTMENTS, department_n)
+            
         zfill_l = len(str(department_n))
         return [f"department_{padded_int(i, zfill_l)}" for i in range(department_n)]
     
