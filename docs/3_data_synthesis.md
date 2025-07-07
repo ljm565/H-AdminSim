@@ -69,8 +69,8 @@ python3 src/run/synthesize_data.py --config config/data_synthesis.yaml --sanity_
 
 &nbsp;
 
-
-### 2. Convert the Synthesized Data to FHIR Format
+### 2. Convert the Data
+#### 2.1 Convert the Synthesized Data to FHIR Format
 You can convert the synthesized JSON data to FHIR format.
 > [!NOTE]
 > If the data synthesis is completed, an `args.yaml` file will be generated in the synthesized data folder, and this file is required.
@@ -83,9 +83,22 @@ python3 src/run/convert_to_fhir.py --config ${SYNTHETIC_DATA_FOLDER}/args.yaml -
 ```
 Supported resource types:
 > - `Practitioner`
+> - `PractitionerRole`
 > - `Patient`
 > - `Schedule`
 > - `Slot`
 > - `Appointment`
+
+&nbsp;
+
+
+#### 2.2. Convert the Synthesized Data to Agent Test Data
+You can convert the synthesized JSON data into agent testing data to test the reservation capabilities of LLMs.
+> [!NOTE]
+> If the data synthesis is completed, an `args.yaml` file will be generated in the synthesized data folder, and this file is required.
+```bash
+# Converting command example
+python3 src/run/build_agent_data.py --config ${SYNTHETIC_DATA_FOLDER}/args.yaml --output_dir ${SYNTHETIC_DATA_FOLDER}/agent_data
+```
 
 &nbsp;
