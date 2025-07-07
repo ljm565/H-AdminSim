@@ -1,0 +1,10 @@
+# LLM model
+model: gemini-2.5-flash-preview-05-20
+
+# Agent test data folder
+agent_test_data: synthetic_data/hospital_easy_large/agent_data
+
+# Prompt paths
+department_taks:
+    system_prompt: asset/prompts/department_system.txt
+    user_prompt: asset/prompts/department_user.txt
