@@ -25,7 +25,27 @@ class AgentTestBuilder:
 
 
     @staticmethod
-    def build(data: dict, save_path: Optional[str] = None, symptom_file_path: str = './asset/departments/symptom.json') -> dict:
+    def build(data: dict, 
+              save_path: Optional[str] = None, 
+              symptom_file_path: str = './asset/departments/symptom.json') -> dict:
+        """
+        Build agent test data from a single hospital data entry.
+
+        Args:
+            data (dict): Dictionary containing metadata, departments, doctors, and patients.
+            save_path (Optional[str], optional): If provided, the generated agent data will be saved to this path.
+            symptom_file_path (str, optional): Path to the JSON file containing symptoms per department.
+                                               Defaults to './asset/departments/symptom.json'.
+
+        Returns:
+            dict: A dictionary with the following keys:
+                - 'metadata': Original metadata from input.
+                - 'department': Department-level information.
+                - 'doctor': Doctor-level information.
+                - 'agent_data': List of tuples. Each tuple consists of:
+                    - Ground-truth scheduling information.
+                    - Agent input (symptom and constraints).
+        """
         hospital_name = data.get('metadata')['hospital_name']
         country_code = data.get('metadata').get('country_code', 'KR')
         time_zone = data.get('metadata').get('timezone', None)
@@ -81,7 +101,21 @@ class AgentTestBuilder:
         return agent_data
             
 
-    def __call__(self, output_dir: Optional[str] = None, symptom_file_path: str = './asset/departments/symptom.json') -> list[dict]:
+    def __call__(self,
+                 output_dir: Optional[str] = None, 
+                 symptom_file_path: str = './asset/departments/symptom.json') -> list[dict]:
+        """
+        Generate agent test datasets for all input data files.
+
+        Args:
+            output_dir (Optional[str], optional): Directory to save the generated agent data files.
+                                                  If not provided, files are not saved.
+            symptom_file_path (str, optional): Path to the symptom file used during agent construction.
+                                               Defaults to './asset/departments/symptom.json'.
+
+        Returns:
+            list[dict]: A list of agent test data dictionaries, one for each processed input file.
+        """
         os.makedirs(output_dir, exist_ok=True)
         all_agent_data = list()
         
