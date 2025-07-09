@@ -55,13 +55,21 @@ def main(args):
                 results = task(agent_test_data, agent_results)
                 
                 if task.name == 'department':
-                    correctness = [gt == pred for gt, pred in zip(results['gt'], results['pred'])]
+                    correctness = results['status']
+                    status_code = results['status_code']
                     accuracy = sum(correctness) / len(correctness)
-                    log(f'Result - accuracy: {accuracy:.3f}, length: {len(correctness)}')
+                    log(f'Result - accuracy: {accuracy:.3f}, length: {len(correctness)}, status_code: {status_code}')
                 elif task.name == 'schedule':
-                    correctness = results['sanity']
+                    correctness = results['status']
+                    status_code = results['status_code']
                     accuracy = sum(correctness) / len(correctness)
-                    log(f'Result - accuracy: {accuracy:.3f}, length: {len(correctness)}')
+                    log(f'Result - accuracy: {accuracy:.3f}, length: {len(correctness)}, status_code: {status_code}')
+                elif task.name == 'fhir_resource':
+                    correctness = results['status']
+                    status_code = results['status_code']
+                    accuracy = sum(correctness) / len(correctness)
+                    log(f'Result - accuracy: {accuracy:.3f}, length: {len(correctness)}, status_code: {status_code}')
+
 
                 agent_results[task.name] = results
 
