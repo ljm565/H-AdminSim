@@ -7,12 +7,12 @@ Hospital time information:
 * End_hour: {END_HOUR}
 * Time unit: {TIME_UNIT}
 
-Patient information
-Department: {DEPARTMENT}
-Patient duration: {DURATION}
+Patient information:
+* Department: {DEPARTMENT}
+* Patient duration: {DURATION}
 
 Doctors' data:
-{DOCTOR}
+* {DOCTOR}
 
 Answer format examples:
 * {{"Dr. Wayne Otero": {{"start": 11.5, "end": 12}}}}

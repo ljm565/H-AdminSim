@@ -1,7 +1,7 @@
 Below is the information required to create an Appointment FHIR resource.
 Using this information, generate a FHIR Appointment resource for the patient.
 
-Conditions
+Conditions:
 * Respond only in JSON format, following the FHIR Appointment specification.
 * Make sure to include both the patient and practitioner references in the participant field of the Appointment resource.
 * For each reference, also include the corresponding individual's name in the display field at the same level.
