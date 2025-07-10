@@ -1,10 +1,13 @@
 Generate a Bash command that creates a FHIR resource using the REST API, based on the conditions and output format provided below.
 
 Conditions:
-* Base FHIR URL: http://localhost:8080
-* Resource type: Appointment
 * The resource must be created using the given `id`.
 * Respond only with a Bash `curl` command.
+
+Necessary information:
+* Base FHIR URL: http://localhost:8080
+* Resource type: Appointment
+* Resource: {RESOURCE}
 
 Answer format examples:
 ```bash
