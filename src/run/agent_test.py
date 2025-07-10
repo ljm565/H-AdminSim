@@ -54,23 +54,11 @@ def main(args):
                 log(f'{basename} - {task.name} task started..', color=True)
                 results = task(agent_test_data, agent_results)
                 
-                if task.name == 'department':
-                    correctness = results['status']
-                    status_code = results['status_code']
-                    accuracy = sum(correctness) / len(correctness)
-                    log(f'Result - accuracy: {accuracy:.3f}, length: {len(correctness)}, status_code: {status_code}')
-                elif task.name == 'schedule':
-                    correctness = results['status']
-                    status_code = results['status_code']
-                    accuracy = sum(correctness) / len(correctness)
-                    log(f'Result - accuracy: {accuracy:.3f}, length: {len(correctness)}, status_code: {status_code}')
-                elif task.name == 'fhir_resource':
-                    correctness = results['status']
-                    status_code = results['status_code']
-                    accuracy = sum(correctness) / len(correctness)
-                    log(f'Result - accuracy: {accuracy:.3f}, length: {len(correctness)}, status_code: {status_code}')
-
-
+                correctness = results['status']
+                status_code = results['status_code']
+                accuracy = sum(correctness) / len(correctness)
+                log(f'Result - accuracy: {accuracy:.3f}, length: {len(correctness)}, status_code: {status_code}')
+                
                 agent_results[task.name] = results
 
             json_save_fast(os.path.join(args.output_dir, f'{basename}_result.json'), agent_results)

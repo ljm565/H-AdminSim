@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 from copy import deepcopy
-from typing import Tuple, Union
+from typing import Tuple, Union, Optional
 
 from tools import GeminiClient, GPTClient, DataConverter
 from utils import log
@@ -22,12 +22,107 @@ class Task:
         'format': 'incorrect format',
         'schedule': 'invalid schedule',
         'conflict': {'physician': 'physician conflict', 'time': 'time conflict'},
+        'curl': {'http': 'incorrect http method', 'header': 'incorrect header', 'payload': 'incorrect payload', 'url': 'incorrect url'},
         'preceding': 'preceding task failed',
         'correct': 'pass',
     }
 
-    def get_result_dict(self):
+
+    def get_result_dict(self) -> dict:
+        """
+        Initialize result dictionary.
+
+        Returns:
+            dict: Initialized result dictionary.
+        """
         return {'gt': [], 'pred': [], 'status': [], 'status_code': []}
+    
+
+    def _get_resource(self,
+                       gt_resource_path: Optional[str] = None,
+                       data: Optional[dict] = None) -> dict:
+        """
+        Load a FHIR Appointment resource from a file path if available,  
+        or generate it dynamically from the provided data.
+
+        Args:
+            gt_resource_path (Optional[str], optional):  
+                Path to the ground-truth FHIR Appointment resource file.  
+                If the file exists, it will be loaded and returned.  
+                If not, a resource will be generated from the `data` argument.
+            data (Optional[dict], optional):  
+                Dictionary containing the metadata and patient information  
+                needed to generate the Appointment resource.  
+                Expected to include 'metadata' and 'information' keys.
+
+        Returns:
+            dict: A FHIR Appointment resource in dictionary form.
+        """
+        try:
+            return json_load(gt_resource_path)
+        except:
+            metadata, info = data.get('metadata'), data.get('information')
+            schedule = info.get('schedule')
+            if 'time' in schedule:
+                schedule = schedule.get('time')
+            
+            gt_resource = DataConverter.data_to_appointment(
+                {
+                    'metadata': metadata,
+                    'patient': {
+                        info.get('patient'): {
+                            'department': info.get('department'),
+                            'attending_physician': info.get('attending_physician'),
+                            'schedule': schedule
+                        }
+                    }
+                }
+            )[0]
+            return gt_resource
+        
+    
+    def sanity_check_recursively(self, prediction: dict, expected_prediction: dict) -> bool:
+        """
+        Recursively compares two nested data structures (dictionaries and lists) 
+        to check if the `prediction` matches the `expected_prediction` in structure and values.
+        The comparison is order-insensitive for lists, meaning list elements can appear in any order as long as all expected items are matched.
+
+        Args:
+            prediction (dict): The data structure to validate, typically the output or result.
+            expected_prediction (dict): The reference data structure to compare against.
+
+        Returns:
+            bool: True if `prediction` matches `expected_prediction` recursively in structure and content;  
+                  False otherwise.
+        """
+        if isinstance(expected_prediction, dict):
+            if not isinstance(prediction, dict):
+                return False
+            for key, val in expected_prediction.items():
+                if key not in prediction:
+                    return False
+                if not self.sanity_check_recursively(prediction[key], val):
+                    return False
+            return True
+        
+        elif isinstance(expected_prediction, list):
+            if not isinstance(prediction, list) or len(expected_prediction) != len(prediction):
+                return False
+            
+            unmatched = prediction.copy()
+            for expected_item in expected_prediction:
+                matched = False
+                for i, pred_item in enumerate(unmatched):
+                    if self.sanity_check_recursively(pred_item, expected_item):
+                        unmatched.pop(i)
+                        matched = True
+                        break
+                if not matched:
+                    return False
+            return True
+
+        else:
+            return expected_prediction == prediction
 
 
 
@@ -96,17 +191,17 @@ class AssignDepartment(Task):
             
             # LLM call
             user_prompt = self.user_prompt_template.format(SYMPTOM=test_data['symptom'], OPTIONS=options)
-            output = self.client(
+            prediction = self.client(
                 user_prompt,
                 system_prompt=self.system_prompt, 
                 using_multi_turn=False
             )
-            output = AssignDepartment.postprocessing(output)
+            prediction = AssignDepartment.postprocessing(prediction)
             
             # Append results
-            status = gt_department == output
+            status = gt_department == prediction
             status_code = self.status_codes['correct'] if status else self.status_codes['department']
-            results['pred'].append(output)
+            results['pred'].append(prediction)
             results['status'].append(status)
             results['status_code'].append(status_code)
         
@@ -286,14 +381,14 @@ class AssignSchedule(Task):
             }
             results['gt'].append(gt_results)
 
-            # If the department data is wrong, continue
+            # If the precedent department data is wrong, continue
             if not sanity:
                 results['pred'].append({})
                 results['status'].append(False)
                 results['status_code'].append(self.status_codes['preceding'])
                 continue
             
-            # LLM call
+            # LLM call and compare the validity of the LLM output
             duration = test_data.get('constraint').get('duration')
             doctor_information_str = json.dumps(doctor_information, indent=2)   # String-converted ditionary 
             user_prompt = self.user_prompt_template.format(
@@ -304,20 +399,20 @@ class AssignSchedule(Task):
                 DURATION=duration,
                 DOCTOR=doctor_information_str
             )
-            output = self.client(
+            prediction = self.client(
                 user_prompt,
                 system_prompt=self.system_prompt, 
                 using_multi_turn=False
             )
-            output = AssignSchedule.postprocessing(output)
-            status, status_code, output = self._sanity_check(
-                output, 
+            prediction = AssignSchedule.postprocessing(prediction)
+            status, status_code, prediction = self._sanity_check(
+                prediction, 
                 {'patient': test_data.get('patient'), 'department': department, 'duration': duration},
                 doctor_information
             )
             
             # Append results
-            results['pred'].append(output)
+            results['pred'].append(prediction)
             results['status'].append(status)
             results['status_code'].append(status_code)
             
@@ -404,7 +499,7 @@ class MakeFHIRResource(Task):
 
         Args:
             prediction (Union[str, dict]): The predicted Appointment resource, either as 
-                a JSON-parsed dictionary or a raw string (which will be rejected as invalid).
+                                           a JSON-parsed dictionary or a raw string (which will be rejected as invalid).
             expected_prediction (dict): The expected Appointment resource structure to validate against.
 
         Returns:
@@ -413,65 +508,16 @@ class MakeFHIRResource(Task):
                 - A status code string (e.g., 'correct', 'format') from `self.status_codes`.
                 - The original prediction, for logging or further processing.
         """
-        def sanity_check_recursively(prediction, expected_prediction):
-            if isinstance(expected_prediction, dict):
-                if not isinstance(prediction, dict):
-                    return False
-                for key, val in expected_prediction.items():
-                    if key not in prediction:
-                        return False
-                    if not sanity_check_recursively(prediction[key], val):
-                        return False
-                return True
-            
-            elif isinstance(expected_prediction, list):
-                if not isinstance(prediction, list) or len(expected_prediction) != len(prediction):
-                    return False
-                
-                unmatched = prediction.copy()
-                for expected_item in expected_prediction:
-                    matched = False
-                    for i, pred_item in enumerate(unmatched):
-                        if sanity_check_recursively(pred_item, expected_item):
-                            unmatched.pop(i)
-                            matched = True
-                            break
-                    if not matched:
-                        return False
-                return True
-
-            else:
-                return expected_prediction == prediction
-
         # Check the prediciton format
         if not isinstance(prediction, dict):
             return False, self.status_codes['format'], prediction    # Could not be parsed as a dictionary
         
         # Compare recursively
-        if sanity_check_recursively(expected_prediction, prediction):
+        if self.sanity_check_recursively(expected_prediction, prediction):
             return True, self.status_codes['correct'], prediction
         else:
             return False, self.status_codes['format'], prediction
     
-        
-    def __get_gt_resource(self, gt: dict) -> dict:
-        """
-        Load the ground-truth FHIR resource associated with the given GT (ground-truth) data.
-
-        Args:
-            gt (dict): A dictionary containing ground-truth scheduling information,
-                       including the filename of the FHIR resource under the key 'fhir_resource'.
-
-        Returns:
-            dict: The loaded FHIR resource as a dictionary if the file exists.
-                  Returns an empty dictionary if the file is not found.
-        """
-        gt_resource_path = self._fhir_data_path / 'appointment' / gt.get('fhir_resource')
-        try:
-            return json_load(gt_resource_path)
-        except FileNotFoundError:
-            return {}
-
 
     def __get_necessary_information(self, schedule: dict) -> dict:
         """
@@ -541,11 +587,12 @@ class MakeFHIRResource(Task):
                 - 'status': List of boolean values indicating if each prediction passed the sanity check.
                 - 'status_code': List of string codes representing the validation status.
         """
-        self._hospital_name = agent_test_data.get('metadata').get('hospital_name')
-        self._country_code = agent_test_data.get('metadata').get('country_code', 'KR')
-        self._START_HOUR = agent_test_data.get('metadata').get('time').get('start_hour')
-        self._END_HOUR = agent_test_data.get('metadata').get('time').get('end_hour')
-        self._TIME_UNIT = agent_test_data.get('metadata').get('time').get('interval_hour')
+        _metadata = agent_test_data.get('metadata')
+        self._hospital_name = _metadata.get('hospital_name')
+        self._country_code = _metadata.get('country_code', 'KR')
+        self._START_HOUR = _metadata.get('time').get('start_hour')
+        self._END_HOUR = _metadata.get('time').get('end_hour')
+        self._TIME_UNIT = _metadata.get('time').get('interval_hour')
 
         agent_data = agent_test_data.get('agent_data')
         schedules, sanities = self.__extract_schedules(agent_data, agent_results)
@@ -554,41 +601,30 @@ class MakeFHIRResource(Task):
         for data_pair, schedule, sanity in zip(agent_data, schedules, sanities):
             gt, test_data = data_pair
             
-            # Load grount truth Appointment FHIR resource
-            gt_resource = self.__get_gt_resource(gt)
+            # Load ground truth Appointment FHIR resource
+            gt_resource = self._get_resource(self._fhir_data_path / 'appointment' / gt.get('fhir_resource'))
             results['gt'].append(gt_resource)
 
-            # If the schedule data is invalid, continue
+            # If the precedent schedule data is invalid, continue
             if not sanity:
                 results['pred'].append({})
                 results['status'].append(False)
                 results['status_code'].append(self.status_codes['preceding'])
                 continue
 
-            # LLM call
+            # LLM call and compare the validity of the LLM output
             user_prompt = self.user_prompt_template.format(**self.__get_necessary_information(schedule))
-            output = self.client(
+            prediction = self.client(
                 user_prompt,
                 system_prompt=self.system_prompt, 
                 using_multi_turn=False
             )
-            output = MakeFHIRResource.postprocessing(output)
-            expected_prediction = DataConverter.data_to_appointment(
-                {
-                    'metadata': deepcopy(agent_test_data.get('metadata')),
-                    'patient': {
-                        schedule.get('patient'): {
-                            'department': schedule.get('department'),
-                            'attending_physician': schedule.get('attending_physician'),
-                            'schedule': schedule.get('schedule')
-                        }
-                    }
-                }
-            )[0]
-            status, status_code, output = self._sanity_check(output, expected_prediction)
+            prediction = MakeFHIRResource.postprocessing(prediction)
+            expected_prediction = self._get_resource(data={'metadata': deepcopy(_metadata), 'information': deepcopy(schedule)})
+            status, status_code, prediction = self._sanity_check(prediction, expected_prediction)
             
             # Append results
-            results['pred'].append(output)
+            results['pred'].append(prediction)
             results['status'].append(status)
             results['status_code'].append(status_code)
             
@@ -598,8 +634,204 @@ class MakeFHIRResource(Task):
 
 class MakeFHIRAPI(Task):
     def __init__(self, config):
+        self.name = 'fhir_api'
+        self.__init_env(config)
+        self.system_prompt = txt_load(self._system_prompt_path)
+        self.user_prompt_template = txt_load(self._user_prompt_path)
         self.client = GeminiClient(config.model) if 'gemini' in config.model.lower() else GPTClient(config.model)
 
 
-    def __call__(self):
-        pass
+    def __init_env(self, config):
+        """
+        Initialize necessary variables.
+
+        Args:
+            config (Config): Configuration for agent tasks.
+        """
+        self._system_prompt_path = config.fhir_api_task.system_prompt
+        self._user_prompt_path = config.fhir_api_task.user_prompt
+        self._fhir_data_path = Path(config.fhir_data)
+        self._fhir_url = config.fhir_url
+
+
+    @staticmethod
+    def postprocessing(text: str) -> Union[str, None]:
+        """
+        Extracts a Bash command from a markdown-formatted code block in the given text.
+
+        Args:
+            text (str): The input text potentially containing a markdown-formatted Bash code block.
+
+        Returns:
+            Union[str, None]: The extracted Bash command if found, otherwise None.
+        """
+        try:
+            match = re.search(r'```bash\s*(.*?)\s*```', text, re.DOTALL)
+            if match:
+                return match.group(1)
+        except:
+            return None
+        
+
+    def __extract_fhir_resource(self, agent_data: list[Tuple[dict, dict]], agent_results: dict) -> Tuple[list[dict], list[bool]]:
+        """
+        Extracts the predicted FHIR Appointment resource from agent results.
+        If predictions are not available, falls back to using ground truth labels.
+
+        Args:
+            agent_data (list[Tuple[dict, dict]]): A list of (ground_truth, test_data) pairs for each patient.
+            agent_results (dict): A dictionary that may contain predicted fhir_resource results under the key 'fhir_resource'.
+
+        Returns:
+            Tuple[list[dict], list[bool]]: A list of fhir_resources, either predicted or ground truth and each sanity status.
+        """
+        try:
+            fhir_resources = agent_results['fhir_resource']['pred']
+            sanities = agent_results['fhir_resource']['status']
+        except:
+            log('Predicted fhir_resources are not given. Ground truth values will be used.', 'warning')
+            fhir_resources = list()
+            fhir_resource_paths = [self._fhir_data_path / 'appointment' / gt.get('fhir_resource') for gt, _ in agent_data]
+            
+            # Load the FHIR json file if it exists, otherwise create a new one
+            for i, path in enumerate(fhir_resource_paths):
+                _gt = agent_data[i][0]
+                fhir_resource = self._get_resource(
+                    gt_resource_path=path,
+                    data={'metadata': deepcopy(self._metadata), 'information': deepcopy(_gt)}
+                )
+                fhir_resources.append(fhir_resource)
+            sanities = [True] * len(fhir_resources)
+        
+        assert len(fhir_resources) == len(sanities) == len(agent_data), log('The number of fhir_resources does not match the agent data.', 'error')
+
+        return fhir_resources, sanities
+    
+
+    def _sanity_check(self,
+                      prediction: Union[str, None], 
+                      expected_prediction: str) -> Tuple[bool, str, Union[str, None]]:
+        """
+        Perform a sanity check to compare the predicted curl command against the expected one.
+
+        Args:
+            prediction (Union[str, None]): The LLM-generated curl command.
+            expected_prediction (str): The expected curl command.
+
+        Returns:
+            Tuple[bool, str, Union[str, None]]:
+                - A boolean indicating whether the prediction passed the sanity check.
+                - A status code string (e.g., 'correct', 'format') from `self.status_codes`.
+                - The original prediction, for logging or further processing.
+        """
+        def check_curl(curl_command: str) -> bool:
+            return curl_command.startswith('curl -X PUT')
+
+        def extract_url(curl_command: str) -> str:
+            match = re.search(r'(http[s]?://[^\s"]+)', curl_command)
+            return match.group(0).strip() if match else ''
+
+        def extract_headers(curl_command: str) -> set:
+            pattern = r'-(?:H|-header) "([^"]+)"'
+            return set(re.findall(pattern, curl_command))
+        
+        def extract_payload(curl_command: str) -> dict:
+            pattern = r"-(?:d|-data)\s+(['\"])(\{.*?\})\1"  # ' 또는 "로 감싼 JSON 추출
+            match = re.search(pattern, curl_command, re.DOTALL)
+            if match:
+                try:
+                    return json.loads(match.group(2))
+                except json.JSONDecodeError:
+                    pass
+            return {}
+        
+        # Check the prediciton format
+        if not isinstance(prediction, str):
+            return False, self.status_codes['format'], prediction    # Could not be parsed as a dictionary
+
+        # Check the sanity of the generated command
+        if not check_curl(prediction):
+            return False, self.status_codes['curl']['http'], prediction
+        if not extract_url(prediction) == extract_url(expected_prediction):
+            return False, self.status_codes['curl']['url'], prediction
+        if not extract_headers(prediction) == extract_headers(expected_prediction):
+            return False, self.status_codes['curl']['header'], prediction
+        if not self.sanity_check_recursively(extract_payload(prediction), extract_payload(expected_prediction)):
+            return False, self.status_codes['curl']['payload'], prediction
+        
+        return True, self.status_codes['correct'], prediction
+    
+
+    def __get_api(self, resource: dict) -> str:
+        """
+        Generate curl API command from a FHIR resource.
+
+        Args:
+            resource (dict): FHIR resource ditionary.
+
+        Returns:
+            str: The generated curl API command.
+        """
+        gt_api = f'curl -X PUT "{self._fhir_url}/Appointment/{resource["id"]}" ' \
+                 f'-H "Content-Type: application/fhir+json" ' \
+                 f'-H "Accept: application/fhir+json" ' \
+                 f"-d '{json.dumps(resource)}'"
+        return gt_api
+
+
+    def __call__(self, agent_test_data: dict, agent_results: dict) -> dict:
+        """
+        Processes test data and LLM results to generate and validate FHIR Appointment resources.
+        
+        Args:
+            agent_test_data (dict): Input test data containing metadata and agent-specific data for processing.
+            agent_results (dict): Results produced by the agent (e.g., LLM output) to be validated.
+
+        Returns:
+            dict: A dictionary containing lists for each processed item with keys:
+                - 'gt': ground truth FHIR resource API commands.
+                - 'pred': predicted FHIR resource API commands from the LLM.
+                - 'status': boolean flags indicating pass/fail of sanity checks.
+                - 'status_code': human-readable status codes explaining the validation result.
+        """
+        self._metadata = agent_test_data.get('metadata')
+        agent_data = agent_test_data.get('agent_data')
+        fhir_resources, sanities = self.__extract_fhir_resource(agent_data, agent_results)
+        results = self.get_result_dict()
+        
+        for data_pair, resource, sanity in zip(agent_data, fhir_resources, sanities):
+            gt, test_data = data_pair
+            
+            # Load ground truth Appointment FHIR resource
+            gt_api = self.__get_api(
+                self._get_resource(
+                    gt_resource_path=self._fhir_data_path / 'appointment' / gt.get('fhir_resource'),
+                    data={'metadata': deepcopy(self._metadata), 'information': deepcopy(gt)}
+                )
+            )
+            results['gt'].append(gt_api)
+
+            # If the precedent resource data is invalid, continue
+            if not sanity:
+                results['pred'].append('')
+                results['status'].append(False)
+                results['status_code'].append(self.status_codes['preceding'])
+                continue
+
+            # LLM call and compare the validity of the LLM output
+            user_prompt = self.user_prompt_template.format(FHIR_URL=self._fhir_url, RESOURCE=json.dumps(resource))
+            prediction = self.client(
+                user_prompt,
+                system_prompt=self.system_prompt, 
+                using_multi_turn=False
+            )
+            prediction = MakeFHIRAPI.postprocessing(prediction)
+            expected_prediction = self.__get_api(resource)
+            status, status_code, prediction = self._sanity_check(prediction, expected_prediction)
+            
+            # Append results
+            results['pred'].append(prediction)
+            results['status'].append(status)
+            results['status_code'].append(status_code)
+            
+        return results
