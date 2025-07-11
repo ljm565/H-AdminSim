@@ -242,11 +242,11 @@ class AssignSchedule(Task):
             Union[str, dict]: A dictionary if the text is valid JSON, otherwise the original string.
         """
         try:
-            text = json.loads(text)
-            key = list(text.keys())[0]
-            text[key]['start'] = float(text[key]['start'])
-            text[key]['end'] = float(text[key]['end'])
-            return text
+            text_dict = json.loads(text)
+            key = list(text_dict.keys())[0]
+            text_dict[key]['start'] = float(text_dict[key]['start'])
+            text_dict[key]['end'] = float(text_dict[key]['end'])
+            return text_dict
         except:
             return text
 
