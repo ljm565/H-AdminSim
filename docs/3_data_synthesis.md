@@ -62,7 +62,7 @@ You can synthesize hospital data using the following command:
 ```bash
 python3 src/run/synthesize_data.py --config config/data_synthesis.yaml
 
-# f you want to check whether the generated data are compatible with the Hospital object, 
+# If you want to check whether the generated data are compatible with the Hospital object, 
 # you can use the --sanity_check option.
 python3 src/run/synthesize_data.py --config config/data_synthesis.yaml --sanity_check
 ```

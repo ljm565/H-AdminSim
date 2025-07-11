@@ -2,6 +2,7 @@
 
 
 ### Recent updates 📣
+* *July 2025 (v0.3.0)*: This repository has supported Gemini- and GPT-based LLM agent task testing: 'department', 'schedule', 'fhir_resource', 'fhir_api'.
 * *June 2025 (v0.2.2)*: Added *PractitionerRole* resource type and function to make more realistic data.
 * *June 2025 (v0.2.1)*: Fixed *Appointment* resource type error and added function to show failed files during creating data to FHIR.
 * *June 2025 (v0.2.0)*: Added function to map synthetic data to some *workflow* resource types in FHIR.
@@ -63,5 +64,6 @@ python3 src/run/synthesize_data.py --config config/data_synthesis.yaml
 1. [Getting Started](./docs/1_getting_started.md)
 2. [How to perform CRUD on FHIR](./docs/2_fhir_crud.md)
 3. [Hospital Data Synthesis](./docs/3_data_synthesis.md)
+4. [Agent Test](./docs/4_agent_test.md)
 
 &nbsp;
