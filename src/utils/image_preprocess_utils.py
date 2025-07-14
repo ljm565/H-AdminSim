@@ -1,8 +1,11 @@
 import io
 import os
+import math
 import base64
 from PIL import Image
+from collections import Counter
 from typing import Tuple, Union
+import matplotlib.pyplot as plt
 
 
 
@@ -92,3 +95,76 @@ def get_image_extension(path: str) -> str:
         return "jpeg"
     else:
         raise ValueError(f"Unsupported image format: {ext}")
+
+
+
+def autopct_format(values: list[int]):
+    """
+    Returns a formatting function for pie chart percentages and counts.
+
+    Args:
+        values (list[int]): List of values corresponding to each pie chart slice.
+
+    Returns:
+        function: A function that takes a percentage (float) and returns a formatted string
+                  showing both the percentage and the corresponding count, e.g., '42.0%\n(21)'.
+    """
+    def my_autopct(pct):
+        total = sum(values)
+        count = int(round(pct * total / 100.0))
+        return f'{pct:.1f}%\n({count})'
+    return my_autopct
+
+
+
+def draw_fail_donut_subplots(fail_data_dict: dict, save_path: str) -> None:
+    """
+    Draws donut-style pie chart subplots showing the failure type distribution for each task.
+
+    Args:
+        fail_data_dict (dict): A dictionary where keys are task names and values are lists of failure types (e.g., error codes).
+        save_path (str): File path where the final figure will be saved as a PNG.
+    """
+    keys = list(fail_data_dict.keys())
+    num_plots = len(keys)
+
+    if num_plots == 0:
+        return
+
+    # Calculate subplot layout (maximum of 4 columns)
+    ncols = min(4, num_plots)
+    nrows = math.ceil(num_plots / ncols)
+
+    fig, axes = plt.subplots(nrows, ncols, figsize=(4 * ncols, 4 * nrows))
+    axes = axes.flatten() if num_plots > 1 else [axes]
+    cmap = plt.get_cmap('tab10')
+    
+    for idx, key in enumerate(keys):
+        failed_cases = fail_data_dict[key]
+        fail_summary = Counter(failed_cases)
+        labels = list(fail_summary.keys())
+        sizes = list(fail_summary.values())
+        colors = cmap.colors[:len(labels)]
+
+        ax = axes[idx]
+        wedges, texts, autotexts = ax.pie(
+            sizes,
+            labels=labels,
+            autopct=autopct_format(sizes),
+            pctdistance=0.7,
+            startangle=90,
+            counterclock=False,
+            colors=colors,
+            wedgeprops=dict(width=0.6)
+        )
+
+        ax.set_title(f'"{key}"', fontsize=12, pad=10)
+        ax.axis('equal')
+
+    # Clear remaining empty subplots
+    for idx in range(len(keys), len(axes)):
+        axes[idx].axis('off')
+    
+    fig.suptitle('Failure Type Distribution by Task', fontsize=16)
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300)
