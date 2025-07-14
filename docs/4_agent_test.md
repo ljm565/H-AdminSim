@@ -76,3 +76,11 @@ python3 -u src/run/agent_test.py --config config/agent_test.yaml --type departme
 ```
 
 &nbsp;
+
+#### 1.3 Evaluation
+You can evaluate the agent task results using the below command:
+```bash
+python3 -u src/run/evaluate.py --path ${SYNTHETIC_DATA_FOLDER}/agent_results
+```
+
+&nbsp;
