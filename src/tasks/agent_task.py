@@ -473,7 +473,7 @@ class MakeFHIRResource(Task):
             agent_results (dict): A dictionary that may contain predicted schedule results under the key 'schedule'.
 
         Returns:
-            Tuple[list[str], list[bool]]:: A list of scedules, either predicted or ground truth and each sanity status.
+            Tuple[list[dict], list[bool]]: A list of scedules, either predicted or ground truth and each sanity status.
         """
         try:
             schedules = agent_results['schedule']['pred']
