@@ -2,6 +2,7 @@
 
 
 ### Recent updates 📣
+* *July 2025 (v0.3.1)*: Added agent results evaluation codes.
 * *July 2025 (v0.3.0)*: This repository has supported Gemini- and GPT-based LLM agent task testing: 'department', 'schedule', 'fhir_resource', 'fhir_api'.
 * *June 2025 (v0.2.2)*: Added *PractitionerRole* resource type and function to make more realistic data.
 * *June 2025 (v0.2.1)*: Fixed *Appointment* resource type error and added function to show failed files during creating data to FHIR.
