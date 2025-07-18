@@ -1,5 +1,7 @@
 import os
 import sys
+import random
+import numpy as np
 from sconf import Config
 from argparse import ArgumentParser
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
@@ -10,7 +12,8 @@ from utils import log
 
 
 def env_setup(config):
-    pass
+    random.seed(config.seed)
+    np.random.seed(config.seed)
 
 
 def load_config(config_path):
