@@ -1,4 +1,5 @@
 import pytz
+import random
 from decimal import Decimal, getcontext
 from datetime import datetime, timedelta
 from typing import Optional, Union, Tuple
@@ -215,6 +216,40 @@ def get_iso_time(time_hour: Union[int, float],
         return f'{date}T{time}{utc_offset}'
     return f'{date}T{time}'
 
+
+def generate_random_iso_time_between(min_iso_time: str,
+                                     max_iso_time: str,
+                                     epsilon: float = 1e-6) -> str:
+    """
+    Generate a random ISO 8601 time string strictly within (min_iso_time, max_iso_time).
+
+    Args:
+        min_iso_time (str): The lower bound ISO 8601 time string (exclusive).
+        max_iso_time (str): The upper bound ISO 8601 time string (exclusive).
+        epsilon (float, optional): Small buffer to exclude both bounds. Defaults to 1e-6 seconds.
+
+    Returns:
+        str: A randomly generated ISO 8601 time string within the specified range.
+
+    Raises:
+        ValueError: If min_iso_time is not earlier than max_iso_time or epsilon is too large.
+    """
+    min_dt = datetime.fromisoformat(min_iso_time)
+    max_dt = datetime.fromisoformat(max_iso_time)
+
+    if min_dt >= max_dt:
+        raise ValueError(f"min_iso_time ({min_iso_time}) must be earlier than max_iso_time ({max_iso_time})")
+
+    total_seconds = (max_dt - min_dt).total_seconds()
+
+    if total_seconds <= 2 * epsilon:
+        raise ValueError("Time range is too small for the given epsilon to exclude both bounds.")
+
+    # Exclude both bounds by starting from epsilon and ending at total_seconds - epsilon
+    random_seconds = random.uniform(epsilon, total_seconds - epsilon)
+    random_dt = min_dt + timedelta(seconds=random_seconds)
+
+    return random_dt.isoformat()
 
 
 def convert_time_to_segment(start: float, 

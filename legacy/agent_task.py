@@ -161,17 +161,16 @@ class AssignDepartment(Task):
         return text
 
 
-    def __call__(self, data_pair: Tuple[dict, dict],  agent_test_data: dict, agent_results: dict, environment) -> dict:
+    def __call__(self, agent_test_data: dict, agent_results: dict) -> dict:
         """
         Estimates the most appropriate medical department for each patient using an LLM agent.
 
         Args:
-            data_pair (Tuple[dict, dict]): A pair of ground truth and patient data for agent simulation.
             agent_test_data (dict): A dictionary containing test data for a single hospital.
                 Expected to include:
+                    - 'agent_data': List of (ground_truth, test_data) pairs.
                     - 'department': Dictionary of available departments.
             agent_results (dict): Placeholder for compatibility; not used in this method.
-            environment (HospitalEnvironment): Hospital environment instance to manage patient schedules.
 
         Returns:
             dict: A dictionary with:
@@ -180,30 +179,31 @@ class AssignDepartment(Task):
                 - 'status': List of booleans indicating whether each prediction correct.
                 - 'status_code': List of status codes explaining each status.
         """
+        agent_data = agent_test_data['agent_data']
         departments = list(agent_test_data['department'].keys())
         options = ''.join([f'{i+1}. {department}\n' for i, department in enumerate(departments)])
         results = self.get_result_dict()
         
-        # Single data simulation
-        gt, test_data = data_pair
-        gt_department = gt['department']
-        results['gt'].append(gt_department)
-        
-        # LLM call
-        user_prompt = self.user_prompt_template.format(SYMPTOM=test_data['symptom'], OPTIONS=options)
-        prediction = self.client(
-            user_prompt,
-            system_prompt=self.system_prompt, 
-            using_multi_turn=False
-        )
-        prediction = AssignDepartment.postprocessing(prediction)
-        
-        # Append results
-        status = gt_department == prediction
-        status_code = self.status_codes['correct'] if status else self.status_codes['department']
-        results['pred'].append(prediction)
-        results['status'].append(status)
-        results['status_code'].append(status_code)
+        for data_pair in agent_data:
+            gt, test_data = data_pair
+            gt_department = gt['department']
+            results['gt'].append(gt_department)
+            
+            # LLM call
+            user_prompt = self.user_prompt_template.format(SYMPTOM=test_data['symptom'], OPTIONS=options)
+            prediction = self.client(
+                user_prompt,
+                system_prompt=self.system_prompt, 
+                using_multi_turn=False
+            )
+            prediction = AssignDepartment.postprocessing(prediction)
+            
+            # Append results
+            status = gt_department == prediction
+            status_code = self.status_codes['correct'] if status else self.status_codes['department']
+            results['pred'].append(prediction)
+            results['status'].append(status)
+            results['status_code'].append(status_code)
         
         return results
 
@@ -242,137 +242,112 @@ class AssignSchedule(Task):
             Union[str, dict]: A dictionary if the text is valid JSON, otherwise the original string.
         """
         try:
-            match = re.search(r'```json\s*(\{.*?\})\s*```', text, re.DOTALL)
-            if match:
-                json_str = match.group(1)
-                text_dict = json.loads(json_str)
-                assert len(text_dict) == 2 and all(k in text_dict for k in ['schedule', 'changed_existing_schedule_list'])   # Basic sanity check
-                key = list(text_dict['schedule'].keys())[0]
-                text_dict['schedule'][key]['start'] = float(text_dict['schedule'][key]['start'])
-                text_dict['schedule'][key]['end'] = float(text_dict['schedule'][key]['end'])
-                return text_dict
-            return text
+            text_dict = json.loads(text)
+            key = list(text_dict.keys())[0]
+            text_dict[key]['start'] = float(text_dict[key]['start'])
+            text_dict[key]['end'] = float(text_dict[key]['end'])
+            return text_dict
         except:
             return text
 
 
-    def __extract_departments(self, data_pair: Tuple[dict, dict], agent_results: dict) -> Tuple[str, bool]:
+    def __extract_departments(self, agent_data: list[Tuple[dict, dict]], agent_results: dict) -> Tuple[list[str], list[bool]]:
         """
         Extracts the predicted department from agent results.
         If predictions are not available, falls back to using ground truth labels.
 
         Args:
-            data_pair (Tuple[dict, dict]): A pair of (ground_truth, test_data) for a single patient.
+            agent_data (list[Tuple[dict, dict]]): A list of (ground_truth, test_data) pairs for each patient.
             agent_results (dict): A dictionary that may contain predicted department results under the key 'department'.
 
         Returns:
-            Tuple[str, bool]: A department, either predicted or ground truth and its sanity status.
+            Tuple[list[str], list[bool]]: A list of departments, either predicted or ground truth and each sanity status.
         """
         try:
-            department = agent_results['department']['pred'][-1]
-            sanity = agent_results['department']['status'][-1]
+            departments = agent_results['department']['pred']
+            sanities = agent_results['department']['status']
         except:
-            log('The predicted department is not given. The ground truth value will be used.', 'warning')
-            gt, _ = data_pair
-            department = gt['department']
-            sanity = True
+            log('Predicted departments are not given. Ground truth values will be used.', 'warning')
+            departments = [gt['department'] for gt, _ in agent_data]
+            sanities = [True] * len(departments)
+        
+        assert len(departments) == len(sanities) == len(agent_data), log('The number of departments does not match the agent data.', 'error')
 
-        return department, sanity
+        return departments, sanities
     
 
     def _sanity_check(self,
                       prediction: Union[str, dict], 
                       patient_condition: dict,
-                      doctor_information: dict,
-                      environment) -> Tuple[bool, str, Union[str, dict], dict]:
+                      doctor_information: dict) -> Tuple[bool, str, Union[str, dict]]:
         """
         Validates a predicted schedule for a doctor by checking its structure, time validity, 
         duplication with existing schedules, and updates the doctor's schedule if valid.
 
         Args:
             prediction (Union[str, dict]): The predicted allocation result, either a string (if parsing failed)
-                                           or a dictionary mapping a doctor's name to a schedule with 'start' and 'end' times.
+                or a dictionary mapping a doctor's name to a schedule with 'start' and 'end' times.
             patient_condition (dict): The conditions including duration, etc.
             doctor_information (dict): Dictionary of doctor data including their existing schedules.
-                                       Each key is a doctor's name, and each value includes a 'schedule' field.
-            environment (HospitalEnvironment): Hospital environment instance to manage patient schedules.
+                Each key is a doctor's name, and each value includes a 'schedule' field.
 
         Returns:
-            Tuple[bool, str, Union[str, dict], dict]: 
+            Tuple[bool, str, Union[str, dict]]: 
                 - A boolean indicating whether the prediction passed all sanity checks.
                 - A string explaining its status.
-                - The original prediction (wrong case) or processed prediction (correct case) (either unchanged or used for debugging/logging if invalid).
-                - Updated doctor information after processing the prediction.
+                - The original prediction (either unchanged or used for debugging/logging if invalid).
         """
-        ############################ Check the prediciton format #############################
+        # Check the prediciton format
         if not isinstance(prediction, dict):
-            return False, self.status_codes['format'], prediction, doctor_information    # Could not be parsed as a dictionary
-        else:
-            if len(prediction['schedule']) > 1:
-                return False, self.status_codes['conflict']['physician'], prediction, doctor_information    # Allocated more than one doctor; cannot determine target
-            if not isinstance(prediction['changed_existing_schedule_list'], list):
-                return False, self.status_codes['format'], prediction, doctor_information
-            if not (len(prediction['changed_existing_schedule_list']) == 0 or all(isinstance(s, dict) for s in prediction['changed_existing_schedule_list'])):
-                return False, self.status_codes['format'], prediction, doctor_information
-
+            return False, self.status_codes['format'], prediction    # Could not be parsed as a dictionary
+        elif len(prediction) > 1:
+            return False, self.status_codes['conflict']['physician'], prediction    # Allocated more than one doctor; cannot determine target
         
-        ################## Check the predicted changed schedules validities ##################
-        sanity, status_code, tmp_doctor_information = environment._changed_schedule_sanity_check(
-            prediction['changed_existing_schedule_list'],
-            doctor_information
-        )
-        if not sanity:
-            return sanity, status_code, prediction, doctor_information
-
-    
-        ################## Check the predicted schedule type and validities ##################
+        # Check the predicted schedule type and validities
         try:
-            doctor_name = list(prediction['schedule'].keys())[0]
-            start = prediction['schedule'][doctor_name]['start']
-            end = prediction['schedule'][doctor_name]['end']
-            fixed_schedules = tmp_doctor_information[doctor_name]['schedule']
+            doctor_name = list(prediction.keys())[0]
+            start = prediction[doctor_name]['start']
+            end = prediction[doctor_name]['end']
+            fixed_schedules = doctor_information[doctor_name]['schedule']
             assert isinstance(start, float) and isinstance(end, float) \
                 and start < end and start >= self._START_HOUR and end <= self._END_HOUR
-            assert patient_condition['department'] == tmp_doctor_information[doctor_name]['department'] \
+            assert patient_condition['department'] == doctor_information[doctor_name]['department'] \
                 and patient_condition['duration'] == round(end - start, 4)
         except KeyError:
-            return False, self.status_codes['format'], prediction, doctor_information    # Schedule allocation missing or doctor not found
+            return False, self.status_codes['format'], prediction    # Schedule allocation missing or doctor not found
         except AssertionError:
-            return False, self.status_codes['schedule'], prediction, doctor_information    # Invalid schedule times or department
+            return False, self.status_codes['schedule'], prediction    # Invalid schedule times or department
 
-        ####################### Check the duplication of the schedules #######################
-        prediction_schedule_segments = convert_time_to_segment(self._START_HOUR,
-                                                            self._END_HOUR,
-                                                            self._TIME_UNIT,
-                                                            [start, end])
+        # Check the duplication of the schedules
+        prediction_schedule_segemnts = convert_time_to_segment(self._START_HOUR,
+                                                               self._END_HOUR,
+                                                               self._TIME_UNIT,
+                                                               [start, end])
         fixed_schedule_segments = sum([convert_time_to_segment(self._START_HOUR, 
-                                                        self._END_HOUR, 
-                                                        self._TIME_UNIT, 
-                                                        fs) for fs in fixed_schedules], [])
+                                                          self._END_HOUR, 
+                                                          self._TIME_UNIT, 
+                                                          fs) for fs in fixed_schedules], [])
         
-        if len(set(prediction_schedule_segments) & set(fixed_schedule_segments)):
-            return False, self.status_codes['conflict']['time'], prediction, doctor_information    # Overlaps with an existing schedule
+        if len(set(prediction_schedule_segemnts) & set(fixed_schedule_segments)):
+            return False, self.status_codes['conflict']['time'], prediction    # Overlaps with an existing schedule
         
         # Finally update schedule of the doctor
-        tmp_doctor_information[doctor_name]['schedule'].append([start, end])    # In-place logic
+        doctor_information[doctor_name]['schedule'].append([start, end])    # In-place logic
         prediction = {
             'patient': patient_condition.get('patient'),
             'attending_physician': doctor_name,
             'department': patient_condition.get('department'),
-            'schedule': [start, end],
-            'priority': patient_condition.get('priority'),
-            'flexibility': patient_condition.get('flexibility'),
+            'schedule': [start, end]
         }
-        return True, self.status_codes['correct'], prediction, deepcopy(tmp_doctor_information)
+        return True, self.status_codes['correct'], prediction
             
 
-    def __call__(self, data_pair: Tuple[dict, dict], agent_test_data: dict, agent_results: dict, environment) -> dict:
+    def __call__(self, agent_test_data: dict, agent_results: dict) -> dict:
         """
         This method uses agent test data to prompt an LLM for scheduling decisions, post-processes
         the output, runs sanity checks on predicted schedules, and collects the results for evaluation.
 
         Args:
-            data_pair (Tuple[dict, dict]): A pair of ground truth and patient data for agent simulation.
             agent_test_data (dict): Dictionary containing test data and metadata for a single hospital.
                 Expected keys include:
                     - 'metadata': A dict containing start_hour, end_hour, and interval_hour under 'time'.
@@ -380,7 +355,6 @@ class AssignSchedule(Task):
                     - 'doctor': A dictionary of doctor profiles with department and schedule info.
             agent_results (dict): Optional dictionary containing prior department predictions.
                 Used to extract department-level guidance per patient. Can be empty.
-            environment (HospitalEnvironment): Hospital environment instance to manage patient schedules.
 
         Returns:
             dict: A dictionary with three keys:
@@ -392,69 +366,56 @@ class AssignSchedule(Task):
         self._START_HOUR = agent_test_data.get('metadata').get('time').get('start_hour')
         self._END_HOUR = agent_test_data.get('metadata').get('time').get('end_hour')
         self._TIME_UNIT = agent_test_data.get('metadata').get('time').get('interval_hour')
+        agent_data = agent_test_data.get('agent_data')
         doctor_information = agent_test_data.get('doctor')
-        department, sanity = self.__extract_departments(data_pair, agent_results)
+        departments, sanities = self.__extract_departments(agent_data, agent_results)
         results = self.get_result_dict()
         
-        gt, test_data = data_pair
-        gt_results = {
-            'patient': gt.get('patient'),
-            'attending_physician': gt.get('attending_physician'),
-            'department': gt.get('department'),
-            'schedule': gt.get('schedule').get('time'),
-            'priority': gt.get('priority'),
-            'flexibility': gt.get('flexibility')
-        }
-        results['gt'].append(gt_results)
+        for data_pair, department, sanity in zip(agent_data, departments, sanities):
+            gt, test_data = data_pair
+            gt_results = {
+                'patient': gt.get('patient'),
+                'attending_physician': gt.get('attending_physician'),
+                'department': gt.get('department'),
+                'schedule': gt.get('schedule').get('time')
+            }
+            results['gt'].append(gt_results)
 
-        # If the precedent department data is wrong, continue
-        if not sanity:
-            results['pred'].append({})
-            results['status'].append(False)
-            results['status_code'].append(self.status_codes['preceding'])
-            return results
-        
-        # LLM call and compare the validity of the LLM output
-        ## Update hospital environment
-        environment.update_current_time()
-        environment.update_patient_status()
-        doctor_information_str = json.dumps(doctor_information, indent=2)   # String-converted ditionary 
-        
-        ## LLM prediction
-        duration = test_data.get('constraint').get('duration')
-        priority = test_data.get('constraint').get('priority')
-        flexibility = test_data.get('constraint').get('flexibility')
-        user_prompt = self.user_prompt_template.format(
-            START_HOUR=self._START_HOUR,
-            END_HOUR=self._END_HOUR,
-            TIME_UNIT=self._TIME_UNIT,
-            DEPARTMENT=department,
-            DURATION=duration,
-            PRIORITY=priority,
-            FLEXIBILITY=flexibility,
-            DOCTOR=doctor_information_str,
-            PATIENT_SCHEDULES=json.dumps(environment.patient_schedules, indent=2)
-        )
-        prediction = self.client(
-            user_prompt,
-            system_prompt=self.system_prompt, 
-            using_multi_turn=False
-        )
-        prediction = AssignSchedule.postprocessing(prediction)
-        status, status_code, prediction, doctor_information = self._sanity_check(
-            prediction, 
-            {'patient': test_data.get('patient'), 'department': department, 'duration': duration, 'priority': priority, 'flexibility': flexibility},
-            doctor_information,
-            environment
-        )
-        agent_test_data['doctor'] = doctor_information    # Update the doctor information in the agent test data
-        environment.update_env(status, prediction)
-        
-        # Append results
-        results['pred'].append(prediction)
-        results['status'].append(status)
-        results['status_code'].append(status_code)
-        
+            # If the precedent department data is wrong, continue
+            if not sanity:
+                results['pred'].append({})
+                results['status'].append(False)
+                results['status_code'].append(self.status_codes['preceding'])
+                continue
+            
+            # LLM call and compare the validity of the LLM output
+            duration = test_data.get('constraint').get('duration')
+            doctor_information_str = json.dumps(doctor_information, indent=2)   # String-converted ditionary 
+            user_prompt = self.user_prompt_template.format(
+                START_HOUR=self._START_HOUR,
+                END_HOUR=self._END_HOUR,
+                TIME_UNIT=self._TIME_UNIT,
+                DEPARTMENT=department,
+                DURATION=duration,
+                DOCTOR=doctor_information_str
+            )
+            prediction = self.client(
+                user_prompt,
+                system_prompt=self.system_prompt, 
+                using_multi_turn=False
+            )
+            prediction = AssignSchedule.postprocessing(prediction)
+            status, status_code, prediction = self._sanity_check(
+                prediction, 
+                {'patient': test_data.get('patient'), 'department': department, 'duration': duration},
+                doctor_information
+            )
+            
+            # Append results
+            results['pred'].append(prediction)
+            results['status'].append(status)
+            results['status_code'].append(status_code)
+            
         return results
 
 
@@ -502,33 +463,32 @@ class MakeFHIRResource(Task):
             return text
             
     
-    def __extract_schedules(self, data_pair: Tuple[dict, dict], agent_results: dict) -> Tuple[dict, bool]:
+    def __extract_schedules(self, agent_data: list[Tuple[dict, dict]], agent_results: dict) -> Tuple[list[dict], list[bool]]:
         """
         Extracts the predicted schedule from agent results.
         If predictions are not available, falls back to using ground truth labels.
 
         Args:
-            data_pair (Tuple[dict, dict]): A pair of (ground_truth, test_data) for a single patient.
+            agent_data (list[Tuple[dict, dict]]): A list of (ground_truth, test_data) pairs for each patient.
             agent_results (dict): A dictionary that may contain predicted schedule results under the key 'schedule'.
 
         Returns:
-            Tuple[dict, bool]: A scedule dictionary, either predicted or ground truth and its sanity status.
+            Tuple[list[dict], list[bool]]: A list of scedules, either predicted or ground truth and each sanity status.
         """
         try:
-            schedule = agent_results['schedule']['pred'][-1]
-            sanity = agent_results['schedule']['status'][-1]
+            schedules = agent_results['schedule']['pred']
+            sanities = agent_results['schedule']['status']
         except:
-            log('The predicted schedule is not given. The ground truth value will be used.', 'warning')
-            gt, _ = data_pair
-            schedule = {'patient': gt['patient'], 
+            log('Predicted schedules are not given. Ground truth values will be used.', 'warning')
+            schedules = [{'patient': gt['patient'], 
                           'attending_physician': gt['attending_physician'],
                           'department': gt['department'],
-                          'schedule': gt['schedule']['time'],
-                          'priority': gt['priority'],
-                          'flexibility': gt['flexibility']}
-            sanity = True
+                          'schedule': gt['schedule']['time']} for gt, _ in agent_data]
+            sanities = [True] * len(schedules)
 
-        return schedule, sanity
+        assert len(schedules) == len(sanities) == len(agent_data), log('The number of schedules does not match the agent data.', 'error')
+
+        return schedules, sanities
     
 
     def _sanity_check(self,
@@ -611,16 +571,14 @@ class MakeFHIRResource(Task):
         }
 
 
-    def __call__(self, data_pair: Tuple[dict, dict], agent_test_data: dict, agent_results: dict, environment) -> dict:
+    def __call__(self, agent_test_data: dict, agent_results: dict) -> dict:
         """
         Run the evaluation pipeline for generating and validating FHIR Appointment resources based on agent scheduling results.
 
         Args:
-            data_pair (Tuple[dict, dict]): A pair of ground truth and patient data for agent simulation.
             agent_test_data (dict): Dictionary containing test metadata, doctor/patient/schedule data,
                                     and ground-truth information for each case.
             agent_results (dict): Dictionary containing scheduling results generated by the agent.
-            environment (HospitalEnvironment): Hospital environment instance to manage patient schedules.
 
         Returns:
             dict: A dictionary with the following keys:
@@ -636,37 +594,39 @@ class MakeFHIRResource(Task):
         self._END_HOUR = _metadata.get('time').get('end_hour')
         self._TIME_UNIT = _metadata.get('time').get('interval_hour')
 
-        schedule, sanity = self.__extract_schedules(data_pair, agent_results)
+        agent_data = agent_test_data.get('agent_data')
+        schedules, sanities = self.__extract_schedules(agent_data, agent_results)
         results = self.get_result_dict()
         
-        gt, test_data = data_pair
-        
-        # Load ground truth Appointment FHIR resource
-        gt_resource = self._get_resource(self._fhir_data_path / 'appointment' / gt.get('fhir_resource'))
-        results['gt'].append(gt_resource)
+        for data_pair, schedule, sanity in zip(agent_data, schedules, sanities):
+            gt, test_data = data_pair
+            
+            # Load ground truth Appointment FHIR resource
+            gt_resource = self._get_resource(self._fhir_data_path / 'appointment' / gt.get('fhir_resource'))
+            results['gt'].append(gt_resource)
 
-        # If the precedent schedule data is invalid, continue
-        if not sanity:
-            results['pred'].append({})
-            results['status'].append(False)
-            results['status_code'].append(self.status_codes['preceding'])
-            return results
+            # If the precedent schedule data is invalid, continue
+            if not sanity:
+                results['pred'].append({})
+                results['status'].append(False)
+                results['status_code'].append(self.status_codes['preceding'])
+                continue
 
-        # LLM call and compare the validity of the LLM output
-        user_prompt = self.user_prompt_template.format(**self.__get_necessary_information(schedule))
-        prediction = self.client(
-            user_prompt,
-            system_prompt=self.system_prompt, 
-            using_multi_turn=False
-        )
-        prediction = MakeFHIRResource.postprocessing(prediction)
-        expected_prediction = self._get_resource(data={'metadata': deepcopy(_metadata), 'information': deepcopy(schedule)})
-        status, status_code, prediction = self._sanity_check(prediction, expected_prediction)
-        
-        # Append results
-        results['pred'].append(prediction)
-        results['status'].append(status)
-        results['status_code'].append(status_code)
+            # LLM call and compare the validity of the LLM output
+            user_prompt = self.user_prompt_template.format(**self.__get_necessary_information(schedule))
+            prediction = self.client(
+                user_prompt,
+                system_prompt=self.system_prompt, 
+                using_multi_turn=False
+            )
+            prediction = MakeFHIRResource.postprocessing(prediction)
+            expected_prediction = self._get_resource(data={'metadata': deepcopy(_metadata), 'information': deepcopy(schedule)})
+            status, status_code, prediction = self._sanity_check(prediction, expected_prediction)
+            
+            # Append results
+            results['pred'].append(prediction)
+            results['status'].append(status)
+            results['status_code'].append(status_code)
             
         return results
 
@@ -713,35 +673,39 @@ class MakeFHIRAPI(Task):
             return None
         
 
-    def __extract_fhir_resource(self, data_pair: Tuple[dict, dict], agent_results: dict) -> Tuple[list[dict], list[bool]]:
+    def __extract_fhir_resource(self, agent_data: list[Tuple[dict, dict]], agent_results: dict) -> Tuple[list[dict], list[bool]]:
         """
         Extracts the predicted FHIR Appointment resource from agent results.
         If predictions are not available, falls back to using ground truth labels.
 
         Args:
-            data_pair (Tuple[dict, dict]): A pair of (ground_truth, test_data) for a single patient.
+            agent_data (list[Tuple[dict, dict]]): A list of (ground_truth, test_data) pairs for each patient.
             agent_results (dict): A dictionary that may contain predicted fhir_resource results under the key 'fhir_resource'.
 
         Returns:
             Tuple[list[dict], list[bool]]: A list of fhir_resources, either predicted or ground truth and each sanity status.
         """
         try:
-            fhir_resource = agent_results['fhir_resource']['pred'][-1]
-            sanity = agent_results['fhir_resource']['status'][-1]
+            fhir_resources = agent_results['fhir_resource']['pred']
+            sanities = agent_results['fhir_resource']['status']
         except:
-            log('The predicted fhir_resource is not given. The ground truth value will be used.', 'warning')
-            gt, _ = data_pair
-            fhir_resource_path = self._fhir_data_path / 'appointment' / gt.get('fhir_resource')
+            log('Predicted fhir_resources are not given. Ground truth values will be used.', 'warning')
+            fhir_resources = list()
+            fhir_resource_paths = [self._fhir_data_path / 'appointment' / gt.get('fhir_resource') for gt, _ in agent_data]
             
             # Load the FHIR json file if it exists, otherwise create a new one
-            fhir_resource = self._get_resource(
-                gt_resource_path=fhir_resource_path,
-                data={'metadata': deepcopy(self._metadata), 'information': deepcopy(gt)}
-            )
-            sanity = True
+            for i, path in enumerate(fhir_resource_paths):
+                _gt = agent_data[i][0]
+                fhir_resource = self._get_resource(
+                    gt_resource_path=path,
+                    data={'metadata': deepcopy(self._metadata), 'information': deepcopy(_gt)}
+                )
+                fhir_resources.append(fhir_resource)
+            sanities = [True] * len(fhir_resources)
         
+        assert len(fhir_resources) == len(sanities) == len(agent_data), log('The number of fhir_resources does not match the agent data.', 'error')
 
-        return fhir_resource, sanity
+        return fhir_resources, sanities
     
 
     def _sanity_check(self,
@@ -815,15 +779,13 @@ class MakeFHIRAPI(Task):
         return gt_api
 
 
-    def __call__(self, data_pair: Tuple[dict, dict], agent_test_data: dict, agent_results: dict, environment) -> dict:
+    def __call__(self, agent_test_data: dict, agent_results: dict) -> dict:
         """
         Processes test data and LLM results to generate and validate FHIR Appointment resources.
         
         Args:
-            data_pair (Tuple[dict, dict]): A pair of ground truth and patient data for agent simulation.
             agent_test_data (dict): Input test data containing metadata and agent-specific data for processing.
             agent_results (dict): Results produced by the agent (e.g., LLM output) to be validated.
-            environment (HospitalEnvironment): Hospital environment instance to manage patient schedules.
 
         Returns:
             dict: A dictionary containing lists for each processed item with keys:
@@ -833,42 +795,43 @@ class MakeFHIRAPI(Task):
                 - 'status_code': human-readable status codes explaining the validation result.
         """
         self._metadata = agent_test_data.get('metadata')
-        fhir_resource, sanity = self.__extract_fhir_resource(data_pair, agent_results)
+        agent_data = agent_test_data.get('agent_data')
+        fhir_resources, sanities = self.__extract_fhir_resource(agent_data, agent_results)
         results = self.get_result_dict()
         
-        # for data_pair, resource, sanity in zip(agent_data, fhir_resources, sanities):
-        gt, test_data = data_pair
-        
-        # Load ground truth Appointment FHIR resource
-        gt_api = self.__get_api(
-            self._get_resource(
-                gt_resource_path=self._fhir_data_path / 'appointment' / gt.get('fhir_resource'),
-                data={'metadata': deepcopy(self._metadata), 'information': deepcopy(gt)}
+        for data_pair, resource, sanity in zip(agent_data, fhir_resources, sanities):
+            gt, test_data = data_pair
+            
+            # Load ground truth Appointment FHIR resource
+            gt_api = self.__get_api(
+                self._get_resource(
+                    gt_resource_path=self._fhir_data_path / 'appointment' / gt.get('fhir_resource'),
+                    data={'metadata': deepcopy(self._metadata), 'information': deepcopy(gt)}
+                )
             )
-        )
-        results['gt'].append(gt_api)
+            results['gt'].append(gt_api)
 
-        # If the precedent resource data is invalid, continue
-        if not sanity:
-            results['pred'].append('')
-            results['status'].append(False)
-            results['status_code'].append(self.status_codes['preceding'])
-            return results
+            # If the precedent resource data is invalid, continue
+            if not sanity:
+                results['pred'].append('')
+                results['status'].append(False)
+                results['status_code'].append(self.status_codes['preceding'])
+                continue
 
-        # LLM call and compare the validity of the LLM output
-        user_prompt = self.user_prompt_template.format(FHIR_URL=self._fhir_url, RESOURCE=json.dumps(fhir_resource))
-        prediction = self.client(
-            user_prompt,
-            system_prompt=self.system_prompt, 
-            using_multi_turn=False
-        )
-        prediction = MakeFHIRAPI.postprocessing(prediction)
-        expected_prediction = self.__get_api(fhir_resource)
-        status, status_code, prediction = self._sanity_check(prediction, expected_prediction)
-        
-        # Append results
-        results['pred'].append(prediction)
-        results['status'].append(status)
-        results['status_code'].append(status_code)
+            # LLM call and compare the validity of the LLM output
+            user_prompt = self.user_prompt_template.format(FHIR_URL=self._fhir_url, RESOURCE=json.dumps(resource))
+            prediction = self.client(
+                user_prompt,
+                system_prompt=self.system_prompt, 
+                using_multi_turn=False
+            )
+            prediction = MakeFHIRAPI.postprocessing(prediction)
+            expected_prediction = self.__get_api(resource)
+            status, status_code, prediction = self._sanity_check(prediction, expected_prediction)
+            
+            # Append results
+            results['pred'].append(prediction)
+            results['status'].append(status)
+            results['status_code'].append(status_code)
             
         return results

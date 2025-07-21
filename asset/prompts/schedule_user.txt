@@ -1,6 +1,6 @@
 Below is information about the hospital's operating hours, patient details, and doctor data including their schedules.
 Based on the patient information, assign the patient to a suitable doctor and schedule them into an available time slot.
-Respond concisely in Python dictionary format only, as shown in the example below.
+Respond in JSON format only, as shown in the example below.
 
 Hospital time information:
 * Start_hour: {START_HOUR}
@@ -10,10 +10,34 @@ Hospital time information:
 Patient information:
 * Department: {DEPARTMENT}
 * Patient duration: {DURATION}
+* Priority: {PRIORITY}
+* Flexibility: {FLEXIBILITY}
 
 Doctors' data:
-* {DOCTOR}
+```json
+{DOCTOR}
+```
+
+The existing patient schedules:
+```list[json]
+{PATIENT_SCHEDULES}
+```
+
+Patient scheduleing instructions:
+1. The basic patient scheduling rule is to assign appointments sequentially in the doctor’s available time slots, based on each patient’s required duration.
+2. A lower priority number indicates higher importance. Therefore, if a patient has a lower priority number, they are allowed to change the existing patient schedule.
+3. When modifying an existing schedule, if the existing patient’s flexibility is set to fixed, their schedule cannot be changed regardless of their priority.
+4. Schedule modifications are only allowed for existing patients whose schedule status is "scheduled". Schedules with statuses such as "completed" or "in_progress" cannot be modified.
+5. If there are any changes to the existing schedule, the new schedule should be output under the "schedule" key, and only the modified entries from the existing schedule should be rescheduled and output under the "changed_existing_schedule_list" key. If there are no changes, the value of "changed_existing_schedule_list" should be an empty list (Refer to the "Answer format examples" at the bottom).
+6. Changing the attending doctor is allowed only among doctors within the same department regardless of their specialty, but the new attending doctor’s schedule must be taken into account.
 
 Answer format examples:
-* {{"Dr. Wayne Otero": {{"start": 11.5, "end": 12}}}}
-* {{"Dr. Willard Wittmann": {{"start": 13, "end": 14.5}}}}
+1. In case the existing schedule is not changed
+```json
+{{"schedule": {{"Dr. Wayne Otero": {{"start": 11.5, "end": 12}}}}, "changed_existing_schedule_list": []}}
+```
+
+2. In case the existing schedule is changed
+```json
+{{"schedule": {{"Dr. Willard Wittmann": {{"start": 13, "end": 14.5}}}}, "changed_existing_schedule_list": ${{CHANGED_SCHEDULE_LIST}}}}
+```

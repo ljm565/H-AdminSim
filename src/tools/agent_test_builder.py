@@ -76,6 +76,8 @@ class AgentTestBuilder:
                     'segment': schedule_time_segments,
                     'iso': {'start': get_iso_time(schedule_time_range[0], date, utc_offset), 'end': get_iso_time(schedule_time_range[1], date, utc_offset)}
                 },
+                'priority': patient_values['priority'],
+                'flexibility': patient_values['flexibility'],
                 'fhir_resource': f'{appointment_id}.fhir.json'
             }
             agent = {
