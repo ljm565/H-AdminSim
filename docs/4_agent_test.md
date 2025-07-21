@@ -63,16 +63,16 @@ In contrast, when evaluating the entire process sequentially, the result of each
 You can execute the agent tasks using the below commands:
 ```bash
 # Evaluating only the `department` capability
-python3 -u src/run/agent_test.py --config config/agent_test.yaml --type department --output_dir ${SYNTHETIC_DATA_FOLDER}/agent_results
+python3 -u src/run/agent_simulate.py --config config/agent_simulate.yaml --type department --output_dir ${SYNTHETIC_DATA_FOLDER}/agent_results
 
 # Evaluating only the `fhir_resource` capability
-python3 -u src/run/agent_test.py --config config/agent_test.yaml --type fhir_resource --output_dir ${SYNTHETIC_DATA_FOLDER}/agent_results
+python3 -u src/run/agent_simulate.py --config config/agent_simulate.yaml --type fhir_resource --output_dir ${SYNTHETIC_DATA_FOLDER}/agent_results
 
 # Sequentially evaluating the `department` and `schedule` tasks
-python3 -u src/run/agent_test.py --config config/agent_test.yaml --type department schedule --output_dir ${SYNTHETIC_DATA_FOLDER}/agent_results
+python3 -u src/run/agent_simulate.py --config config/agent_simulate.yaml --type department schedule --output_dir ${SYNTHETIC_DATA_FOLDER}/agent_results
 
 # Sequentially evaluating all tasks
-python3 -u src/run/agent_test.py --config config/agent_test.yaml --type department schedule fhir_resource fhir_api --output_dir ${SYNTHETIC_DATA_FOLDER}/agent_results
+python3 -u src/run/agent_simulate.py --config config/agent_simulate.yaml --type department schedule fhir_resource fhir_api --output_dir ${SYNTHETIC_DATA_FOLDER}/agent_results
 ```
 
 &nbsp;
