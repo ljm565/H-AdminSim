@@ -22,6 +22,7 @@ class HospitalEnvironment:
             'information': 'information mismatch',
             'physician': 'incorrect physician',
             'schedule': 'invalid schedule',
+            'priority': 'lower priority',
             'flexibility': 'invalid flexibility',
             'status': 'invalid status',
             'conflict': 'schedule conflict',
@@ -29,7 +30,13 @@ class HospitalEnvironment:
         }
 
 
-    def __init_variable(self, agent_test_data):
+    def __init_variable(self, agent_test_data: dict):
+        """
+        Initialize the environment variables based on the agent test data.
+
+        Args:
+            agent_test_data (dict): An agent test data to simulate a hospital environmnet.
+        """
         getcontext().prec = 10
         self._epsilon = 1e-6
         self._START_HOUR = agent_test_data.get('metadata').get('time').get('start_hour')
@@ -38,12 +45,18 @@ class HospitalEnvironment:
         _country_code = agent_test_data.get('metadata').get('country_code', 'KR')
         
         self._utc_offset = get_utc_offset(_country_code)
-        self.current_time = None
+        self.current_time = get_iso_time(
+            time_hour=random.uniform(max(0, self._START_HOUR - 6), max(0, self._START_HOUR - self._epsilon)),
+            utc_offset=self._utc_offset
+        )
         self.patient_schedules = list()
         self._tmp_patient_schedules = None
 
 
-    def _changed_schedule_sanity_check(self, changed_schedule: list[dict], doctor_information: dict) -> bool:
+    def _changed_schedule_sanity_check(self,
+                                       changed_schedule: list[dict],
+                                       doctor_information: dict,
+                                       patient_condition: dict) -> bool:
         if len(changed_schedule) == 0:
             return True, self.status_codes['correct'], doctor_information     # No changes to check
         
@@ -76,6 +89,11 @@ class HospitalEnvironment:
                                     if e_schedule[k] != c_schedule[k] and doctor_information[e_schedule[k]]['department'] != doctor_information[c_schedule[k]]['department']:
                                         status_code = self.status_codes['physician']
                                         raise AssertionError
+
+                            # Check if the priority is higher than the existing schedule (lower is higher priority)
+                            if e_schedule['priority'] <= patient_condition['priority']:
+                                status_code = self.status_codes['priority']
+                                raise AssertionError
 
                             # Check if the flexibility is correct
                             if e_schedule['flexibility'] != 'flexible':
@@ -152,19 +170,28 @@ class HospitalEnvironment:
             return True, self.status_codes['correct'], tmp_doctor_information
 
 
+    # def update_current_time(self):
+    #     """
+    #     Set the current time to a random point between the current time and the most recent patient's appointment end time.
+    #     """
+    #     if self.current_time == None:
+    #         self.current_time = get_iso_time(
+    #             time_hour=random.uniform(max(0, self._START_HOUR - 6), max(0, self._START_HOUR - self._epsilon)),
+    #             utc_offset=self._utc_offset
+    #         )
+    #     else:
+    #         min_iso_time = self.current_time
+    #         max_iso_time = get_iso_time(self.patient_schedules[-1]['schedule'][-1], utc_offset=self._utc_offset)
+    #         self.current_time = generate_random_iso_time_between(min_iso_time, max_iso_time)    # TODO: bug fix when new department patient started after the current time
+
+
     def update_current_time(self):
         """
         Set the current time to a random point between the current time and the most recent patient's appointment end time.
         """
-        if self.current_time == None:
-            self.current_time = get_iso_time(
-                time_hour=random.uniform(max(0, self._START_HOUR - 6), max(0, self._START_HOUR - self._epsilon)),
-                utc_offset=self._utc_offset
-            )
-        else:
-            min_iso_time = self.current_time
-            max_iso_time = get_iso_time(self.patient_schedules[-1]['schedule'][-1], utc_offset=self._utc_offset)
-            self.current_time = generate_random_iso_time_between(min_iso_time, max_iso_time)    # TODO: bug fix when new department patient started after the current time
+        min_iso_time = self.current_time
+        max_iso_time = get_iso_time(self.patient_schedules[-1]['schedule'][-1], utc_offset=self._utc_offset)
+        self.current_time = generate_random_iso_time_between(min_iso_time, max_iso_time)    # TODO: bug fix when new department patient started after the current time
 
     
     def update_patient_status(self):
@@ -190,8 +217,12 @@ class HospitalEnvironment:
     def update_env(self, status: bool, patient_schedule: Union[dict, str]):
         if status:
             self.patient_schedules = deepcopy(self._tmp_patient_schedules) if self._tmp_patient_schedules != None else self.patient_schedules
-            patient_schedule['status'] = 'scheduled'
+            
+            if len(self.patient_schedules) and patient_schedule['schedule'][0] > self.patient_schedules[-1]['schedule'][0]:
+                self.update_current_time()
+            
             self.patient_schedules.append(patient_schedule)
+            self.update_patient_status()
 
         self.reset_variable()
  

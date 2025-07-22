@@ -24,6 +24,17 @@ def load_config(config_path):
     return config
 
 
+def ordering_agent_test_data(agent_test_data: dict):
+    """
+    Order the agent test data by the schedule start time.
+
+    Args:
+        agent_test_data (dict): An agent test data to simulate a hospital environmnet.
+    """
+    agent_data = agent_test_data['agent_data']
+    agent_data.sort(key=lambda x: x[0]['schedule']['time'])     # In-place logic
+
+
 def main(args):
     # Init config
     config = load_config(args.config)
@@ -56,6 +67,7 @@ def main(args):
         # Data per hospital
         for i, agent_test_data in enumerate(all_agent_test_data):
             agent_results = dict()
+            ordering_agent_test_data(agent_test_data)
             environment = HospitalEnvironment(agent_test_data)
             basename = os.path.splitext(os.path.basename(agent_test_data_files[i]))[0]
             save_path = os.path.join(args.output_dir, f'{basename}_result.json')

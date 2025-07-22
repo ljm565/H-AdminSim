@@ -319,7 +319,8 @@ class AssignSchedule(Task):
         ################## Check the predicted changed schedules validities ##################
         sanity, status_code, tmp_doctor_information = environment._changed_schedule_sanity_check(
             prediction['changed_existing_schedule_list'],
-            doctor_information
+            doctor_information,
+            patient_condition,
         )
         if not sanity:
             return sanity, status_code, prediction, doctor_information
@@ -415,12 +416,6 @@ class AssignSchedule(Task):
             return results
         
         # LLM call and compare the validity of the LLM output
-        ## Update hospital environment
-        environment.update_current_time()
-        environment.update_patient_status()
-        doctor_information_str = json.dumps(doctor_information, indent=2)   # String-converted ditionary 
-        
-        ## LLM prediction
         duration = test_data.get('constraint').get('duration')
         priority = test_data.get('constraint').get('priority')
         flexibility = test_data.get('constraint').get('flexibility')
@@ -432,7 +427,7 @@ class AssignSchedule(Task):
             DURATION=duration,
             PRIORITY=priority,
             FLEXIBILITY=flexibility,
-            DOCTOR=doctor_information_str,
+            DOCTOR=json.dumps(doctor_information, indent=2),
             PATIENT_SCHEDULES=json.dumps(environment.patient_schedules, indent=2)
         )
         prediction = self.client(
