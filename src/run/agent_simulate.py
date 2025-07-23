@@ -71,6 +71,7 @@ def main(args):
             environment = HospitalEnvironment(agent_test_data)
             basename = os.path.splitext(os.path.basename(agent_test_data_files[i]))[0]
             save_path = os.path.join(args.output_dir, f'{basename}_result.json')
+            log(f'{basename} simulation started..', color=True)
             
             # Skip if the result already exits
             if args.skip_saved_file and os.path.exists(save_path):

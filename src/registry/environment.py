@@ -17,15 +17,14 @@ class HospitalEnvironment:
     def __init__(self, agent_test_data):
         self.__init_variable(agent_test_data)
         self.status_codes = {
-            'department': 'incorrect department',
-            'format': 'incorrect format',
-            'information': 'information mismatch',
-            'physician': 'incorrect physician',
-            'schedule': 'invalid schedule',
-            'priority': 'lower priority',
-            'flexibility': 'invalid flexibility',
-            'status': 'invalid status',
-            'conflict': 'schedule conflict',
+            'format': 'reschedule: incorrect format',
+            'information': 'reschedule: information mismatch',
+            'physician': 'reschedule: incorrect physician',
+            'schedule': 'reschedule: invalid schedule',
+            'priority': {'priority': 'reschedule: lower priority', 'booking': 'reschedule: booking priority'},
+            'flexibility': 'reschedule: invalid flexibility',
+            'status': 'reschedule: invalid status',
+            'conflict': 'reschedule: schedule conflict',
             'correct': 'pass',
         }
 
@@ -56,8 +55,38 @@ class HospitalEnvironment:
     def _changed_schedule_sanity_check(self,
                                        changed_schedule: list[dict],
                                        doctor_information: dict,
-                                       patient_condition: dict) -> bool:
+                                       patient_condition: dict) -> Tuple[bool, str, dict]:
         if len(changed_schedule) == 0:
+            times = dict()
+            for schedule in self.patient_schedules:
+                e_priority = schedule['priority']
+                e_flexibility = schedule['flexibility']
+                e_status = schedule['status']
+                e_department = schedule['department']
+                e_physician = schedule['attending_physician']
+
+                if e_flexibility == 'flexible' and e_status == 'scheduled' and \
+                        e_priority > patient_condition['priority'] and e_department == patient_condition['department']:    
+                    times.setdefault(e_physician, []).append(schedule['schedule'])
+
+            # Group consecutive time segments for each physician
+            for physician, time in times.items():
+                consecutive_blocks = list()
+                tmp_time_segments = sorted(sum([convert_time_to_segment(self._START_HOUR, self._END_HOUR, self._TIME_UNIT, t) for t in time], []))
+                group = [tmp_time_segments[0]]
+                for i in range(1, len(tmp_time_segments)):
+                    if tmp_time_segments[i] == tmp_time_segments[i - 1] + 1:
+                        group.append(tmp_time_segments[i])
+                    else:
+                        consecutive_blocks.append(group)
+                        group = [tmp_time_segments[i]]
+                consecutive_blocks.append(group)
+                times[physician] = consecutive_blocks
+            
+            # Check whether rescheduling is possible
+            if any(patient_condition['duration'] / self._TIME_UNIT <= len(blocks) for v in times.values() for blocks in v):
+                return False, self.status_codes['priority']['priority'], doctor_information
+
             return True, self.status_codes['correct'], doctor_information     # No changes to check
         
         else:
@@ -86,13 +115,13 @@ class HospitalEnvironment:
                                     status_code = self.status_codes['information']
                                     raise AssertionError
                                 elif k == 'attending_physician':
-                                    if e_schedule[k] != c_schedule[k] and doctor_information[e_schedule[k]]['department'] != doctor_information[c_schedule[k]]['department']:
+                                    if e_schedule[k] != c_schedule[k] and e_schedule['department'] != doctor_information[c_schedule[k]]['department']:
                                         status_code = self.status_codes['physician']
                                         raise AssertionError
 
                             # Check if the priority is higher than the existing schedule (lower is higher priority)
                             if e_schedule['priority'] <= patient_condition['priority']:
-                                status_code = self.status_codes['priority']
+                                status_code = self.status_codes['priority']['priority']
                                 raise AssertionError
 
                             # Check if the flexibility is correct
@@ -131,8 +160,25 @@ class HospitalEnvironment:
                     continue
 
             # If not all schedules are valid, return False
-            if not all(sanities):
-                return False, f"incorrect reschedule results: {' & '.join(status)}", doctor_information
+            for s, c in zip(sanities, status):
+                if not s:
+                    return False, c, doctor_information
+            
+            # Check booking priority when rescheduled things are valid  # TODO: idx 이전 스케줄이 변경이 안 되는 경우도 체크 해야하므로 (idx +1)이 아닌 처음부터 봐야할듯
+            for idx in e_schedule_idx:
+                for _idx in range(idx + 1, len(self.patient_schedules)):
+                    # _idx means the booking priority of the patient (higher is lower priority)
+                    if _idx not in e_schedule_idx and self.patient_schedules[_idx]['flexibility'] == 'flexible' \
+                        and self.patient_schedules[_idx]['status'] == 'scheduled' and self.patient_schedules[_idx]['priority'] > patient_condition['priority']:
+                        c_physician = c_schedule['attending_physician']
+                        e_department = self.patient_schedules[_idx]['department']
+                        c_duration = float(Decimal(str(c_schedule['schedule'][-1])) - Decimal(str(c_schedule['schedule'][0])))
+                        e_duration = float(Decimal(str(self.patient_schedules[_idx]['schedule'][-1])) - Decimal(str(self.patient_schedules[_idx]['schedule'][0])))
+
+                        # The case where the lower booking priorty patient has a longer durtion at the same department
+                        # If the booking priority is low, handle it conservatively by treating only cases with the same duration as failures.
+                        if (e_duration == c_duration and e_department == doctor_information[c_physician]['department']):
+                            return False, self.status_codes['priority']['booking'], doctor_information
 
             # If all the basic reschedules' information are valid, check the time conflicts
             self._tmp_patient_schedules = deepcopy(self.patient_schedules)
@@ -150,14 +196,20 @@ class HospitalEnvironment:
                 changed_physician = c_schedule['attending_physician']
                 fixed_schedules = tmp_doctor_information[changed_physician]['schedule']
 
-                prediction_schedule_segments = convert_time_to_segment(self._START_HOUR,
-                                                            self._END_HOUR,
-                                                            self._TIME_UNIT,
-                                                            changed_time)
-                fixed_schedule_segments = sum([convert_time_to_segment(self._START_HOUR, 
-                                                                self._END_HOUR, 
-                                                                self._TIME_UNIT, 
-                                                                fs) for fs in fixed_schedules], [])
+                prediction_schedule_segments = convert_time_to_segment(
+                    self._START_HOUR,
+                    self._END_HOUR,
+                    self._TIME_UNIT,
+                    changed_time
+                )
+                fixed_schedule_segments = sum(
+                    [convert_time_to_segment(
+                        self._START_HOUR, 
+                        self._END_HOUR, 
+                        self._TIME_UNIT, 
+                        fs
+                    ) for fs in fixed_schedules], []
+                )
                 
                 if len(set(prediction_schedule_segments) & set(fixed_schedule_segments)):
                     return False, self.status_codes['conflict'], doctor_information
@@ -168,22 +220,7 @@ class HospitalEnvironment:
                 tmp_doctor_information[changed_physician]['schedule'].sort()
             
             return True, self.status_codes['correct'], tmp_doctor_information
-
-
-    # def update_current_time(self):
-    #     """
-    #     Set the current time to a random point between the current time and the most recent patient's appointment end time.
-    #     """
-    #     if self.current_time == None:
-    #         self.current_time = get_iso_time(
-    #             time_hour=random.uniform(max(0, self._START_HOUR - 6), max(0, self._START_HOUR - self._epsilon)),
-    #             utc_offset=self._utc_offset
-    #         )
-    #     else:
-    #         min_iso_time = self.current_time
-    #         max_iso_time = get_iso_time(self.patient_schedules[-1]['schedule'][-1], utc_offset=self._utc_offset)
-    #         self.current_time = generate_random_iso_time_between(min_iso_time, max_iso_time)    # TODO: bug fix when new department patient started after the current time
-
+        
 
     def update_current_time(self):
         """
@@ -191,7 +228,7 @@ class HospitalEnvironment:
         """
         min_iso_time = self.current_time
         max_iso_time = get_iso_time(self.patient_schedules[-1]['schedule'][-1], utc_offset=self._utc_offset)
-        self.current_time = generate_random_iso_time_between(min_iso_time, max_iso_time)    # TODO: bug fix when new department patient started after the current time
+        self.current_time = generate_random_iso_time_between(min_iso_time, max_iso_time)    # TODO: bug fix when the max_iso_time is smaller than min_iso_time case
 
     
     def update_patient_status(self):
