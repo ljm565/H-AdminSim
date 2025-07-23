@@ -26,7 +26,7 @@ class ScheduleAssigner:
 
     def schedule_segment_assign(self,
                                 p: float,
-                                segments: Optional[list[list[int]]] = None) -> list[list[int]]:
+                                segments: Optional[list[int]] = None) -> list[list[int]]:
         """
         Randomly assign a proportion of schedule time segments into grouped consecutive blocks.
 
@@ -36,7 +36,7 @@ class ScheduleAssigner:
 
         Args:
             p (float): Proportion of total segments to assign, between 0 and 1.
-            segments (Optional[list[list[int]]], optional): Specific segemnts. Defaults to None.
+            segments (Optional[list[int]], optional): Specific segments. Defaults to None.
 
         Returns:
             list[list[int]]: A list of groups, where each group is a list of consecutive segment indices.
@@ -76,14 +76,14 @@ class ScheduleAssigner:
     def appointment_segment_assign(self,
                                    p: float,
                                    max_chunk_size: int,
-                                   segments: Optional[list[list[int]]] = None) -> list[list[int]]:
+                                   segments: Optional[list[int]] = None) -> list[list[int]]:
         """
         Randomly assign appointment time segments from the remaining (unassigned) segments.
 
         Args:
             p (float): Proportion of remaining segments to sample and assign.
             max_chunk_size (int): The maximum time segment size for each appointment.
-            segments (Optional[list[list[int]]], optional): Specific segemnts. Defaults to None.
+            segments (Optional[list[int]], optional): Specific segments. Defaults to None.
 
         Returns:
             list[list[int]]: Newly assigned segments from the remaining pool, grouped consecutively.
