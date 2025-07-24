@@ -6,6 +6,7 @@ Hospital time information:
 * Start_hour: {START_HOUR}
 * End_hour: {END_HOUR}
 * Time unit: {TIME_UNIT}
+* Current time: {CURRENT_TIME}
 
 Patient information:
 * Department: {DEPARTMENT}
@@ -25,12 +26,13 @@ The existing patient schedules:
 
 Patient scheduling instructions:
 1. The basic patient scheduling rule is to assign appointments sequentially in the doctor’s available time slots, based on each patient’s required duration.
-2. A lower priority number indicates higher importance. Therefore, if a patient has a lower priority number, they are allowed to change the existing patient schedule. However, if the priority is the same, the existing appointments cannot be changed, as they were booked earlier.
-3. When modifying an existing schedule, if the existing patient’s flexibility is set to fixed, their schedule cannot be changed regardless of their priority.
-4. Schedule modifications are only allowed for existing patients whose schedule status is "scheduled". Schedules with statuses such as "completed" or "in_progress" cannot be modified.
-5. Changing the attending doctor is allowed only among doctors within the same department regardless of their specialty, but the new attending doctor’s schedule must be taken into account.
-6. If, after considering all the conditions above, multiple schedules need to be rescheduled, you must delay the time of each rescheduling target in the same order as their original booking order, and include all of them under the "changed_existing_schedule_list" key (Refer to the "Answer format examples" at the bottom).
-7. If there are any changes to the existing schedule, the new schedule should be output under the "schedule" key, and only the modified entries from the existing schedule should be rescheduled and output under the "changed_existing_schedule_list" key. If there are no changes, the value of "changed_existing_schedule_list" should be an empty list (Refer to the "Answer format examples" at the bottom).
+2. When scheduling a patient's appointment, the schedule time must be later than the "current time" (ISO format) provided in the "Hospital time information" above.
+3. A lower priority number indicates higher importance. Therefore, if a patient has a lower priority number, they are allowed to change the existing patient schedule. However, if the priority is the same, the existing appointments cannot be changed, as they were booked earlier.
+4. When modifying an existing schedule, if the existing patient’s flexibility is set to fixed, their schedule cannot be changed regardless of their priority.
+5. Schedule modifications are only allowed for existing patients whose schedule status is "scheduled". Schedules with statuses such as "completed" or "in_progress" cannot be modified.
+6. Changing the attending doctor is allowed only among doctors within the same department regardless of their specialty, but the new attending doctor’s schedule must be taken into account.
+7. If, after considering all the conditions above, multiple schedules need to be rescheduled, you must delay the time of each rescheduling target in the same order as their original booking order, and include all of them under the "changed_existing_schedule_list" key (Refer to the "Answer format examples" at the bottom).
+8. If there are any changes to the existing schedule, the new schedule should be output under the "schedule" key, and only the modified entries from the existing schedule should be rescheduled and output under the "changed_existing_schedule_list" key. If there are no changes, the value of "changed_existing_schedule_list" should be an empty list (Refer to the "Answer format examples" at the bottom).
 
 Answer format examples:
 1. In case the existing schedule is not changed

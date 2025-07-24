@@ -98,12 +98,14 @@ def get_image_extension(path: str) -> str:
 
 
 
-def autopct_format(values: list[int]):
+def autopct_format(values: list[int], threshold: float = 5.0):
     """
     Returns a formatting function for pie chart percentages and counts.
 
     Args:
         values (list[int]): List of values corresponding to each pie chart slice.
+        threshold (float): Minimum percentage value required to display the label. Slices with 
+                           percentages below this threshold will not show any text.
 
     Returns:
         function: A function that takes a percentage (float) and returns a formatted string
@@ -112,7 +114,7 @@ def autopct_format(values: list[int]):
     def my_autopct(pct):
         total = sum(values)
         count = int(round(pct * total / 100.0))
-        return f'{pct:.1f}%\n({count})'
+        return f'{pct:.1f}%\n({count})' if pct > threshold else ''
     return my_autopct
 
 
@@ -135,7 +137,7 @@ def draw_fail_donut_subplots(fail_data_dict: dict, save_path: str) -> None:
     ncols = min(4, num_plots)
     nrows = math.ceil(num_plots / ncols)
 
-    fig, axes = plt.subplots(nrows, ncols, figsize=(4 * ncols, 4 * nrows))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 7 * nrows))
     axes = axes.flatten() if num_plots > 1 else [axes]
     cmap = plt.get_cmap('tab10')
     
@@ -144,20 +146,36 @@ def draw_fail_donut_subplots(fail_data_dict: dict, save_path: str) -> None:
         fail_summary = Counter(failed_cases)
         labels = list(fail_summary.keys())
         sizes = list(fail_summary.values())
+        sorted_items = sorted(zip(labels, sizes), key=lambda x: x[1], reverse=True)
+        labels, sizes = zip(*sorted_items)  
+        total = sum(sizes)
+        percentages = [s / total * 100 for s in sizes]
         colors = cmap.colors[:len(labels)]
 
         ax = axes[idx]
+        pct_str = autopct_format(sizes, 4.0)
+        
         wedges, texts, autotexts = ax.pie(
             sizes,
-            labels=labels,
-            autopct=autopct_format(sizes),
+            labels=None,
+            autopct=pct_str,
             pctdistance=0.7,
             startangle=90,
             counterclock=False,
             colors=colors,
-            wedgeprops=dict(width=0.6)
+            wedgeprops=dict(width=0.7)
         )
 
+        legend_labels = [f"{label} ({pct:.1f}%, {size})" if pct < 4.0 else label for label, size, pct in zip(labels, sizes, percentages)]
+        ax.legend(
+            wedges,
+            legend_labels,
+            title="Failure Types",
+            loc="lower center",
+            bbox_to_anchor=(0.5, -0.3),
+            ncol=2,
+            fontsize=9
+        )
         ax.set_title(f'"{key}"', fontsize=12, pad=10)
         ax.axis('equal')
 

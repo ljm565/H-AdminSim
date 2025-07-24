@@ -332,8 +332,9 @@ class AssignSchedule(Task):
             start = prediction['schedule'][doctor_name]['start']
             end = prediction['schedule'][doctor_name]['end']
             fixed_schedules = tmp_doctor_information[doctor_name]['schedule']
+            start_iso_time = get_iso_time(start, utc_offset=environment._utc_offset)
             assert isinstance(start, float) and isinstance(end, float) \
-                and start < end and start >= self._START_HOUR and end <= self._END_HOUR
+                and start < end and start >= self._START_HOUR and end <= self._END_HOUR and start_iso_time > environment.current_time
             assert patient_condition['department'] == tmp_doctor_information[doctor_name]['department'] \
                 and patient_condition['duration'] == round(end - start, 4)
         except KeyError:
@@ -423,6 +424,7 @@ class AssignSchedule(Task):
             START_HOUR=self._START_HOUR,
             END_HOUR=self._END_HOUR,
             TIME_UNIT=self._TIME_UNIT,
+            CURRENT_TIME=environment.current_time,
             DEPARTMENT=department,
             DURATION=duration,
             PRIORITY=priority,
