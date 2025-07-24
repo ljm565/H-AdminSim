@@ -2,6 +2,7 @@
 
 
 ### Recent updates 📣
+* *July 2025 (v0.4.1)*: Add functionality to schedule appointments based on the hospital's current time (the time the patient contacted for booking).
 * *July 2025 (v0.4.0)*: Added a hospital simulation environment to enable rescheduling based on patient priority, flexibility, and other constraints.
 * *July 2025 (v0.3.1)*: Added agent results evaluation codes.
 * *July 2025 (v0.3.0)*: This repository has supported Gemini- and GPT-based LLM agent task testing: 'department', 'schedule', 'fhir_resource', 'fhir_api'.
