@@ -3,7 +3,13 @@ from pathlib import Path
 from copy import deepcopy
 from typing import Tuple, Union, Optional
 
-from tools import GeminiClient, GPTClient, DataConverter
+from tools import (
+    GeminiClient,
+    GeminiLangChainClient,
+    GPTClient,
+    GPTLangChainClient,
+    DataConverter,
+)
 from utils import log
 from utils.fhir_utils import *
 from utils.filesys_utils import txt_load, json_load
@@ -215,7 +221,10 @@ class AssignSchedule(Task):
         self.__init_env(config)
         self.system_prompt = txt_load(self._system_prompt_path)
         self.user_prompt_template = txt_load(self._user_prompt_path)
-        self.client = GeminiClient(config.model) if 'gemini' in config.model.lower() else GPTClient(config.model)
+        if self.ensure_output_format:
+            self.client = GeminiLangChainClient(config.model) if 'gemini' in config.model.lower() else GPTLangChainClient(config.model)
+        else:
+            self.client = GeminiClient(config.model) if 'gemini' in config.model.lower() else GPTClient(config.model)
 
 
     def __init_env(self, config):
@@ -227,33 +236,40 @@ class AssignSchedule(Task):
         """
         self._system_prompt_path = config.schedule_task.system_prompt
         self._user_prompt_path = config.schedule_task.user_prompt
+        self.ensure_output_format = config.ensure_output_format
 
     
     @staticmethod
-    def postprocessing(text: str) -> Union[str, dict]:
+    def postprocessing(text: Union[str, dict]) -> Union[str, dict]:
         """
         Attempts to parse the given text as JSON. If parsing succeeds, returns a dictionary;
         otherwise, returns the original string.
 
         Args:
-            text (str): The text output to post-process, potentially a JSON-formatted string.
+            text (Union[str, dict]): The text output to post-process, potentially a JSON-formatted string. 
 
         Returns:
             Union[str, dict]: A dictionary if the text is valid JSON, otherwise the original string.
         """
         try:
-            match = re.search(r'```json\s*(\{.*?\})\s*```', text, re.DOTALL)
-            if match:
+            if isinstance(text, str):
+                match = re.search(r'```json\s*(\{.*?\})\s*```', text, re.DOTALL)
+                if not match:
+                    return text
                 json_str = match.group(1)
                 text_dict = json.loads(json_str)
-                assert len(text_dict) == 2 and all(k in text_dict for k in ['schedule', 'changed_existing_schedule_list'])   # Basic sanity check
-                key = list(text_dict['schedule'].keys())[0]
-                text_dict['schedule'][key]['start'] = float(text_dict['schedule'][key]['start'])
-                text_dict['schedule'][key]['end'] = float(text_dict['schedule'][key]['end'])
-                return text_dict
-            return text
+                
+            else:
+                text_dict = text
+            
+            assert len(text_dict) == 2 and all(k in text_dict for k in ['schedule', 'changed_existing_schedule_list'])   # Basic sanity check
+            key = list(text_dict['schedule'].keys())[0]
+            text_dict['schedule'][key]['start'] = float(text_dict['schedule'][key]['start'])
+            text_dict['schedule'][key]['end'] = float(text_dict['schedule'][key]['end'])
+            return text_dict
+        
         except:
-            return text
+            return str(text)
 
 
     def __extract_departments(self, data_pair: Tuple[dict, dict], agent_results: dict) -> Tuple[str, bool]:
@@ -420,24 +436,44 @@ class AssignSchedule(Task):
         duration = test_data.get('constraint').get('duration')
         priority = test_data.get('constraint').get('priority')
         flexibility = test_data.get('constraint').get('flexibility')
-        user_prompt = self.user_prompt_template.format(
-            START_HOUR=self._START_HOUR,
-            END_HOUR=self._END_HOUR,
-            TIME_UNIT=self._TIME_UNIT,
-            CURRENT_TIME=environment.current_time,
-            DEPARTMENT=department,
-            DURATION=duration,
-            PRIORITY=priority,
-            FLEXIBILITY=flexibility,
-            DOCTOR=json.dumps(doctor_information, indent=2),
-            PATIENT_SCHEDULES=json.dumps(environment.patient_schedules, indent=2)
-        )
-        prediction = self.client(
-            user_prompt,
-            system_prompt=self.system_prompt, 
-            using_multi_turn=False
-        )
-        prediction = AssignSchedule.postprocessing(prediction)
+        
+        if self.ensure_output_format:
+            prediction = self.client(
+                user_prompt=self.user_prompt_template,
+                system_prompt=self.system_prompt,
+                **{
+                    'START_HOUR': self._START_HOUR,
+                    'END_HOUR': self._END_HOUR,
+                    'TIME_UNIT': self._TIME_UNIT,
+                    'CURRENT_TIME': environment.current_time,
+                    'DEPARTMENT': department,
+                    'DURATION': duration,
+                    'PRIORITY': priority,
+                    'FLEXIBILITY': flexibility,
+                    'DOCTOR': json.dumps(doctor_information, indent=2),
+                    'PATIENT_SCHEDULES': json.dumps(environment.patient_schedules, indent=2)
+                }
+            )
+
+        else:
+            user_prompt = self.user_prompt_template.format(
+                START_HOUR=self._START_HOUR,
+                END_HOUR=self._END_HOUR,
+                TIME_UNIT=self._TIME_UNIT,
+                CURRENT_TIME=environment.current_time,
+                DEPARTMENT=department,
+                DURATION=duration,
+                PRIORITY=priority,
+                FLEXIBILITY=flexibility,
+                DOCTOR=json.dumps(doctor_information, indent=2),
+                PATIENT_SCHEDULES=json.dumps(environment.patient_schedules, indent=2)
+            )
+            prediction = self.client(
+                user_prompt,
+                system_prompt=self.system_prompt, 
+                using_multi_turn=False
+            )
+        prediction = AssignSchedule.postprocessing(prediction)    
         status, status_code, prediction, doctor_information = self._sanity_check(
             prediction, 
             {'patient': test_data.get('patient'), 'department': department, 'duration': duration, 'priority': priority, 'flexibility': flexibility},

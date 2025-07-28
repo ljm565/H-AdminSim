@@ -16,3 +16,5 @@ google-genai==1.19.0
 pillow==11.2.1
 orjson==3.10.18
 langchain==0.3.27
+langchain-openai==0.3.28
+langchain-google-genai==2.1.8

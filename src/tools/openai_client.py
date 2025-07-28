@@ -1,7 +1,11 @@
 from openai import OpenAI
 from dotenv import load_dotenv
 from typing import List, Tuple, Optional
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import JsonOutputParser
 
+from registry import ScheduleModel
 from utils import log
 from utils.image_preprocess_utils import *
 
@@ -9,8 +13,8 @@ from utils.image_preprocess_utils import *
 
 class GPTClient:
     def __init__(self, model: str):
-        self._init_environment()
         self.model = model
+        self._init_environment()
         self.histories = list()
         self._multi_turn_system_prompt_already_set = False
 
@@ -154,6 +158,46 @@ class GPTClient:
                 assistant_msg = response.choices[0].message
 
             return assistant_msg.content
+        
+        except Exception as e:
+            raise e
+
+
+
+class GPTLangChainClient(GPTClient):
+    def __init__(self, model: str):
+        super(GPTLangChainClient, self).__init__(model)
+        self.client_lc = ChatOpenAI(
+            model=self.model,
+            api_key=self.client.api_key
+        )
+
+    
+    def __call__(self,
+                 user_prompt: str,
+                 system_prompt: Optional[str] = None,
+                 image_path: Optional[str] = None,
+                 image_size: Optional[Tuple[int]] = None,
+                 using_multi_turn: bool = False,
+                 **kwargs) -> str:
+        try:
+            # To ensure empty history
+            self.reset_history()
+
+            # Prompts
+            parser = JsonOutputParser(pydantic_object=ScheduleModel)
+            prompt = ChatPromptTemplate.from_messages(
+                [
+                    ('system', system_prompt),
+                    ('human', user_prompt)
+                ]
+            ).partial(format_instructions=parser.get_format_instructions())
+            chain = prompt | self.client_lc | parser
+            
+            # Model response
+            response = chain.invoke(kwargs)
+
+            return response
         
         except Exception as e:
             raise e
