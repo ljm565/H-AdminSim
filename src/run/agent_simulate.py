@@ -68,7 +68,7 @@ def main(args):
         for i, agent_test_data in enumerate(all_agent_test_data):
             agent_results = dict()
             ordering_agent_test_data(agent_test_data)
-            environment = HospitalEnvironment(agent_test_data)
+            environment = HospitalEnvironment(config, agent_test_data)
             basename = os.path.splitext(os.path.basename(agent_test_data_files[i]))[0]
             save_path = os.path.join(args.output_dir, f'{basename}_result.json')
             log(f'{basename} simulation started..', color=True)

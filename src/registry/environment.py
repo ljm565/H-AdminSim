@@ -4,6 +4,9 @@ from datetime import datetime
 from typing import Union, Tuple
 from decimal import Decimal, getcontext
 
+from tasks import FHIRManager
+from utils import log
+from utils.fhir_utils import convert_fhir_resources_to_doctor_info
 from utils.common_utils import (
     get_iso_time,
     get_utc_offset,
@@ -14,8 +17,11 @@ from utils.common_utils import (
 
 
 class HospitalEnvironment:
-    def __init__(self, agent_test_data):
+    def __init__(self, config, agent_test_data):
+        self.fhir_manager = FHIRManager(config)
         self.__init_variable(agent_test_data)
+        
+        # Define error codes
         self.status_codes = {
             'format': 'reschedule: incorrect format',
             'information': 'reschedule: information mismatch',
@@ -38,6 +44,7 @@ class HospitalEnvironment:
         """
         getcontext().prec = 10
         self._epsilon = 1e-6
+        self.HOSPITAL_NAME = agent_test_data.get('metadata').get('hospital_name')
         self._START_HOUR = agent_test_data.get('metadata').get('time').get('start_hour')
         self._END_HOUR = agent_test_data.get('metadata').get('time').get('end_hour')
         self._TIME_UNIT = agent_test_data.get('metadata').get('time').get('interval_hour')
@@ -50,6 +57,31 @@ class HospitalEnvironment:
         )
         self.patient_schedules = list()
         self._tmp_patient_schedules = None
+        self.first_verbose = True
+
+
+    def doctor_info_from_fhir(self) -> dict:
+        """
+        Make doctor infromation dictionary from the FHIR resources for the simulation for the simulation
+
+        Returns:
+            dict: doctor_information (dict): Dictionary of doctor data including their existing schedules.
+                                             Each key is a doctor's name, and each value includes a 'schedule' field.
+        """
+        if self.first_verbose:
+            log('Build doctor information from the FHIR resources..')
+            self.first_verbose = False
+        fhir_practitioner = list(filter(lambda x: self.HOSPITAL_NAME.replace('_', '') in x['resource']['id'], self.fhir_manager.read_all('Practitioner', verbose=False)))
+        fhir_practitionerrole = list(filter(lambda x: self.HOSPITAL_NAME.replace('_', '') in x['resource']['id'], self.fhir_manager.read_all('PractitionerRole', verbose=False)))
+        fhir_schedule = list(filter(lambda x: self.HOSPITAL_NAME.replace('_', '') in x['resource']['id'], self.fhir_manager.read_all('Schedule', verbose=False)))
+        fhir_slot = list(filter(lambda x: self.HOSPITAL_NAME.replace('_', '') in x['resource']['id'], self.fhir_manager.read_all('Slot', verbose=False)))
+        doctor_information = convert_fhir_resources_to_doctor_info(
+            fhir_practitioner,
+            fhir_practitionerrole,
+            fhir_schedule,
+            fhir_slot,
+        )
+        return doctor_information
 
 
     def _changed_schedule_sanity_check(self,

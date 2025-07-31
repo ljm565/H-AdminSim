@@ -237,6 +237,7 @@ class AssignSchedule(Task):
         self._system_prompt_path = config.schedule_task.system_prompt
         self._user_prompt_path = config.schedule_task.user_prompt
         self.ensure_output_format = config.ensure_output_format
+        self.integration_with_fhir = config.integration_with_fhir
 
     
     @staticmethod
@@ -410,6 +411,7 @@ class AssignSchedule(Task):
         self._START_HOUR = agent_test_data.get('metadata').get('time').get('start_hour')
         self._END_HOUR = agent_test_data.get('metadata').get('time').get('end_hour')
         self._TIME_UNIT = agent_test_data.get('metadata').get('time').get('interval_hour')
+        # doctor_information = environment.doctor_info_from_fhir() if self.integration_with_fhir else agent_test_data.get('doctor')
         doctor_information = agent_test_data.get('doctor')
         department, sanity = self.__extract_departments(data_pair, agent_results)
         results = self.get_result_dict()

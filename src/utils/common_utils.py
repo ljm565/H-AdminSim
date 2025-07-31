@@ -1,3 +1,4 @@
+import re
 import pytz
 import random
 from decimal import Decimal, getcontext
@@ -215,6 +216,30 @@ def get_iso_time(time_hour: Union[int, float],
     if utc_offset:
         return f'{date}T{time}{utc_offset}'
     return f'{date}T{time}'
+
+
+
+def get_time_hour(iso_time: str) -> float:
+    """
+    Convert an ISO 8601 time string to float hour.
+
+    Args:
+        iso_time_str (str): ISO 8601 time string (e.g., '2025-07-17T09:30:00+09:00')
+
+    Returns:
+        float: Time represented in float hours (e.g., 9.5)
+    """
+    iso_time_cleaned = re.sub(r'(\+|-)\d{2}:\d{2}$', '', iso_time)
+    
+    # Parse datetime (ignores timezone)
+    dt = datetime.fromisoformat(iso_time_cleaned)
+
+    hour = dt.hour
+    minute = dt.minute
+    second = dt.second
+
+    return hour + minute / 60 + second / 3600
+
 
 
 def generate_random_iso_time_between(min_iso_time: str,
