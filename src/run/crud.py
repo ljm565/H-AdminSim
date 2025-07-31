@@ -45,7 +45,7 @@ def main(args):
                 resource_data['id'] = random_uuid(args.is_develop)
             
             response = fhir_manager.create(resource_type, resource_data)
-            if  200 <= response.status_code < 300:
+            if 200 <= response.status_code < 300:
                 log(f"Created {resource_type} with ID {response.json().get('id')}")
             else:
                 error_files.append(file)
@@ -53,14 +53,13 @@ def main(args):
         if len(error_files):
             log(f'Error files during creating data: {error_files}', 'warning')
 
-
     elif args.mode == 'read':
         if not args.id or not args.resource_type:
             log("ID and resource type are required for read operation", level='error')
             raise ValueError('ID and resource type are required for read operation')
     
         response = fhir_manager.read(args.resource_type, args.id)
-        if  200 <= response.status_code < 300:
+        if 200 <= response.status_code < 300:
             log(f"Read {args.resource_type} with ID {args.id}")
 
     elif args.mode == 'update':
@@ -81,15 +80,34 @@ def main(args):
             raise ValueError('ID and resource type are required for delete operation')
         
         response = fhir_manager.delete(args.resource_type, args.id)
-        if  200 <= response.status_code < 300:
+        if 200 <= response.status_code < 300:
             log(f"Deleted {args.resource_type} with ID {args.id}")
+
+    elif args.mode == 'read_all':
+        if not args.resource_type:
+            log("Resource type is required for read_all operation", level='error')
+            raise ValueError('Resource type is required for read_all operation')
+        
+        all_entries = fhir_manager.read_all(args.resource_type)
+        log(f'Resource type: {args.resource_type}, Total length: {len(all_entries)}', color=True)
+
+    elif args.mode == 'delete_all':
+        if not args.resource_type:
+            log("Resource type is required for read_all operation", level='error')
+            raise ValueError('Resource type is required for read_all operation')
+        
+        all_entries = fhir_manager.read_all(args.resource_type)
+        log(f'Resource type: {args.resource_type}, Total length: {len(all_entries)}', color=True)
+
+        fhir_manager.delete_all(all_entries)
+
     
 
 
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('-c', '--config', type=str, required=True, help='Path to the configuration file')
-    parser.add_argument('-m', '--mode', type=str, required=True, choices=['create', 'read', 'update', 'delete'], help='CRUD operation mode')
+    parser.add_argument('-m', '--mode', type=str, required=True, choices=['create', 'read', 'update', 'delete', 'read_all', 'delete_all'], help='CRUD operation mode')
     parser.add_argument('-d', '--is_develop', action='store_true', required=False, help='Enable development mode for controlled random UUID generation')
     parser.add_argument('--id', type=str, required=False, help='Resource ID for read, update, or delete operations')
     parser.add_argument('--resource_type', type=str, required=False, help='Resource type for read, update, or delete operations')
