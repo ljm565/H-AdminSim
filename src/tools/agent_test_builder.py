@@ -68,11 +68,9 @@ class AgentTestBuilder:
             )
             gt = {
                 'patient': patient,
-                'basic': {
-                    'gender': patient_values['gender'],
-                    'telecom': patient_values['telecom'],
-                    'birthDate': patient_values['birthDate']
-                },
+                'gender': patient_values['gender'],
+                'telecom': patient_values['telecom'],
+                'birthDate': patient_values['birthDate'],
                 'department': department,
                 'examination': data['doctor'][doctor]['specialty'],
                 'attending_physician': doctor,
@@ -87,11 +85,9 @@ class AgentTestBuilder:
             }
             agent = {
                 'patient': patient,
-                'basic': {
-                    'gender': patient_values['gender'],
-                    'telecom': patient_values['telecom'],
-                    'birthDate': patient_values['birthDate']
-                },
+                'gender': patient_values['gender'],
+                'telecom': patient_values['telecom'],
+                'birthDate': patient_values['birthDate'],
                 'symptom': generate_random_symptom(department, symptom_file_path),
                 'constraint': {
                     'duration': float(Decimal(str(schedule_time_range[-1])) - Decimal(str(schedule_time_range[0]))),
