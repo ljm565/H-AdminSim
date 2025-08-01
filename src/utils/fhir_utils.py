@@ -97,10 +97,24 @@ def get_appointment_id(individual_id: str, start_time_segment_index: int, end_ti
 def convert_fhir_resources_to_doctor_info(practitioners: list[dict],
                                           practitioner_roles: list[dict],
                                           schedules: list[dict],
-                                          slots: list[dict]):
+                                          slots: list[dict],
+                                          appointments: list[dict]) -> dict:
+    """
+    Make a current state of doctoral information based on the FHIR server.
+
+    Args:
+        practitioners (list[dict]): Practitioner resources currently used in the hospital environment of the simulation.
+        practitioner_roles (list[dict]): PractitionerRole resources currently used in the hospital environment of the simulation.
+        schedules (list[dict]): Schedule resources currently used in the hospital environment of the simulation.
+        slots (list[dict]): Slot resources currently used in the hospital environment of the simulation._
+        appointments (list[dict]): Appointment resources currently used in the hospital environment of the simulation.
+
+    Returns:
+        dict: Current state of doctoral information. 
+    """
     # Prepare several pre-required data
     doctor_information = dict()
-    practitioner_ref_to_fixed_schedules = dict()
+    practitioner_ref_to_schedules = dict()
     practitioner_ref_to_name = {
         f"Practitioner/{practitioner['resource']['id']}": \
             f"{practitioner['resource']['name'][0]['prefix'][0]} {practitioner['resource']['name'][0]['given'][0]} {practitioner['resource']['name'][0]['family']}" \
@@ -120,11 +134,21 @@ def convert_fhir_resources_to_doctor_info(practitioners: list[dict],
         f"Schedule/{schedule['resource']['id']}": schedule['resource']['actor'][0]['reference'] for schedule in schedules
     }
 
+    # Append fixed schedules of a doctor
     for slot in slots:
         resource = slot['resource']
         practitioner_ref = schedule_ref_to_practioner_ref[slot['resource']['schedule']['reference']]
         if not resource['status'] == 'free':
-            practitioner_ref_to_fixed_schedules.setdefault(practitioner_ref, []).append([get_time_hour(resource['start']), get_time_hour(resource['end'])])
+            practitioner_ref_to_schedules.setdefault(practitioner_ref, []).append([get_time_hour(resource['start']), get_time_hour(resource['end'])])
+
+    # Append patient appointments of a doctor
+    for appointment in appointments:
+        resource = appointment['resource']
+        for participant in resource['participant']:
+            participant_ref = participant['actor']['reference']
+            if participant_ref in practitioner_ref_to_name:
+                practitioner_ref_to_schedules.setdefault(participant_ref, []).append([get_time_hour(resource['start']), get_time_hour(resource['end'])])
+                break
         
     # Build the doctor information from FHIR
     for practitioner in practitioners:
@@ -133,7 +157,7 @@ def convert_fhir_resources_to_doctor_info(practitioners: list[dict],
         doctor_information[practitioner_ref_to_name[ref]] = {
             'department': practitioner_ref_to_role[ref]['department'],
             'specialty': practitioner_ref_to_role[ref]['specialty'],
-            'schedule': sorted(practitioner_ref_to_fixed_schedules.get(ref, [])),
+            'schedule': sorted(practitioner_ref_to_schedules.get(ref, [])),
             'gender': resource['gender'],
             'telecom': resource['telecom'],
             'birthDate': resource['birthDate']

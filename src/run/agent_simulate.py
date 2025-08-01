@@ -18,6 +18,13 @@ def env_setup(config):
     random.seed(config.seed)
     np.random.seed(config.seed)
 
+    # Delete Patient and Appointment resources when starting a simulation
+    fhir_manager = FHIRManager(config)
+    appointment_entries = fhir_manager.read_all('Appointment')
+    patient_entries = fhir_manager.read_all('Patient')
+    fhir_manager.delete_all(appointment_entries, verbose=False)
+    fhir_manager.delete_all(patient_entries, verbose=False)
+
 
 def load_config(config_path):
     config = Config(config_path)

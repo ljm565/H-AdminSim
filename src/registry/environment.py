@@ -57,37 +57,89 @@ class HospitalEnvironment:
         )
         self.patient_schedules = list()
         self._tmp_patient_schedules = None
-        self.first_verbose = True
+        self.first_verbose_flag = True
+
+        # Cache variables
+        self._fhir_practitioner_cache = None
+        self._fhir_practitionerrole_cache = None
+        self._fhir_schedule_cache = None
+        self._fhir_slot_cache = None
 
 
-    def doctor_info_from_fhir(self) -> dict:
+    def doctor_info_from_fhir(self, use_cache: bool = True) -> dict:
         """
-        Make doctor infromation dictionary from the FHIR resources for the simulation for the simulation
+        Build a doctor information dictionary from FHIR resources for simulation.
+
+        Args:
+            use_cache (bool): If True, reuse cached FHIR resources if available. Defaults to True.
 
         Returns:
             dict: doctor_information (dict): Dictionary of doctor data including their existing schedules.
                                              Each key is a doctor's name, and each value includes a 'schedule' field.
         """
-        if self.first_verbose:
+        if self.first_verbose_flag:
             log('Build doctor information from the FHIR resources..')
-            self.first_verbose = False
-        fhir_practitioner = list(filter(lambda x: self.HOSPITAL_NAME.replace('_', '') in x['resource']['id'], self.fhir_manager.read_all('Practitioner', verbose=False)))
-        fhir_practitionerrole = list(filter(lambda x: self.HOSPITAL_NAME.replace('_', '') in x['resource']['id'], self.fhir_manager.read_all('PractitionerRole', verbose=False)))
-        fhir_schedule = list(filter(lambda x: self.HOSPITAL_NAME.replace('_', '') in x['resource']['id'], self.fhir_manager.read_all('Schedule', verbose=False)))
-        fhir_slot = list(filter(lambda x: self.HOSPITAL_NAME.replace('_', '') in x['resource']['id'], self.fhir_manager.read_all('Slot', verbose=False)))
+            self.first_verbose_flag = False
+
+        hospital_id = self.HOSPITAL_NAME.replace('_', '')
+        cache_ready = all([
+            self._fhir_practitioner_cache,
+            self._fhir_practitionerrole_cache,
+            self._fhir_schedule_cache,
+            self._fhir_slot_cache,
+        ])
+        
+        if not use_cache or not cache_ready:
+            self._fhir_practitioner_cache = [
+                x for x in self.fhir_manager.read_all('Practitioner', verbose=False)
+                if hospital_id in x['resource']['id']
+            ]
+            self._fhir_practitionerrole_cache = [
+                x for x in self.fhir_manager.read_all('PractitionerRole', verbose=False)
+                if hospital_id in x['resource']['id']
+            ]
+            self._fhir_schedule_cache = [
+                x for x in self.fhir_manager.read_all('Schedule', verbose=False)
+                if hospital_id in x['resource']['id']
+            ]
+            self._fhir_slot_cache = [
+                x for x in self.fhir_manager.read_all('Slot', verbose=False)
+                if hospital_id in x['resource']['id']
+            ]
+
+        # Get Appointment resources from the FHIR server
+        fhir_appointment = [
+            x for x in self.fhir_manager.read_all('Appointment', verbose=False)
+            if hospital_id in x['resource']['id']
+        ]
+
+        # Convert resources regardless of whether they came from cache or fresh read
         doctor_information = convert_fhir_resources_to_doctor_info(
-            fhir_practitioner,
-            fhir_practitionerrole,
-            fhir_schedule,
-            fhir_slot,
+            self._fhir_practitioner_cache,
+            self._fhir_practitionerrole_cache,
+            self._fhir_schedule_cache,
+            self._fhir_slot_cache,
+            fhir_appointment
         )
         return doctor_information
+    
+
+    def update_fhir(self, fhir_resources: dict):
+        """
+        Update resources on the FHIR server.
+
+        fhir_resources (dict): Dictionary where each key is a FHIR resource type (e.g., 'Appointment', 'Slot'),
+                               and each value is the corresponding FHIR resource data to be updated.
+        """
+        for resource_type, resource in fhir_resources.items():
+            if resource != None and resource_type.lower() in ['patient', 'appointment']:
+                self.fhir_manager.create(resource_type, resource, verbose=False)
 
 
-    def _changed_schedule_sanity_check(self,
-                                       changed_schedule: list[dict],
-                                       doctor_information: dict,
-                                       patient_condition: dict) -> Tuple[bool, str, dict]:
+    def _reschedule_sanity_check(self,
+                                 changed_schedule: list[dict],
+                                 doctor_information: dict,
+                                 patient_condition: dict) -> Tuple[bool, str, dict]:
         """
         Sanity checking codes of LLM rescheduling results. 
 
@@ -305,15 +357,21 @@ class HospitalEnvironment:
         self._tmp_patient_schedules = None
 
     
-    def update_env(self, status: bool, patient_schedule: Union[dict, str]):
+    def update_env(self, 
+                   status: bool,
+                   patient_schedule: Union[dict, str],
+                   fhir_resources: dict):
         """
         Update the hospital environment after successfully assigning an appointment.
 
         Args:
             status (bool): Whether the appointment was successfully assigned.
             patient_schedule (Union[dict, str]): The patient's new schedule to add. Should contain a 'schedule' key with start and end time.
+            fhir_resources (dict): Dictionary where each key is a FHIR resource type (e.g., 'Appointment', 'Slot'),
+                                   and each value is the corresponding FHIR resource data to be updated.
         """
         if status:
+            self.update_fhir(fhir_resources)
             self.patient_schedules = deepcopy(self._tmp_patient_schedules) if self._tmp_patient_schedules != None else self.patient_schedules
             
             if len(self.patient_schedules) and patient_schedule['schedule'][0] > self.patient_schedules[-1]['schedule'][0]:
