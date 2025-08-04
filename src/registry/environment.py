@@ -1,3 +1,4 @@
+import time
 import random
 from copy import deepcopy
 from datetime import datetime
@@ -6,12 +7,16 @@ from decimal import Decimal, getcontext
 
 from tasks import FHIRManager
 from utils import log
-from utils.fhir_utils import convert_fhir_resources_to_doctor_info
+from utils.fhir_utils import (
+    get_patient_from_appointment,
+    convert_fhir_resources_to_doctor_info,
+)
 from utils.common_utils import (
     get_iso_time,
     get_utc_offset,
+    exponential_backoff,
+    convert_time_to_segment,
     generate_random_iso_time_between,
-    convert_time_to_segment
 )
 
 
@@ -44,6 +49,7 @@ class HospitalEnvironment:
         """
         getcontext().prec = 10
         self._epsilon = 1e-6
+        self.max_retries = 5
         self.HOSPITAL_NAME = agent_test_data.get('metadata').get('hospital_name')
         self._START_HOUR = agent_test_data.get('metadata').get('time').get('start_hour')
         self._END_HOUR = agent_test_data.get('metadata').get('time').get('end_hour')
@@ -108,10 +114,25 @@ class HospitalEnvironment:
             ]
 
         # Get Appointment resources from the FHIR server
-        fhir_appointment = [
-            x for x in self.fhir_manager.read_all('Appointment', verbose=False)
-            if hospital_id in x['resource']['id']
-        ]
+        # NOTE: Sometimes, a FHIR resource is accessed before it gets updated, so the operation is performed with a retry flag 
+        retry_count = 0
+        while 1:
+            try:
+                self.fhir_appointment = [
+                    x for x in self.fhir_manager.read_all('Appointment', verbose=False)
+                    if hospital_id in x['resource']['id']
+                ]
+                assert len(self.fhir_appointment) == len(self.patient_schedules), f"Mismatch in appointment count: expected {len(self.patient_schedules)}, got {len(self.fhir_appointment)}"
+                break
+            except AssertionError as e:
+                if retry_count >= self.max_retries:
+                    log(f"\nMax retries reached. Last error: {e}", level='error')
+                    raise e
+                wait_time = exponential_backoff(retry_count)
+                log(f"[{retry_count + 1}/{self.max_retries}] {type(e).__name__}: {e}. Retrying in {wait_time:.1f} seconds...", level='warning')
+                time.sleep(wait_time)
+                retry_count += 1
+                continue
 
         # Convert resources regardless of whether they came from cache or fresh read
         doctor_information = convert_fhir_resources_to_doctor_info(
@@ -119,7 +140,7 @@ class HospitalEnvironment:
             self._fhir_practitionerrole_cache,
             self._fhir_schedule_cache,
             self._fhir_slot_cache,
-            fhir_appointment
+            self.fhir_appointment
         )
         return doctor_information
     
@@ -131,8 +152,20 @@ class HospitalEnvironment:
         fhir_resources (dict): Dictionary where each key is a FHIR resource type (e.g., 'Appointment', 'Slot'),
                                and each value is the corresponding FHIR resource data to be updated.
         """
+        # Update the rescheduled appointment FHIR resources
+        if fhir_resources['reschedule']:
+            appointment_patient_to_id_map = {get_patient_from_appointment(appn['resource']): appn['resource']['id'] for appn in self.fhir_appointment}
+            for resource in fhir_resources['reschedule']:
+                patient = get_patient_from_appointment(resource)
+                self.fhir_manager.delete('Appointment', appointment_patient_to_id_map[patient], verbose=False)
+
+            # Create after delete operation to prevent ID conflicts
+            for resource in fhir_resources['reschedule']:
+                self.fhir_manager.create('Appointment', resource, verbose=False)
+        
+        # Create a new appointment
         for resource_type, resource in fhir_resources.items():
-            if resource != None and resource_type.lower() in ['patient', 'appointment']:
+            if resource and resource_type.lower() in ['patient', 'appointment']:
                 self.fhir_manager.create(resource_type, resource, verbose=False)
 
 
@@ -377,6 +410,8 @@ class HospitalEnvironment:
             if len(self.patient_schedules) and patient_schedule['schedule'][0] > self.patient_schedules[-1]['schedule'][0]:
                 self.update_current_time()
             
+            patient_schedule = deepcopy(patient_schedule)
+            del patient_schedule['reschedule']
             self.patient_schedules.append(patient_schedule)
             self.update_patient_status()
 

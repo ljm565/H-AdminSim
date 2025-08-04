@@ -1,4 +1,6 @@
 import re
+from typing import Union
+
 from utils.common_utils import get_time_hour
 
 
@@ -164,3 +166,22 @@ def convert_fhir_resources_to_doctor_info(practitioners: list[dict],
         }
 
     return doctor_information
+
+
+
+def get_patient_from_appointment(resource: dict) -> Union[str, None]:
+    """
+    Extracts the patient's display name from a FHIR Appointment resource.
+
+    Args:
+        resource (dict): A FHIR Appointment resource represented as a dictionary. 
+                         It should contain a 'participant' field, each with an 'actor' referencing a FHIR resource.
+
+    Returns:
+        Union[str, None]: The display name of the patient if found, otherwise None.
+    """
+    for participant in resource.get('participant', []):
+        actor = participant.get('actor', {})
+        if 'Patient' in actor.get('reference', ''):
+            return actor.get('display')
+    return None

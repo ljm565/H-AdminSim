@@ -379,6 +379,7 @@ class AssignSchedule(Task):
             'schedule': [start, end],
             'priority': patient_condition.get('priority'),
             'flexibility': patient_condition.get('flexibility'),
+            'reschedule': prediction['changed_existing_schedule_list'],     # Temporal key
         }
         return True, self.status_codes['correct'], prediction, deepcopy(tmp_doctor_information)
             
@@ -486,7 +487,7 @@ class AssignSchedule(Task):
         )
 
         # POST/PUT to FHIR
-        fhir_patient, fhir_appointment = None, None
+        fhir_patient, fhir_appointment, fhir_reschedule = None, None, None
         if status and self.integration_with_fhir:
             # Even if a failure occurs during a later API tasks, update the FHIR resources to ensure continued scheduling task 
             fhir_patient = DataConverter.data_to_patient(
@@ -497,12 +498,18 @@ class AssignSchedule(Task):
                                                                                 'patient': prediction.get('patient'),
                                                                                 'attending_physician': prediction.get('attending_physician'),
                                                                                 'schedule': prediction.get('schedule')}})
+            fhir_reschedule = [self._get_fhir_appointment(data={'metadata': deepcopy(metadata),
+                                                                'information': {
+                                                                    'department': s.get('department'),
+                                                                    'patient': s.get('patient'),
+                                                                    'attending_physician': s.get('attending_physician'),
+                                                                    'schedule': s.get('schedule')}}) for s in prediction['reschedule']] if len(prediction['reschedule']) else None
 
         agent_test_data['doctor'] = doctor_information    # Update the doctor information in the agent test data
         environment.update_env(
             status=status, 
             patient_schedule=prediction,
-            fhir_resources={'Patient': fhir_patient, 'Appointment': fhir_appointment}
+            fhir_resources={'Patient': fhir_patient, 'Appointment': fhir_appointment, 'reschedule': fhir_reschedule}
         )
         
         # Append results
