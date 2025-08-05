@@ -10,6 +10,7 @@ The below is the example:
 ```bash
 OPENAI_API_KEY=${YOUR_OPENAI_API_KEY}
 GOOGLE_API_KEY=${YOUR_GCP_API_KEY}
+HF_TOKEN=${YOUR_HF_TOKEN}
 ```
 
 &nbsp;

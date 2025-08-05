@@ -40,6 +40,19 @@ fhir_api_task:
 > * `*prompt`: Paths to the prompt data.
 
 
+#### 0.1 Agent Models
+You can use three types of models:
+* *gemini-\**: If you set the model to a Gemini LLM, you must have your own GCP API key in the `.env` file, with the name `GOOGLE_API_KEY`. The code will automatically communicate with GCP.
+* *gpt-\**: If you set the model to a GPT LLM, you must have your own OpenAI API key in the `.env` file, with the name `OPENAI_API_KEY`. The code will automatically use the OpenAI chat format.
+* *Otherwise* (e.g. `meta-llama/Llama-3.1-8B-Instruct`): You must serve the model you chose via the vLLM framework. You must have your own HuggingFace token in the `.env` file, with the name `HF_TOKEN`.
+
+For the *otherwise* case, you can serve the model using the vLLM with the below command:
+```bash
+sh ./run_vllm_docker.sh 
+```
+
+
+
 &nbsp;
 
 ### 1. Agent Tasks Execution
