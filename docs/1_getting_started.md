@@ -33,10 +33,10 @@ If you want to prevent auto-kill from your server, please add the below option:
 ## Anaconda (Deprecated)
 ### 0. Preliminary
 It is assumed that the Conda environment and Python and PyTorch related libaray are all installed.
-PyTorch version 2.5.1 or higher is recommended.
+PyTorch version 2.7.1 or higher is recommended.
 ```bash
 # torch install example
-pip3 install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
+pip3 install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1
 ```
 
 ### 1. Package Installation
