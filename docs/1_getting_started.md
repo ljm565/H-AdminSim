@@ -30,7 +30,7 @@ If you want to prevent auto-kill from your server, please add the below option:
 &nbsp;
 
 
-## Anaconda
+## Anaconda (Deprecated)
 ### 0. Preliminary
 It is assumed that the Conda environment and Python and PyTorch related libaray are all installed.
 PyTorch version 2.5.1 or higher is recommended.
@@ -45,3 +45,18 @@ You can install packages using the following command:
 cd docker
 pip3 install -r requirements.txt
 ```
+
+&nbsp;
+
+&nbsp;
+
+
+## Poetry
+### 1. Package Installation
+It is assumed that Poetry has already been installed in your environment.
+```bash
+poetry install
+poetry shell
+```
+
+&nbsp;
