@@ -8,6 +8,7 @@ from tools import (
     GeminiLangChainClient,
     GPTClient,
     GPTLangChainClient,
+    VLLMClient,
     DataConverter,
 )
 from utils import log
@@ -137,7 +138,12 @@ class AssignDepartment(Task):
         self.__init_env(config)
         self.system_prompt = txt_load(self._system_prompt_path)
         self.user_prompt_template = txt_load(self._user_prompt_path)
-        self.client = GeminiClient(config.model) if 'gemini' in config.model.lower() else GPTClient(config.model)
+        if 'gemini' in config.model.lower():
+            self.client = GeminiClient(config.model)
+        elif 'gpt' in config.model.lower():
+            self.client = GPTClient(config.model)
+        else:
+            self.client = VLLMClient(config.model, config.vllm_url)
 
 
     def __init_env(self, config):
@@ -223,10 +229,12 @@ class AssignSchedule(Task):
         self.__init_env(config)
         self.system_prompt = txt_load(self._system_prompt_path)
         self.user_prompt_template = txt_load(self._user_prompt_path)
-        if self.ensure_output_format:
-            self.client = GeminiLangChainClient(config.model) if 'gemini' in config.model.lower() else GPTLangChainClient(config.model)
+        if 'gemini' in config.model.lower():
+            self.client = GeminiLangChainClient(config.model) if self.ensure_output_format else GeminiClient(config.model)
+        elif 'gpt' in config.model.lower():
+            self.client = GPTLangChainClient(config.model) if self.ensure_output_format else GPTClient(config.model)
         else:
-            self.client = GeminiClient(config.model) if 'gemini' in config.model.lower() else GPTClient(config.model)
+            self.client = VLLMClient(config.model, config.vllm_url)
 
 
     def __init_env(self, config):
@@ -530,7 +538,12 @@ class MakeFHIRResource(Task):
         self.__init_env(config)
         self.system_prompt = txt_load(self._system_prompt_path)
         self.user_prompt_template = txt_load(self._user_prompt_path)
-        self.client = GeminiClient(config.model) if 'gemini' in config.model.lower() else GPTClient(config.model)
+        if 'gemini' in config.model.lower():
+            self.client = GeminiClient(config.model)
+        elif 'gpt' in config.model.lower():
+            self.client = GPTClient(config.model)
+        else:
+            self.client = VLLMClient(config.model, config.vllm_url)
 
 
     def __init_env(self, config):
@@ -742,7 +755,12 @@ class MakeFHIRAPI(Task):
         self.__init_env(config)
         self.system_prompt = txt_load(self._system_prompt_path)
         self.user_prompt_template = txt_load(self._user_prompt_path)
-        self.client = GeminiClient(config.model) if 'gemini' in config.model.lower() else GPTClient(config.model)
+        if 'gemini' in config.model.lower():
+            self.client = GeminiClient(config.model)
+        elif 'gpt' in config.model.lower():
+            self.client = GPTClient(config.model)
+        else:
+            self.client = VLLMClient(config.model, config.vllm_url)
 
 
     def __init_env(self, config):
