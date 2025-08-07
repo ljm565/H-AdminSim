@@ -4,6 +4,7 @@ seed: 9999
 # LLM model
 model: gemini-2.5-flash-preview-05-20
 ensure_output_format: False     # If you set to True, JsonOutputParser provided from LangChain will be used.
+vllm_url: http://0.0.0.0:8000     # Used only when using vllm.
 
 # Agent test data and converted FHIR data folder
 agent_test_data: synthetic_data/hospital_easy_small/agent_data
