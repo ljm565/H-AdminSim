@@ -2,6 +2,7 @@
 
 
 ### Recent updates 📣
+* *August 2025 (v0.5.2)*: We has supported vLLM inference of the Hugging Face models.
 * *August 2025 (v0.5.1)*: Now you can easily set the virtual environment using Poetry.
 * *August 2025 (v0.5.0)*: We integrated the FHIR server to retrieve hospital information during hospital administration office agent simulation.
 * *July 2025 (v0.4.2)*: We have supported LangChain's JsonOutputParser funtion as well as naive LLM API methods.
