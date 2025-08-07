@@ -12,6 +12,7 @@ We need to complete the `config/agent_test.yaml` file.
 # LLM model
 model: gemini-2.5-flash
 ensure_output_format: True     # If you set to True, JsonOutputParser provided from LangChain will be used.
+vllm_url: http://0.0.0.0:8000     # Used only when using vllm.
 
 # Agent test data and converted FHIR data folder
 agent_test_data: synthetic_data/hospital_easy_small/agent_data
@@ -34,6 +35,7 @@ fhir_api_task:
 ```
 > * `model`: The model to be used as the agent.
 > * `ensure_output_format`: If you set to True, JsonOutputParser provided from LangChain will be used.
+> * `vllm_url`: Required if you are using a Hugging Face model for inference via vLLM.
 > * `agent_test_data`: Path to the pre-built agent test data folder.
 > * `fhir_data`: Path to the folder containing pre-converted FHIR data.
 > * `fhir_url`: The base URL of the FHIR server.
