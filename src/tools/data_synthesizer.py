@@ -10,13 +10,13 @@ from utils import Information, log, colorstr
 from utils.common_utils import *
 from utils.filesys_utils import json_load, txt_load, yaml_save, make_project_dir, json_save_fast
 from utils.random_utils import (
-    generate_random_names,
     generate_random_prob,
-    generate_random_telecom,
     generate_random_date,
     generate_random_code,
+    generate_random_names,
+    generate_random_telecom,
     generate_random_specialty,
-    generate_random_priority_and_flexibility,
+    generate_random_code_with_prob,
 )
 
 
@@ -172,16 +172,20 @@ class DataSynthesizer:
                 )
                 patients = DataSynthesizer.name_list_generator(len(appointments))
                 for patient, appointment in zip(patients, appointments):
-                    priority, flexibility = generate_random_priority_and_flexibility(
-                        config.hospital_data.priority_distribution,
-                        config.hospital_data.priority_flexibility_prob
+                    preference = generate_random_code_with_prob(
+                        config.hospital_data.preference.type,
+                        config.hospital_data.preference.probs
+                    )
+                    symptom_level = generate_random_code_with_prob(
+                        config.hospital_data.symptom.type,
+                        config.hospital_data.symptom.probs
                     )
                     patient_info[patient] = {
                         'department': department,
                         'attending_physician': doctor,
                         'schedule': appointment,
-                        'priority': priority,
-                        'flexibility': flexibility,
+                        'preference': preference,
+                        'symptom_level': symptom_level,
                         'gender': generate_random_code('gender'),
                         'telecom': [{
                             'system': 'phone',

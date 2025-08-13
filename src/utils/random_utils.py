@@ -1,6 +1,6 @@
 import uuid
 import random
-from typing import Tuple
+from typing import Tuple, Any
 from datetime import datetime, timedelta
 
 import registry
@@ -188,7 +188,30 @@ def generate_random_code(category: str) -> str:
         return random.choice(['mobile', 'work'])
     elif category == 'gender':
         return random.choice(['male', 'female'])
-    
+
+
+
+def generate_random_code_with_prob(codes: list[Any],
+                                   probs: list[float]) -> Tuple[int, str]:
+    """
+    Select a random code from the given list of codes based on the provided probabilities.
+
+    Args:
+        codes (list[Any]): A list of codes from which to choose.
+        probs (list[float]): A list of probabilities corresponding to each code. 
+                             The probabilities must sum to 1.
+
+    Returns:
+        Tuple[int, str]: The randomly chosen code. The exact type depends on the elements of `codes`.
+                         (Adjust this description if the return type is known specifically.)
+    """
+    assert round(sum(probs), 4) == 1, log(f"The sum of the probabilities would be a 1, but got {probs}", "error")
+    assert len(codes) == len(probs), log(f"The lengths of codes and probabilities must be the same, but got codes length: {len(codes)} and probs length: {len(probs)}", "error")
+
+    chosen = random.choices(population=codes, weights=probs, k=1)[0]
+
+    return chosen
+
 
 
 def generate_random_specialty(department: str, 
@@ -219,31 +242,3 @@ def generate_random_specialty(department: str,
     if verbose:
         log(f'No matched department {department}. `${{PLACEHOLDER}}` string will return.', 'warning')
     return '${PLACEHOLDER}', '${PLACEHOLDER}'
-
-
-
-def generate_random_priority_and_flexibility(priority_probabilities: list[float],
-                                             priority_flexibility_prob: list[float]) -> Tuple[int, str]:
-    """
-    Generate a priority and its flexibility based on the given probability distribution.
-
-    Args:
-        priority_probabilities (list[float]): A list of probabilities for each priority.
-                                              The index represents the priority level.
-        priority_flexibility_prob (list[float]): A list of probabilities that each priority level is flexible.
-                                                 The index represents the priority level.
-
-    Returns:
-        int: The generated priority level.
-        str: The flexibility of the priority, either 'flexible' or 'fixed'.
-
-    Raises:
-        AssertionError: If the sum of the priority probabilities is not 1.
-    """
-
-    assert round(sum(priority_probabilities), 4) == 1, log(f"The sum of the probabilities would be a 1, but got {priority_probabilities}", "error")
-
-    priority = random.choices(population=list(range(len(priority_probabilities))), weights=priority_probabilities, k=1)[0]
-    flexibility = "flexible" if random.random() < priority_flexibility_prob[priority] else "fixed"
-
-    return priority, flexibility
