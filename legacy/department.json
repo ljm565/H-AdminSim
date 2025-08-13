@@ -1,0 +1,82 @@
+{
+    "cardiology": {
+        "code": 0,
+        "specialty": [
+            "Interventional Cardiology",
+            "Electrophysiology",
+            "Heart Failure and Transplantation"
+        ]
+    },
+    "dermatology": {
+        "code": 1,
+        "specialty": [
+            "Pediatric Dermatology",
+            "Dermatologic Surgery",
+            "Cosmetic Dermatology"
+        ]
+    },
+    "gastroenterology": {
+        "code": 2,
+        "specialty": [
+            "Hepatology",
+            "Pancreatobiliary Medicine",
+            "Inflammatory Bowel Disease"
+        ]
+    },
+    "neurology": {
+        "code": 3,
+        "specialty": [
+            "Stroke and Cerebrovascular Disorders",
+            "Epilepsy",
+            "Neuromuscular Medicine"
+        ]
+    },
+    "orthopedics": {
+        "code": 4,
+        "specialty": [
+            "Spine Surgery",
+            "Sports Medicine",
+            "Joint Replacement"
+        ]
+    },
+    "pediatrics": {
+        "code": 5,
+        "specialty": [
+            "Neonatology",
+            "Pediatric Cardiology",
+            "Pediatric Endocrinology"
+        ]
+    },
+    "psychiatry": {
+        "code": 6,
+        "specialty": [
+            "Child and Adolescent Psychiatry",
+            "Geriatric Psychiatry",
+            "Addiction Psychiatry"
+        ]
+    },
+    "oncology": {
+        "code": 7,
+        "specialty": [
+            "Medical Oncology",
+            "Radiation Oncology",
+            "Surgical Oncology"
+        ]
+    },
+    "ophthalmology": {
+        "code": 8,
+        "specialty": [
+            "Retina and Vitreous",
+            "Cornea and External Disease",
+            "Glaucoma"
+        ]
+    },
+    "pulmonology": {
+        "code": 9,
+        "specialty": [
+            "Interstitial Lung Disease",
+            "Sleep Medicine",
+            "Pulmonary Hypertension"
+        ]
+    }
+}
