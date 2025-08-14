@@ -15,7 +15,9 @@ from utils import log
 from utils.fhir_utils import *
 from utils.filesys_utils import txt_load, json_load
 from utils.common_utils import (
+    convert_segment_to_time,
     convert_time_to_segment,
+    compare_iso_time,
     get_utc_offset,
     get_iso_time,
 )
@@ -29,6 +31,7 @@ class Task:
         'format': 'incorrect format',
         'schedule': 'invalid schedule',
         'conflict': {'physician': 'physician conflict', 'time': 'time conflict'},
+        'preference': {'doctor': 'mismatched doctor', 'asap': 'not earlist schedule'},
         'curl': {'http': 'incorrect http method', 'header': 'incorrect header', 'payload': 'incorrect payload', 'url': 'incorrect url'},
         'preceding': 'preceding task failed',
         'correct': 'pass',
@@ -235,6 +238,10 @@ class AssignSchedule(Task):
             self.client = GPTLangChainClient(config.model) if self.ensure_output_format else GPTClient(config.model)
         else:
             self.client = VLLMClient(config.model, config.vllm_url)
+        self.preference_phrase = {
+            'asap': 'The patient wants the earliest available doctor in the department for the outpatient visit.',
+            'doctor': 'The patient has a preferred doctor for the outpatient visit.'
+        }
 
 
     def __init_env(self, config):
@@ -273,10 +280,11 @@ class AssignSchedule(Task):
             else:
                 text_dict = text
             
-            assert len(text_dict) == 2 and all(k in text_dict for k in ['schedule', 'changed_existing_schedule_list'])   # Basic sanity check
+            assert len(text_dict) == 1 and all(k in text_dict for k in ['schedule'])   # Basic sanity check
             key = list(text_dict['schedule'].keys())[0]
             text_dict['schedule'][key]['start'] = float(text_dict['schedule'][key]['start'])
             text_dict['schedule'][key]['end'] = float(text_dict['schedule'][key]['end'])
+            text_dict['schedule'][key]['date'] = str(text_dict['schedule'][key]['date'])
             return text_dict
         
         except:
@@ -333,35 +341,21 @@ class AssignSchedule(Task):
         ############################ Check the prediciton format #############################
         if not isinstance(prediction, dict):
             return False, self.status_codes['format'], prediction, doctor_information    # Could not be parsed as a dictionary
-        else:
-            if len(prediction['schedule']) > 1:
-                return False, self.status_codes['conflict']['physician'], prediction, doctor_information    # Allocated more than one doctor; cannot determine target
-            if not isinstance(prediction['changed_existing_schedule_list'], list):
-                return False, self.status_codes['format'], prediction, doctor_information
-            if not (len(prediction['changed_existing_schedule_list']) == 0 or all(isinstance(s, dict) for s in prediction['changed_existing_schedule_list'])):
-                return False, self.status_codes['format'], prediction, doctor_information
-
-        
-        ################## Check the predicted changed schedules validities ##################
-        sanity, status_code, tmp_doctor_information = environment._reschedule_sanity_check(
-            prediction['changed_existing_schedule_list'],
-            doctor_information,
-            patient_condition,
-        )
-        if not sanity:
-            return sanity, status_code, prediction, doctor_information
-
+        elif len(prediction['schedule']) > 1:
+            return False, self.status_codes['conflict']['physician'], prediction, doctor_information    # Allocated more than one doctor; cannot determine target
     
         ################## Check the predicted schedule type and validities ##################
         try:
             doctor_name = list(prediction['schedule'].keys())[0]
             start = prediction['schedule'][doctor_name]['start']
             end = prediction['schedule'][doctor_name]['end']
-            fixed_schedules = tmp_doctor_information[doctor_name]['schedule']
-            start_iso_time = get_iso_time(start, utc_offset=environment._utc_offset)
-            assert isinstance(start, float) and isinstance(end, float) \
-                and start < end and start >= self._START_HOUR and end <= self._END_HOUR and start_iso_time > environment.current_time
-            assert patient_condition['department'] == tmp_doctor_information[doctor_name]['department'] \
+            date = prediction['schedule'][doctor_name]['date']
+            fixed_schedules = doctor_information[doctor_name]['schedule']
+            start_iso_time = get_iso_time(start, date, utc_offset=environment._utc_offset)
+            assert isinstance(start, float) and isinstance(end, float) and isinstance(date, str) \
+                and start < end and start >= self._START_HOUR and end <= self._END_HOUR \
+                and compare_iso_time(start_iso_time, environment.current_time) and date in fixed_schedules
+            assert patient_condition['department'] == doctor_information[doctor_name]['department'] \
                 and patient_condition['duration'] == round(end - start, 4)
         except KeyError:
             return False, self.status_codes['format'], prediction, doctor_information    # Schedule allocation missing or doctor not found
@@ -376,23 +370,35 @@ class AssignSchedule(Task):
         fixed_schedule_segments = sum([convert_time_to_segment(self._START_HOUR, 
                                                                self._END_HOUR, 
                                                                self._TIME_UNIT, 
-                                                               fs) for fs in fixed_schedules], [])
+                                                               fs) for fs in fixed_schedules[date]], [])
         
         if len(set(prediction_schedule_segments) & set(fixed_schedule_segments)):
             return False, self.status_codes['conflict']['time'], prediction, doctor_information    # Overlaps with an existing schedule
         
+        ####################### Check the patient's preferences  #######################
+        if patient_condition['preference'] == 'doctor':
+            if patient_condition.get('preferred_doctor') != doctor_name:
+                return False, self.status_codes['preference']['doctor'], prediction, doctor_information
+        elif patient_condition['preference'] == 'asap':
+            free_time = [s for s in range(prediction_schedule_segments[0]) if s not in fixed_schedule_segments]
+            if len(free_time):
+                free_max_st, _ = convert_segment_to_time(self._START_HOUR, self._END_HOUR, self._TIME_UNIT, [free_time[-1]])
+                free_max_st_iso = get_iso_time(free_max_st, date, utc_offset=environment._utc_offset)
+                if compare_iso_time(free_max_st_iso, environment.current_time):
+                    return False, self.status_codes['preference']['asap'], prediction, doctor_information
+                
         # Finally update schedule of the doctor
-        tmp_doctor_information[doctor_name]['schedule'].append([start, end])    # In-place logic
+        doctor_information[doctor_name]['schedule'][date].append([start, end])    # In-place logic
         prediction = {
             'patient': patient_condition.get('patient'),
             'attending_physician': doctor_name,
             'department': patient_condition.get('department'),
+            'date': date,
             'schedule': [start, end],
-            'priority': patient_condition.get('priority'),
-            'flexibility': patient_condition.get('flexibility'),
-            'reschedule': prediction['changed_existing_schedule_list'],     # Temporal key
+            'preference': patient_condition.get('preference'),
+            'preferred_doctor': patient_condition.get('preferred_doctor'),
         }
-        return True, self.status_codes['correct'], prediction, deepcopy(tmp_doctor_information)
+        return True, self.status_codes['correct'], prediction, doctor_information
             
 
     def __call__(self, data_pair: Tuple[dict, dict], agent_test_data: dict, agent_results: dict, environment) -> dict:
@@ -423,14 +429,15 @@ class AssignSchedule(Task):
         self._START_HOUR = metadata.get('time').get('start_hour')
         self._END_HOUR = metadata.get('time').get('end_hour')
         self._TIME_UNIT = metadata.get('time').get('interval_hour')
+        self._DAY = metadata.get('days')
         doctor_information = environment.doctor_info_from_fhir() if self.integration_with_fhir else agent_test_data.get('doctor')
         department, sanity = self.__extract_departments(gt, agent_results)
         patient_condition = {
             'patient': test_data.get('patient'), 
             'department': department, 
             'duration': test_data.get('constraint').get('duration'), 
-            'priority': test_data.get('constraint').get('priority'), 
-            'flexibility': test_data.get('constraint').get('flexibility')
+            'preference': test_data.get('constraint').get('preference'), 
+            'preferred_doctor': test_data.get('constraint').get('attending_physician') if test_data.get('constraint').get('preference') == 'doctor' else "Doesn't matter",
         }
         results = self.get_result_dict()
 
@@ -440,8 +447,7 @@ class AssignSchedule(Task):
             'attending_physician': gt.get('attending_physician'),
             'department': gt.get('department'),
             'schedule': gt.get('schedule').get('time'),
-            'priority': gt.get('priority'),
-            'flexibility': gt.get('flexibility')
+            'preference': gt.get('preference'),
         }
         results['gt'].append(gt_results)
 
@@ -464,10 +470,11 @@ class AssignSchedule(Task):
                     'CURRENT_TIME': environment.current_time,
                     'DEPARTMENT': department,
                     'DURATION': patient_condition.get('duration'),
-                    'PRIORITY': patient_condition.get('priority'),
-                    'FLEXIBILITY': patient_condition.get('flexibility'),
+                    'PREFERENCE': self.preference_phrase[patient_condition.get('preference')],
+                    'PREFERRED_DOCTOR': patient_condition.get('preferred_doctor'),
+                    'DAY': self._DAY,
                     'DOCTOR': json.dumps(doctor_information, indent=2),
-                    'PATIENT_SCHEDULES': json.dumps(environment.patient_schedules, indent=2)
+                    # 'PATIENT_SCHEDULES': json.dumps(environment.patient_schedules, indent=2)
                 }
             )
 
@@ -479,10 +486,11 @@ class AssignSchedule(Task):
                 CURRENT_TIME=environment.current_time,
                 DEPARTMENT=department,
                 DURATION=patient_condition.get('duration'),
-                PRIORITY=patient_condition.get('priority'),
-                FLEXIBILITY=patient_condition.get('flexibility'),
+                PREFERENCE=self.preference_phrase[patient_condition.get('preference')],
+                PREFERRED_DOCTOR=patient_condition.get('preferred_doctor'),
+                DAY=self._DAY,
                 DOCTOR=json.dumps(doctor_information, indent=2),
-                PATIENT_SCHEDULES=json.dumps(environment.patient_schedules, indent=2)
+                # PATIENT_SCHEDULES=json.dumps(environment.patient_schedules, indent=2)
             )
             prediction = self.client(
                 user_prompt,

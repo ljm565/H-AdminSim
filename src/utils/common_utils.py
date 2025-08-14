@@ -320,10 +320,10 @@ def generate_random_iso_time_between(min_iso_time: str,
     Raises:
         ValueError: If min_iso_time is not earlier than max_iso_time or epsilon is too large.
     """
-    min_dt = datetime.fromisoformat(min_iso_time)
-    max_dt = datetime.fromisoformat(max_iso_time)
+    min_dt = datetime.fromisoformat(min_iso_time) if isinstance(min_iso_time, str) else min_iso_time
+    max_dt = datetime.fromisoformat(max_iso_time) if isinstance(max_iso_time, str) else max_iso_time
 
-    if min_dt >= max_dt:
+    if not compare_iso_time(max_dt, min_dt):
         raise ValueError(colorstr("red", f"min_iso_time ({min_iso_time}) must be earlier than max_iso_time ({max_iso_time})"))
 
     total_seconds = (max_dt - min_dt).total_seconds()
@@ -336,6 +336,23 @@ def generate_random_iso_time_between(min_iso_time: str,
     random_dt = min_dt + timedelta(seconds=random_seconds)
 
     return random_dt.isoformat()
+
+
+
+def compare_iso_time(time1: str, time2: str) -> bool:
+    """
+    Compare two times given in ISO 8601 format and determine if the first is later than the second.
+
+    Args:
+        time1 (str): The first time value as an ISO 8601 string or a datetime object.
+        time2 (str): The second time value as an ISO 8601 string or a datetime object.
+
+    Returns:
+        bool: True if `time1` is later than `time2`, otherwise False.
+    """
+    time1 = datetime.fromisoformat(time1) if isinstance(time1, str) else time1
+    time2 = datetime.fromisoformat(time2) if isinstance(time2, str) else time2
+    return time1 > time2
 
 
 
