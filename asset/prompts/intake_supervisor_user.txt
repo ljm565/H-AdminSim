@@ -1,0 +1,32 @@
+Below is a conversation between a patient during intake and a hospital administration office staff.  
+Please extract the patient's **Name, birth date, gender, and determined department**, and provide the output in the format shown in the examples below.
+If the department assigned in the conversation is appropriate, extract it as is.
+
+For the birth date:
+    * Always extract the birth date in the format YYYY-MM-DD.
+    * If the exact birth date is not provided, return "none".
+
+For the department decision:
+    * If the department assigned in the conversation is appropriate, extract it as is.
+    * If the department assigned is inappropriate, reassign it yourself based on the patient’s symptoms and information.
+    * If the department is not mentioned at all, you must determine the most appropriate one based on the conversation.
+
+Conversation:
+{CONVERSATION}
+
+Current department options in the hospital:
+{DEPARTMENTS}
+
+Answer format examples:
+Example 1:
+```json
+{{"name": "Chuck Adamcik", "birth_date": "1976-03-29", "gender": "male", "department": "rheumatory"}}
+```
+Example 2:
+```json
+{{"name": "Garth Sumners", "birth_date": "1982-11-12", "gender": "female", "department": "pulmonary"}}
+```
+Example 3 (if information is unavailable):
+```json
+{{"name": "none", "birth_date": "none", "gender": "none", "department": "none"}}
+```

@@ -80,56 +80,6 @@
                 }
             }
         
-        },
-        "general surgery": {
-            "code": "GS",
-            "subspecialty": {
-                "hepato-biliary & pancreas surgery": {
-                    "code": "GSHBP",
-                    "field": [
-                        "Liver Resection",
-                        "Biliary Tract Surgery",
-                        "Pancreatic Surgery",
-                        "Living Donor Liver Transplantation"
-                    ]
-                },
-                "colorectal surgery": {
-                    "code": "GSCOL",
-                    "field": [
-                        "Colon Cancer Surgery",
-                        "Rectal Cancer Surgery",
-                        "Inflammatory Bowel Disease Surgery",
-                        "Minimally Invasive Colorectal Surgery"
-                    ]
-                },
-                "child surgery": {
-                    "code": "GSPED",
-                    "field": [
-                        "Congenital Malformation Repair",
-                        "Pediatric Gastrointestinal Surgery",
-                        "Pediatric Trauma Surgery",
-                        "Neonatal Surgery"
-                    ]
-                },
-                "stomach surgery": {
-                    "code": "GSSTO",
-                    "field": [
-                        "Gastric Cancer Surgery",
-                        "Peptic Ulcer Surgery",
-                        "Bariatric Surgery",
-                        "Minimally Invasive Gastric Surgery"
-                    ]
-                },
-                "breast surgery": {
-                    "code": "GSBRE",
-                    "field": [
-                        "Breast Cancer Surgery",
-                        "Breast Reconstruction",
-                        "Benign Breast Disease Surgery",
-                        "Oncoplastic Surgery"
-                    ]
-                }
-            }
         }
     }
 }
