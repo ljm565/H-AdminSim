@@ -1,4 +1,5 @@
 import os
+import time
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
@@ -9,6 +10,7 @@ from langchain_core.output_parsers import JsonOutputParser
 
 from registry import ScheduleModel
 from utils import log
+from utils.common_utils import exponential_backoff
 from utils.image_preprocess_utils import *
 
 
@@ -123,13 +125,29 @@ class GeminiClient:
                 # User prompt
                 payloads = self.__make_payload(user_prompt, image_path, image_size)
                 
-                # System prompt and model response
-                response = self.client.models.generate_content(
-                    model=self.model,
-                    contents=payloads,
-                    config=types.GenerateContentConfig(system_instruction=system_prompt) if system_prompt else None,
-                    **kwargs
-                )
+                # System prompt and model response, including handling None cases
+                count = 0
+                retry_count = kwargs.get('retry_count', 5)
+                while 1:
+                    response = self.client.models.generate_content(
+                        model=self.model,
+                        contents=payloads,
+                        config=types.GenerateContentConfig(system_instruction=system_prompt) if system_prompt else None,
+                        **kwargs
+                    )
+
+                    # After the maximum retries
+                    if count >= retry_count:
+                        break
+                    
+                    # Exponential backoff logic
+                    if response.text == None:
+                        wait_time = exponential_backoff(count)
+                        time.sleep(wait_time)
+                        count += 1
+                        continue
+                    else:
+                        break
 
             return response.text
         
