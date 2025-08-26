@@ -8,14 +8,17 @@ For the birth date:
 
 For the department decision:
     * If the department assigned in the conversation is appropriate, extract it as is.
-    * If the department assigned is inappropriate, reassign it yourself based on the patient’s symptoms and information.
-    * If the department is not mentioned at all, you must determine the most appropriate one based on the conversation.
+    * If the department assigned in the conversation is found to be inappropriate, you are responsible for reassigning it according to the patient’s symptoms and information.
+    * If the department is not mentioned at all in the conversation, you must determine the most appropriate one based on the conversation.
 
-Conversation:
+
+Here is the conversation:
 {CONVERSATION}
+
 
 Current department options in the hospital:
 {DEPARTMENTS}
+
 
 Answer format examples:
 Example 1:
@@ -26,7 +29,7 @@ Example 2:
 ```json
 {{"name": "Garth Sumners", "birth_date": "1982-11-12", "gender": "female", "department": "pulmonary"}}
 ```
-Example 3 (if information is unavailable):
+Example 3 (if the demographic information is unavailable):
 ```json
-{{"name": "none", "birth_date": "none", "gender": "none", "department": "none"}}
+{{"name": "none", "birth_date": "none", "gender": "none", "department": "infectious diseases"}}
 ```
