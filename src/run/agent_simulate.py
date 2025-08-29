@@ -68,7 +68,7 @@ def main(args):
         
         # Data per hospital
         for i, agent_test_data in enumerate(all_agent_test_data):
-            agent_results = dict()
+            agent_results, done_length = dict(), 0
             shuffle_agent_test_data(agent_test_data)
             environment = HospitalEnvironment(config, agent_test_data)
             basename = os.path.splitext(os.path.basename(agent_test_data_files[i]))[0]
