@@ -96,6 +96,7 @@ class DataSynthesizer:
         interval_hour = float(config.hospital_data.interval_hour)
         start_hour = float(random.randint(config.hospital_data.start_hour.min, config.hospital_data.start_hour.max))
         end_hour = float(random.randint(config.hospital_data.end_hour.min, config.hospital_data.end_hour.max))
+        operation_hour_per_day = int(end_hour - start_hour)
         department_n = random.randint(
             config.hospital_data.department_per_hospital.min,
             config.hospital_data.department_per_hospital.max
@@ -138,6 +139,12 @@ class DataSynthesizer:
                 doctor = doctors.pop()
                 department_info[department]['doctor'].append(doctor)
                 specialty, spe_code = generate_random_specialty(department)
+                capacity_per_hour = random.choice(doctor_capacity_per_hour_list)
+                working_days = random.randint(
+                    config.hospital_data.working_days.min,
+                    config.hospital_data.working_days.max
+                )
+                working_dates = sorted(random.sample(dates, working_days))
                 doctor_info[doctor] = {
                     'department': department,
                     'specialty': {
@@ -145,7 +152,9 @@ class DataSynthesizer:
                         'code': spe_code,
                     },
                     'schedule': {},
-                    'capcity': random.choice(doctor_capacity_per_hour_list),
+                    'capacity_per_hour': int(capacity_per_hour),
+                    'capacity': int(capacity_per_hour * operation_hour_per_day * len(working_dates)),
+                    'workload': 0.0,
                     'gender': generate_random_code('gender'),
                     'telecom': [{
                         'system': 'phone',
@@ -154,11 +163,6 @@ class DataSynthesizer:
                     }],
                     'birthDate': generate_random_date()
                 }
-                working_days = random.randint(
-                    config.hospital_data.working_days.min,
-                    config.hospital_data.working_days.max
-                )
-                working_dates = sorted(random.sample(dates, working_days))
 
                 # Generate doctor schedules and apponitments based on the pre-defined days
                 for date in dates:
