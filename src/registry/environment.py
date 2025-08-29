@@ -33,6 +33,7 @@ class HospitalEnvironment:
             config (Config): Configuration parameters of the agent simulation.
             agent_test_data (dict): An agent test data to simulate a hospital environmnet.
         """
+        # Basic
         getcontext().prec = 10
         self._epsilon = 1e-6
         self.max_retries = config.fhir_max_connection_retries
@@ -45,7 +46,9 @@ class HospitalEnvironment:
         self._TIME_UNIT = agent_test_data.get('metadata').get('time').get('interval_hour')
         self._PATIENT_NUM = len(agent_test_data.get('agent_data'))
         _country_code = agent_test_data.get('metadata').get('country_code', 'KR')
+        self.booking_num = {k: 0 for k in agent_test_data.get('doctor')}
         
+        # Time setting
         self._utc_offset = get_utc_offset(_country_code)
         self.current_time = get_iso_time(
             time_hour=random.uniform(max(0, self._START_HOUR - 6), max(0, self._START_HOUR - self._epsilon)),
@@ -53,6 +56,8 @@ class HospitalEnvironment:
             utc_offset=self._utc_offset
         )
         self.avg_gap = self.__calculate_max_time_increment()
+        
+        # Misc.
         self.patient_schedules = list()
         self.first_verbose_flag = True
 
@@ -63,7 +68,13 @@ class HospitalEnvironment:
         self._fhir_slot_cache = None
 
 
-    def __calculate_max_time_increment(self):
+    def __calculate_max_time_increment(self) -> float:
+        """
+        Calculate the maximum average time increment (gap) between patient booking within the defined scheduling period.
+
+        Returns:
+            float: The average time gap (in hours) between patients.
+        """
         st = str_to_datetime(get_iso_time(self._START_HOUR, self._START_DATE, self._utc_offset))
         tr = str_to_datetime(get_iso_time(self._END_HOUR, self._END_DATE, self._utc_offset))
         total_hours = (tr - st).total_seconds() / 3600
@@ -210,6 +221,7 @@ class HospitalEnvironment:
             self.update_current_time()
             self.patient_schedules.append(patient_schedule)
             self.update_patient_status()
+            self.booking_num[patient_schedule['attending_physician']] += 1
 
         self.reset_variable()
  

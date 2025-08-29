@@ -142,13 +142,6 @@ class DataConverter:
                             'display': str(doctor_values['capacity'])
                         }],
                         'text': 'capacity'
-                    },
-                    {
-                        'coding': [{
-                            'code': 'workload',
-                            'display': str(doctor_values['workload'])
-                        }],
-                        'text': 'workload'
                     }
                 ],
                 'practitioner': {'reference': f'Practitioner/{practitioner_id}'}

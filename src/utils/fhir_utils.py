@@ -145,7 +145,6 @@ def convert_fhir_resources_to_doctor_info(practitioners: list[dict],
             },
             'capacity_per_hour': int(attributes['capacity_per_hour']),
             'capacity': int(attributes['capacity']),
-            'workload': float(attributes['workload'])
         }
     schedule_ref_to_practioner_ref = {
         f"Schedule/{schedule['resource']['id']}": schedule['resource']['actor'][0]['reference'] for schedule in schedules
@@ -189,7 +188,6 @@ def convert_fhir_resources_to_doctor_info(practitioners: list[dict],
             'schedule': {k: sorted(v) for k, v in dict(sorted(practitioner_ref_to_schedules.get(ref, []).items())).items()},
             'capacity_per_hour': practitioner_ref_to_role[ref]['capacity_per_hour'],
             'capacity': practitioner_ref_to_role[ref]['capacity'],
-            'workload': practitioner_ref_to_role[ref]['workload'],
             'gender': resource['gender'],
             'telecom': resource['telecom'],
             'birthDate': resource['birthDate']

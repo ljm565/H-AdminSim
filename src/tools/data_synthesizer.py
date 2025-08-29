@@ -154,7 +154,6 @@ class DataSynthesizer:
                     'schedule': {},
                     'capacity_per_hour': int(capacity_per_hour),
                     'capacity': int(capacity_per_hour * operation_hour_per_day * len(working_dates)),
-                    'workload': 0.0,
                     'gender': generate_random_code('gender'),
                     'telecom': [{
                         'system': 'phone',
