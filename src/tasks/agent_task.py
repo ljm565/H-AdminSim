@@ -312,10 +312,14 @@ class OutpatientIntake(Task):
             name=name,
             birth_date=birth_date,
             gender=gender,
+            random_seed=42,
+            temperature=0
         )
         admin_staff_agent = AdminStaffAgent(
             self.task_model,
             departments,
+            random_seed=42,
+            temperature=0
         )
         environment = OPSimulation(patient_agent, admin_staff_agent)
         dialogs = environment.simulate(verbose=False)
@@ -464,7 +468,7 @@ class AssignSchedule(Task):
         return department, sanity
     
 
-    def __filter_doctor_schedule(self, doctor_information: dict, department: str) -> dict:
+    def __filter_doctor_schedule(self, doctor_information: dict, department: str, environment) -> dict:
         """
         Filter doctor information by department.
 
@@ -472,6 +476,7 @@ class AssignSchedule(Task):
             doctor_information (dict): A dictionary containing information about doctors, 
                                        including their department and schedule details.
             department (str): The department name used to filter the doctors.
+            environment (Environment): Environment object containing booking number of each doctor.
 
         Returns:
             dict: A dictionary containing only the doctors who belong to the specified 
@@ -481,7 +486,11 @@ class AssignSchedule(Task):
 
         for k, v in doctor_information.items():
             if v['department'] == department:
-                filtered_doctor_information['doctor'][k] = v
+                tmp_schedule = deepcopy(v)
+                del tmp_schedule['capacity_per_hour'], tmp_schedule['capacity'], tmp_schedule['gender'], tmp_schedule['telecom'], tmp_schedule['birthDate']
+                tmp_schedule['workload'] = f"{environment.booking_num[k] / v['capacity'] * 100}%"
+                tmp_schedule['outpatient_duration'] = 1 / v['capacity_per_hour']
+                filtered_doctor_information['doctor'][k] = tmp_schedule
         
         return filtered_doctor_information
     
@@ -492,7 +501,7 @@ class AssignSchedule(Task):
 
         Args:
             prediction (dict): Predicted schedule information including doctor, start time, end time, and date.
-            doctor_information (dict): Dictionary containing doctors’ schedules and availability.
+            doctor_information (dict): Dictionary containing doctors' schedules and availability.
             department (str): Department name used to filter relevant doctors.
             environment (Environment): Environment object containing current time and UTC offset.
             preference_type (str): Scheduling preference type, e.g., 'doctor' (specific doctor) or 'department'.
@@ -500,7 +509,7 @@ class AssignSchedule(Task):
         Returns:
             bool: True if the predicted schedule is the earliest available, False otherwise.
         """
-        fixed_schedules = self.__filter_doctor_schedule(doctor_information, department)['doctor']
+        fixed_schedules = self.__filter_doctor_schedule(doctor_information, department, environment)['doctor']
         pred_doctor_name = list(prediction['schedule'].keys())[0]
         pred_start = prediction['schedule'][pred_doctor_name]['start']
         pred_end = prediction['schedule'][pred_doctor_name]['end']
@@ -556,7 +565,7 @@ class AssignSchedule(Task):
         Args:
             prediction (Union[str, dict]): The predicted allocation result, either a string (if parsing failed)
                                            or a dictionary mapping a doctor's name to a schedule with 'start' and 'end' times.
-            patient_condition (dict): The conditions including duration, etc.
+            patient_condition (dict): The conditions including name, preference, etc.
             doctor_information (dict): Dictionary of doctor data including their existing schedules.
                                        Each key is a doctor's name, and each value includes a 'schedule' field.
             environment (HospitalEnvironment): Hospital environment instance to manage patient schedules.
@@ -585,8 +594,12 @@ class AssignSchedule(Task):
             assert isinstance(start, float) and isinstance(end, float) and isinstance(date, str) \
                 and start < end and start >= self._START_HOUR and end <= self._END_HOUR \
                 and compare_iso_time(start_iso_time, environment.current_time) and date in fixed_schedules
-            assert patient_condition['department'] == doctor_information[doctor_name]['department'] \
-                and patient_condition['duration'] == round(end - start, 4)
+            assert patient_condition['department'] == doctor_information[doctor_name]['department']
+            
+            # Duration mismatched case
+            if not patient_condition['duration'] == round(end - start, 4):
+                return False, STATUS_CODES['duration'], prediction, doctor_information
+            
         except KeyError:
             return False, STATUS_CODES['format'], prediction, doctor_information    # Schedule allocation missing or doctor not found
         except AssertionError:
@@ -619,6 +632,17 @@ class AssignSchedule(Task):
         )
         if not is_earlist:
             return False, STATUS_CODES['preference']['asap'], prediction, doctor_information
+        
+        ###################### Check the doctors' workload balance  #####################
+        if not patient_condition['preference'] == 'doctor':
+            schedule_candidates = self.__filter_doctor_schedule(
+                doctor_information,
+                patient_condition.get('department'),
+                environment
+            )['doctor']
+            selected_doctor_wl = float(schedule_candidates[doctor_name]['workload'][:-1])
+            if not all(float(v['workload'][:-1]) >= selected_doctor_wl for k, v in schedule_candidates.items() if k != doctor_name):
+                return False, STATUS_CODES['workload'], prediction, doctor_information 
                 
         # Finally update schedule of the doctor
         doctor_information[doctor_name]['schedule'][date].append([start, end])    # In-place logic
@@ -705,7 +729,6 @@ class AssignSchedule(Task):
         patient_condition = {
             'patient': test_data.get('patient'), 
             'department': department, 
-            'duration': test_data.get('constraint').get('duration'), 
             'preference': test_data.get('constraint').get('preference'), 
             'preferred_doctor': test_data.get('constraint').get('attending_physician') if test_data.get('constraint').get('preference') == 'doctor' else "Doesn't matter",
         }
@@ -732,8 +755,7 @@ class AssignSchedule(Task):
         feedback, prev_prediction = '', ''
         feedback_cnt = 0
         while 1:
-            filtered_doctor_information = self.__filter_doctor_schedule(doctor_information, department)
-            # filtered_doctor_information = doctor_information
+            filtered_doctor_information = self.__filter_doctor_schedule(doctor_information, department, environment)
             if self.ensure_output_format:
                 prediction = self.task_client(
                     user_prompt=self.task_user_prompt_template,
@@ -744,7 +766,6 @@ class AssignSchedule(Task):
                         'TIME_UNIT': self._TIME_UNIT,
                         'CURRENT_TIME': environment.current_time,
                         'DEPARTMENT': department,
-                        'DURATION': patient_condition.get('duration'),
                         'PREFERENCE': self.preference_phrase[patient_condition.get('preference')],
                         'PREFERRED_DOCTOR': patient_condition.get('preferred_doctor'),
                         'DAY': self._DAY,
@@ -761,7 +782,6 @@ class AssignSchedule(Task):
                     TIME_UNIT=self._TIME_UNIT,
                     CURRENT_TIME=environment.current_time,
                     DEPARTMENT=department,
-                    DURATION=patient_condition.get('duration'),
                     PREFERENCE=self.preference_phrase[patient_condition.get('preference')],
                     PREFERRED_DOCTOR=patient_condition.get('preferred_doctor'),
                     DAY=self._DAY,
@@ -820,431 +840,431 @@ class AssignSchedule(Task):
 
 
 
-class MakeFHIRResource(Task):
-    def __init__(self, config):
-        self.name = 'fhir_resource'
-        self.__init_env(config)
-        self.system_prompt = txt_load(self._system_prompt_path)
-        self.user_prompt_template = txt_load(self._user_prompt_path)
-        if 'gemini' in config.model.lower():
-            self.client = GeminiClient(config.model)
-        elif 'gpt' in config.model.lower():
-            self.client = GPTClient(config.model)
-        else:
-            self.client = VLLMClient(config.model, config.vllm_url)
+# class MakeFHIRResource(Task):
+#     def __init__(self, config):
+#         self.name = 'fhir_resource'
+#         self.__init_env(config)
+#         self.system_prompt = txt_load(self._system_prompt_path)
+#         self.user_prompt_template = txt_load(self._user_prompt_path)
+#         if 'gemini' in config.model.lower():
+#             self.client = GeminiClient(config.model)
+#         elif 'gpt' in config.model.lower():
+#             self.client = GPTClient(config.model)
+#         else:
+#             self.client = VLLMClient(config.model, config.vllm_url)
 
 
-    def __init_env(self, config):
-        """
-        Initialize necessary variables.
+#     def __init_env(self, config):
+#         """
+#         Initialize necessary variables.
 
-        Args:
-            config (Config): Configuration for agent tasks.
-        """
-        self._system_prompt_path = config.fhir_resource_task.system_prompt
-        self._user_prompt_path = config.fhir_resource_task.user_prompt
-        self._fhir_data_path = Path(config.fhir_data)
+#         Args:
+#             config (Config): Configuration for agent tasks.
+#         """
+#         self._system_prompt_path = config.fhir_resource_task.system_prompt
+#         self._user_prompt_path = config.fhir_resource_task.user_prompt
+#         self._fhir_data_path = Path(config.fhir_data)
 
 
-    @staticmethod
-    def postprocessing(text: str) -> Union[str, dict]:
-        """
-        Attempts to parse the given text as JSON. If parsing succeeds, returns a dictionary;
-        otherwise, returns the original string.
+#     @staticmethod
+#     def postprocessing(text: str) -> Union[str, dict]:
+#         """
+#         Attempts to parse the given text as JSON. If parsing succeeds, returns a dictionary;
+#         otherwise, returns the original string.
 
-        Args:
-            text (str): The text output to post-process, potentially a JSON-formatted string.
+#         Args:
+#             text (str): The text output to post-process, potentially a JSON-formatted string.
 
-        Returns:
-            Union[str, dict]: A dictionary if the text is valid JSON, otherwise the original string.
-        """
-        try:
-            match = re.search(r'```json\s*(\{.*?\})\s*```', text, re.DOTALL)
-            if match:
-                json_str = match.group(1)
-                return json.loads(json_str)
-            return text
-        except:
-            return text
+#         Returns:
+#             Union[str, dict]: A dictionary if the text is valid JSON, otherwise the original string.
+#         """
+#         try:
+#             match = re.search(r'```json\s*(\{.*?\})\s*```', text, re.DOTALL)
+#             if match:
+#                 json_str = match.group(1)
+#                 return json.loads(json_str)
+#             return text
+#         except:
+#             return text
             
     
-    def __extract_schedules(self, gt: Tuple[dict, dict], agent_results: dict) -> Tuple[dict, bool]:
-        """
-        Extracts the predicted schedule from agent results.
-        If predictions are not available, falls back to using ground truth labels.
+#     def __extract_schedules(self, gt: Tuple[dict, dict], agent_results: dict) -> Tuple[dict, bool]:
+#         """
+#         Extracts the predicted schedule from agent results.
+#         If predictions are not available, falls back to using ground truth labels.
 
-        Args:
-            gt (dict): Ground truth data of a patient.
-            agent_results (dict): A dictionary that may contain predicted schedule results under the key 'schedule'.
+#         Args:
+#             gt (dict): Ground truth data of a patient.
+#             agent_results (dict): A dictionary that may contain predicted schedule results under the key 'schedule'.
 
-        Returns:
-            Tuple[dict, bool]: A scedule dictionary, either predicted or ground truth and its sanity status.
-        """
-        try:
-            schedule = agent_results['schedule']['pred'][-1]
-            sanity = agent_results['schedule']['status'][-1]
-        except:
-            log('The predicted schedule is not given. The ground truth value will be used.', 'warning')
-            schedule = {
-                'patient': gt['patient'], 
-                'attending_physician': gt['attending_physician'],
-                'department': gt['department'],
-                'schedule': gt['schedule']['time'],
-                'priority': gt['priority'],
-                'flexibility': gt['flexibility']
-            }
-            sanity = True
+#         Returns:
+#             Tuple[dict, bool]: A scedule dictionary, either predicted or ground truth and its sanity status.
+#         """
+#         try:
+#             schedule = agent_results['schedule']['pred'][-1]
+#             sanity = agent_results['schedule']['status'][-1]
+#         except:
+#             log('The predicted schedule is not given. The ground truth value will be used.', 'warning')
+#             schedule = {
+#                 'patient': gt['patient'], 
+#                 'attending_physician': gt['attending_physician'],
+#                 'department': gt['department'],
+#                 'schedule': gt['schedule']['time'],
+#                 'priority': gt['priority'],
+#                 'flexibility': gt['flexibility']
+#             }
+#             sanity = True
 
-        return schedule, sanity
+#         return schedule, sanity
     
 
-    def _sanity_check(self,
-                      prediction: Union[str, dict], 
-                      expected_prediction: dict) -> Tuple[bool, str, Union[str, dict]]:
-        """
-        Perform a recursive sanity check to compare the predicted Appointment resource against the expected one.
+#     def _sanity_check(self,
+#                       prediction: Union[str, dict], 
+#                       expected_prediction: dict) -> Tuple[bool, str, Union[str, dict]]:
+#         """
+#         Perform a recursive sanity check to compare the predicted Appointment resource against the expected one.
 
-        Args:
-            prediction (Union[str, dict]): The predicted Appointment resource, either as 
-                                           a JSON-parsed dictionary or a raw string (which will be rejected as invalid).
-            expected_prediction (dict): The expected Appointment resource structure to validate against.
+#         Args:
+#             prediction (Union[str, dict]): The predicted Appointment resource, either as 
+#                                            a JSON-parsed dictionary or a raw string (which will be rejected as invalid).
+#             expected_prediction (dict): The expected Appointment resource structure to validate against.
 
-        Returns:
-            Tuple[bool, str, Union[str, dict]]:
-                - A boolean indicating whether the prediction passed the sanity check.
-                - A status code string (e.g., 'correct', 'format') from `STATUS_CODES`.
-                - The original prediction, for logging or further processing.
-        """
-        # Check the prediciton format
-        if not isinstance(prediction, dict):
-            return False, STATUS_CODES['format'], prediction    # Could not be parsed as a dictionary
+#         Returns:
+#             Tuple[bool, str, Union[str, dict]]:
+#                 - A boolean indicating whether the prediction passed the sanity check.
+#                 - A status code string (e.g., 'correct', 'format') from `STATUS_CODES`.
+#                 - The original prediction, for logging or further processing.
+#         """
+#         # Check the prediciton format
+#         if not isinstance(prediction, dict):
+#             return False, STATUS_CODES['format'], prediction    # Could not be parsed as a dictionary
         
-        # Compare recursively
-        if self.sanity_check_recursively(expected_prediction, prediction):
-            return True, STATUS_CODES['correct'], prediction
-        else:
-            return False, STATUS_CODES['format'], prediction
+#         # Compare recursively
+#         if self.sanity_check_recursively(expected_prediction, prediction):
+#             return True, STATUS_CODES['correct'], prediction
+#         else:
+#             return False, STATUS_CODES['format'], prediction
     
 
-    def __get_necessary_information(self, schedule: dict) -> dict:
-        """
-        Extract and generate necessary information for creating a FHIR Appointment resource.
+#     def __get_necessary_information(self, schedule: dict) -> dict:
+#         """
+#         Extract and generate necessary information for creating a FHIR Appointment resource.
 
-        This includes identifiers and references for the patient and practitioner, ISO-formatted
-        start and end times, slot references based on schedule segments, and appointment ID.
+#         This includes identifiers and references for the patient and practitioner, ISO-formatted
+#         start and end times, slot references based on schedule segments, and appointment ID.
 
-        Args:
-            schedule (dict): A dictionary containing patient appointment data.
-                            Expected keys include: 'patient', 'attending_physician',
-                            'department', and 'schedule'.
+#         Args:
+#             schedule (dict): A dictionary containing patient appointment data.
+#                             Expected keys include: 'patient', 'attending_physician',
+#                             'department', and 'schedule'.
 
-        Returns:
-            dict: A dictionary containing the following fields:
-                - 'ID' (str): Unique appointment ID based on practitioner and time.
-                - 'START_HOUR' (str): ISO 8601 formatted start time.
-                - 'END_HOUR' (str): ISO 8601 formatted end time.
-                - 'SLOT' (list[str]): List of Slot resource references.
-                - 'PATIENT' (str): Patient name or identifier.
-                - 'PATIENT_REF' (str): FHIR reference string to the Patient resource.
-                - 'PRACTITIONER' (str): Doctor name or identifier.
-                - 'PRACTITIONER_REF' (str): FHIR reference string to the Practitioner resource.
-        """
-        patient = schedule['patient']
-        doctor = schedule['attending_physician']
-        department = schedule['department']
-        date = schedule['date']
-        schedule = schedule['schedule']
+#         Returns:
+#             dict: A dictionary containing the following fields:
+#                 - 'ID' (str): Unique appointment ID based on practitioner and time.
+#                 - 'START_HOUR' (str): ISO 8601 formatted start time.
+#                 - 'END_HOUR' (str): ISO 8601 formatted end time.
+#                 - 'SLOT' (list[str]): List of Slot resource references.
+#                 - 'PATIENT' (str): Patient name or identifier.
+#                 - 'PATIENT_REF' (str): FHIR reference string to the Patient resource.
+#                 - 'PRACTITIONER' (str): Doctor name or identifier.
+#                 - 'PRACTITIONER_REF' (str): FHIR reference string to the Practitioner resource.
+#         """
+#         patient = schedule['patient']
+#         doctor = schedule['attending_physician']
+#         department = schedule['department']
+#         date = schedule['date']
+#         schedule = schedule['schedule']
         
-        utc_offset = get_utc_offset(self._country_code)
-        patient_id = get_individual_id(self._hospital_name, self._department_data[department]['code'], patient)
-        practitioner_id = get_individual_id(self._hospital_name, self._department_data[department]['code'], doctor)
-        schedule_segments = convert_time_to_segment(self._START_HOUR, self._END_HOUR, self._TIME_UNIT, schedule)
+#         utc_offset = get_utc_offset(self._country_code)
+#         patient_id = get_individual_id(self._hospital_name, self._department_data[department]['code'], patient)
+#         practitioner_id = get_individual_id(self._hospital_name, self._department_data[department]['code'], doctor)
+#         schedule_segments = convert_time_to_segment(self._START_HOUR, self._END_HOUR, self._TIME_UNIT, schedule)
         
-        _id = get_appointment_id(practitioner_id, date, schedule_segments[0], schedule_segments[-1])
-        start = get_iso_time(schedule[0], utc_offset=utc_offset)
-        end = get_iso_time(schedule[-1], utc_offset=utc_offset)
-        patient_ref = f'Patient/{patient_id}'
-        practitioner_ref = f'Practitioner/{practitioner_id}'
-        slot = [f'Slot/{practitioner_id}-slot{seg}' for seg in schedule_segments]
+#         _id = get_appointment_id(practitioner_id, date, schedule_segments[0], schedule_segments[-1])
+#         start = get_iso_time(schedule[0], utc_offset=utc_offset)
+#         end = get_iso_time(schedule[-1], utc_offset=utc_offset)
+#         patient_ref = f'Patient/{patient_id}'
+#         practitioner_ref = f'Practitioner/{practitioner_id}'
+#         slot = [f'Slot/{practitioner_id}-slot{seg}' for seg in schedule_segments]
 
-        return {
-            'ID': _id,
-            'START_HOUR': start,
-            'END_HOUR': end,
-            'SLOT': slot,
-            'PATIENT': patient,
-            'PATIENT_REF': patient_ref,
-            'PRACTITIONER': doctor,
-            'PRACTITIONER_REF': practitioner_ref,
-        }
+#         return {
+#             'ID': _id,
+#             'START_HOUR': start,
+#             'END_HOUR': end,
+#             'SLOT': slot,
+#             'PATIENT': patient,
+#             'PATIENT_REF': patient_ref,
+#             'PRACTITIONER': doctor,
+#             'PRACTITIONER_REF': practitioner_ref,
+#         }
 
 
-    def __call__(self, data_pair: Tuple[dict, dict], agent_test_data: dict, agent_results: dict, environment) -> dict:
-        """
-        Run the evaluation pipeline for generating and validating FHIR Appointment resources based on agent scheduling results.
+#     def __call__(self, data_pair: Tuple[dict, dict], agent_test_data: dict, agent_results: dict, environment) -> dict:
+#         """
+#         Run the evaluation pipeline for generating and validating FHIR Appointment resources based on agent scheduling results.
 
-        Args:
-            data_pair (Tuple[dict, dict]): A pair of ground truth and patient data for agent simulation.
-            agent_test_data (dict): Dictionary containing test metadata, doctor/patient/schedule data,
-                                    and ground-truth information for each case.
-            agent_results (dict): Dictionary containing scheduling results generated by the agent.
-            environment (HospitalEnvironment): Hospital environment instance to manage patient schedules.
+#         Args:
+#             data_pair (Tuple[dict, dict]): A pair of ground truth and patient data for agent simulation.
+#             agent_test_data (dict): Dictionary containing test metadata, doctor/patient/schedule data,
+#                                     and ground-truth information for each case.
+#             agent_results (dict): Dictionary containing scheduling results generated by the agent.
+#             environment (HospitalEnvironment): Hospital environment instance to manage patient schedules.
 
-        Returns:
-            dict: A dictionary with the following keys:
-                - 'gt': List of ground-truth FHIR Appointment resources.
-                - 'pred': List of predicted FHIR Appointment resources generated by the LLM.
-                - 'status': List of boolean values indicating if each prediction passed the sanity check.
-                - 'status_code': List of string codes representing the validation status.
-        """
-        gt, test_data = data_pair
-        self._department_data = agent_test_data.get('department')
-        metadata = agent_test_data.get('metadata')
-        self._hospital_name = metadata.get('hospital_name')
-        self._country_code = metadata.get('country_code', 'KR')
-        self._START_HOUR = metadata.get('time').get('start_hour')
-        self._END_HOUR = metadata.get('time').get('end_hour')
-        self._TIME_UNIT = metadata.get('time').get('interval_hour')
-        schedule, sanity = self.__extract_schedules(gt, agent_results)
-        results = self.get_result_dict()
+#         Returns:
+#             dict: A dictionary with the following keys:
+#                 - 'gt': List of ground-truth FHIR Appointment resources.
+#                 - 'pred': List of predicted FHIR Appointment resources generated by the LLM.
+#                 - 'status': List of boolean values indicating if each prediction passed the sanity check.
+#                 - 'status_code': List of string codes representing the validation status.
+#         """
+#         gt, test_data = data_pair
+#         self._department_data = agent_test_data.get('department')
+#         metadata = agent_test_data.get('metadata')
+#         self._hospital_name = metadata.get('hospital_name')
+#         self._country_code = metadata.get('country_code', 'KR')
+#         self._START_HOUR = metadata.get('time').get('start_hour')
+#         self._END_HOUR = metadata.get('time').get('end_hour')
+#         self._TIME_UNIT = metadata.get('time').get('interval_hour')
+#         schedule, sanity = self.__extract_schedules(gt, agent_results)
+#         results = self.get_result_dict()
         
-        # Load ground truth Appointment FHIR resource
-        gt_resource = self._get_fhir_appointment(self._fhir_data_path / 'appointment' / gt.get('fhir_resource'))
-        results['gt'].append(gt_resource)
+#         # Load ground truth Appointment FHIR resource
+#         gt_resource = self._get_fhir_appointment(self._fhir_data_path / 'appointment' / gt.get('fhir_resource'))
+#         results['gt'].append(gt_resource)
 
-        # If the precedent schedule data is invalid, continue
-        if not sanity:
-            results['pred'].append({})
-            results['status'].append(False)
-            results['status_code'].append(STATUS_CODES['preceding'])
-            return results
+#         # If the precedent schedule data is invalid, continue
+#         if not sanity:
+#             results['pred'].append({})
+#             results['status'].append(False)
+#             results['status_code'].append(STATUS_CODES['preceding'])
+#             return results
 
-        # LLM call and compare the validity of the LLM output
-        user_prompt = self.user_prompt_template.format(**self.__get_necessary_information(schedule))
-        prediction = self.client(
-            user_prompt,
-            system_prompt=self.system_prompt, 
-            using_multi_turn=False
-        )
-        prediction = MakeFHIRResource.postprocessing(prediction)
-        expected_prediction = self._get_fhir_appointment(data={'metadata': deepcopy(metadata), 
-                                                               'department': deepcopy(self._department_data), 
-                                                               'information': deepcopy(schedule)})
-        status, status_code, prediction = self._sanity_check(prediction, expected_prediction)
+#         # LLM call and compare the validity of the LLM output
+#         user_prompt = self.user_prompt_template.format(**self.__get_necessary_information(schedule))
+#         prediction = self.client(
+#             user_prompt,
+#             system_prompt=self.system_prompt, 
+#             using_multi_turn=False
+#         )
+#         prediction = MakeFHIRResource.postprocessing(prediction)
+#         expected_prediction = self._get_fhir_appointment(data={'metadata': deepcopy(metadata), 
+#                                                                'department': deepcopy(self._department_data), 
+#                                                                'information': deepcopy(schedule)})
+#         status, status_code, prediction = self._sanity_check(prediction, expected_prediction)
         
-        # Append results
-        results['pred'].append(prediction)
-        results['status'].append(status)
-        results['status_code'].append(status_code)
+#         # Append results
+#         results['pred'].append(prediction)
+#         results['status'].append(status)
+#         results['status_code'].append(status_code)
             
-        return results
+#         return results
 
 
 
-class MakeFHIRAPI(Task):
-    def __init__(self, config):
-        self.name = 'fhir_api'
-        self.__init_env(config)
-        self.system_prompt = txt_load(self._system_prompt_path)
-        self.user_prompt_template = txt_load(self._user_prompt_path)
-        if 'gemini' in config.model.lower():
-            self.client = GeminiClient(config.model)
-        elif 'gpt' in config.model.lower():
-            self.client = GPTClient(config.model)
-        else:
-            self.client = VLLMClient(config.model, config.vllm_url)
+# class MakeFHIRAPI(Task):
+#     def __init__(self, config):
+#         self.name = 'fhir_api'
+#         self.__init_env(config)
+#         self.system_prompt = txt_load(self._system_prompt_path)
+#         self.user_prompt_template = txt_load(self._user_prompt_path)
+#         if 'gemini' in config.model.lower():
+#             self.client = GeminiClient(config.model)
+#         elif 'gpt' in config.model.lower():
+#             self.client = GPTClient(config.model)
+#         else:
+#             self.client = VLLMClient(config.model, config.vllm_url)
 
 
-    def __init_env(self, config):
-        """
-        Initialize necessary variables.
+#     def __init_env(self, config):
+#         """
+#         Initialize necessary variables.
 
-        Args:
-            config (Config): Configuration for agent tasks.
-        """
-        self._system_prompt_path = config.fhir_api_task.system_prompt
-        self._user_prompt_path = config.fhir_api_task.user_prompt
-        self._fhir_data_path = Path(config.fhir_data)
-        self._fhir_url = config.fhir_url
+#         Args:
+#             config (Config): Configuration for agent tasks.
+#         """
+#         self._system_prompt_path = config.fhir_api_task.system_prompt
+#         self._user_prompt_path = config.fhir_api_task.user_prompt
+#         self._fhir_data_path = Path(config.fhir_data)
+#         self._fhir_url = config.fhir_url
 
 
-    @staticmethod
-    def postprocessing(text: str) -> Union[str, None]:
-        """
-        Extracts a Bash command from a markdown-formatted code block in the given text.
+#     @staticmethod
+#     def postprocessing(text: str) -> Union[str, None]:
+#         """
+#         Extracts a Bash command from a markdown-formatted code block in the given text.
 
-        Args:
-            text (str): The input text potentially containing a markdown-formatted Bash code block.
+#         Args:
+#             text (str): The input text potentially containing a markdown-formatted Bash code block.
 
-        Returns:
-            Union[str, None]: The extracted Bash command if found, otherwise None.
-        """
-        try:
-            match = re.search(r'```bash\s*(.*?)\s*```', text, re.DOTALL)
-            if match:
-                return match.group(1)
-        except:
-            return None
+#         Returns:
+#             Union[str, None]: The extracted Bash command if found, otherwise None.
+#         """
+#         try:
+#             match = re.search(r'```bash\s*(.*?)\s*```', text, re.DOTALL)
+#             if match:
+#                 return match.group(1)
+#         except:
+#             return None
         
 
-    def __extract_fhir_resource(self, gt: dict, agent_results: dict) -> Tuple[list[dict], list[bool]]:
-        """
-        Extracts the predicted FHIR Appointment resource from agent results.
-        If predictions are not available, falls back to using ground truth labels.
+#     def __extract_fhir_resource(self, gt: dict, agent_results: dict) -> Tuple[list[dict], list[bool]]:
+#         """
+#         Extracts the predicted FHIR Appointment resource from agent results.
+#         If predictions are not available, falls back to using ground truth labels.
 
-        Args:
-            data_pair (Tuple[dict, dict]): A pair of (ground_truth, test_data) for a single patient.
-            gt (dict): Ground truth data of a patient.
+#         Args:
+#             data_pair (Tuple[dict, dict]): A pair of (ground_truth, test_data) for a single patient.
+#             gt (dict): Ground truth data of a patient.
 
-        Returns:
-            Tuple[list[dict], list[bool]]: A list of fhir_resources, either predicted or ground truth and each sanity status.
-        """
-        try:
-            fhir_resource = agent_results['fhir_resource']['pred'][-1]
-            sanity = agent_results['fhir_resource']['status'][-1]
-        except:
-            log('The predicted fhir_resource is not given. The ground truth value will be used.', 'warning')
-            fhir_resource_path = self._fhir_data_path / 'appointment' / gt.get('fhir_resource')
+#         Returns:
+#             Tuple[list[dict], list[bool]]: A list of fhir_resources, either predicted or ground truth and each sanity status.
+#         """
+#         try:
+#             fhir_resource = agent_results['fhir_resource']['pred'][-1]
+#             sanity = agent_results['fhir_resource']['status'][-1]
+#         except:
+#             log('The predicted fhir_resource is not given. The ground truth value will be used.', 'warning')
+#             fhir_resource_path = self._fhir_data_path / 'appointment' / gt.get('fhir_resource')
             
-            # Load the FHIR json file if it exists, otherwise create a new one
-            fhir_resource = self._get_fhir_appointment(
-                gt_resource_path=fhir_resource_path,
-                data={'metadata': deepcopy(self._metadata), 
-                      'department': deepcopy(self._department_data),
-                      'information': deepcopy(gt)}
-            )
-            sanity = True
+#             # Load the FHIR json file if it exists, otherwise create a new one
+#             fhir_resource = self._get_fhir_appointment(
+#                 gt_resource_path=fhir_resource_path,
+#                 data={'metadata': deepcopy(self._metadata), 
+#                       'department': deepcopy(self._department_data),
+#                       'information': deepcopy(gt)}
+#             )
+#             sanity = True
         
 
-        return fhir_resource, sanity
+#         return fhir_resource, sanity
     
 
-    def _sanity_check(self,
-                      prediction: Union[str, None], 
-                      expected_prediction: str) -> Tuple[bool, str, Union[str, None]]:
-        """
-        Perform a sanity check to compare the predicted curl command against the expected one.
+#     def _sanity_check(self,
+#                       prediction: Union[str, None], 
+#                       expected_prediction: str) -> Tuple[bool, str, Union[str, None]]:
+#         """
+#         Perform a sanity check to compare the predicted curl command against the expected one.
 
-        Args:
-            prediction (Union[str, None]): The LLM-generated curl command.
-            expected_prediction (str): The expected curl command.
+#         Args:
+#             prediction (Union[str, None]): The LLM-generated curl command.
+#             expected_prediction (str): The expected curl command.
 
-        Returns:
-            Tuple[bool, str, Union[str, None]]:
-                - A boolean indicating whether the prediction passed the sanity check.
-                - A status code string (e.g., 'correct', 'format') from `STATUS_CODES`.
-                - The original prediction, for logging or further processing.
-        """
-        def check_curl(curl_command: str) -> bool:
-            return curl_command.startswith('curl -X PUT')
+#         Returns:
+#             Tuple[bool, str, Union[str, None]]:
+#                 - A boolean indicating whether the prediction passed the sanity check.
+#                 - A status code string (e.g., 'correct', 'format') from `STATUS_CODES`.
+#                 - The original prediction, for logging or further processing.
+#         """
+#         def check_curl(curl_command: str) -> bool:
+#             return curl_command.startswith('curl -X PUT')
 
-        def extract_url(curl_command: str) -> str:
-            match = re.search(r'(http[s]?://[^\s"]+)', curl_command)
-            return match.group(0).strip() if match else ''
+#         def extract_url(curl_command: str) -> str:
+#             match = re.search(r'(http[s]?://[^\s"]+)', curl_command)
+#             return match.group(0).strip() if match else ''
 
-        def extract_headers(curl_command: str) -> set:
-            pattern = r'-(?:H|-header) "([^"]+)"'
-            return set(re.findall(pattern, curl_command))
+#         def extract_headers(curl_command: str) -> set:
+#             pattern = r'-(?:H|-header) "([^"]+)"'
+#             return set(re.findall(pattern, curl_command))
         
-        def extract_payload(curl_command: str) -> dict:
-            pattern = r"-(?:d|-data)\s+(['\"])(\{.*?\})\1"  # ' 또는 "로 감싼 JSON 추출
-            match = re.search(pattern, curl_command, re.DOTALL)
-            if match:
-                try:
-                    return json.loads(match.group(2))
-                except json.JSONDecodeError:
-                    pass
-            return {}
+#         def extract_payload(curl_command: str) -> dict:
+#             pattern = r"-(?:d|-data)\s+(['\"])(\{.*?\})\1"  # ' 또는 "로 감싼 JSON 추출
+#             match = re.search(pattern, curl_command, re.DOTALL)
+#             if match:
+#                 try:
+#                     return json.loads(match.group(2))
+#                 except json.JSONDecodeError:
+#                     pass
+#             return {}
         
-        # Check the prediciton format
-        if not isinstance(prediction, str):
-            return False, STATUS_CODES['format'], prediction    # Could not be parsed as a dictionary
+#         # Check the prediciton format
+#         if not isinstance(prediction, str):
+#             return False, STATUS_CODES['format'], prediction    # Could not be parsed as a dictionary
 
-        # Check the sanity of the generated command
-        if not check_curl(prediction):
-            return False, STATUS_CODES['curl']['http'], prediction
-        if not extract_url(prediction) == extract_url(expected_prediction):
-            return False, STATUS_CODES['curl']['url'], prediction
-        if not extract_headers(prediction) == extract_headers(expected_prediction):
-            return False, STATUS_CODES['curl']['header'], prediction
-        if not self.sanity_check_recursively(extract_payload(prediction), extract_payload(expected_prediction)):
-            return False, STATUS_CODES['curl']['payload'], prediction
+#         # Check the sanity of the generated command
+#         if not check_curl(prediction):
+#             return False, STATUS_CODES['curl']['http'], prediction
+#         if not extract_url(prediction) == extract_url(expected_prediction):
+#             return False, STATUS_CODES['curl']['url'], prediction
+#         if not extract_headers(prediction) == extract_headers(expected_prediction):
+#             return False, STATUS_CODES['curl']['header'], prediction
+#         if not self.sanity_check_recursively(extract_payload(prediction), extract_payload(expected_prediction)):
+#             return False, STATUS_CODES['curl']['payload'], prediction
         
-        return True, STATUS_CODES['correct'], prediction
+#         return True, STATUS_CODES['correct'], prediction
     
 
-    def __get_api(self, resource: dict) -> str:
-        """
-        Generate curl API command from a FHIR resource.
+#     def __get_api(self, resource: dict) -> str:
+#         """
+#         Generate curl API command from a FHIR resource.
 
-        Args:
-            resource (dict): FHIR resource ditionary.
+#         Args:
+#             resource (dict): FHIR resource ditionary.
 
-        Returns:
-            str: The generated curl API command.
-        """
-        gt_api = f'curl -X PUT "{self._fhir_url}/Appointment/{resource["id"]}" ' \
-                 f'-H "Content-Type: application/fhir+json" ' \
-                 f'-H "Accept: application/fhir+json" ' \
-                 f"-d '{json.dumps(resource)}'"
-        return gt_api
+#         Returns:
+#             str: The generated curl API command.
+#         """
+#         gt_api = f'curl -X PUT "{self._fhir_url}/Appointment/{resource["id"]}" ' \
+#                  f'-H "Content-Type: application/fhir+json" ' \
+#                  f'-H "Accept: application/fhir+json" ' \
+#                  f"-d '{json.dumps(resource)}'"
+#         return gt_api
 
 
-    def __call__(self, data_pair: Tuple[dict, dict], agent_test_data: dict, agent_results: dict, environment) -> dict:
-        """
-        Processes test data and LLM results to generate and validate FHIR Appointment resources.
+#     def __call__(self, data_pair: Tuple[dict, dict], agent_test_data: dict, agent_results: dict, environment) -> dict:
+#         """
+#         Processes test data and LLM results to generate and validate FHIR Appointment resources.
         
-        Args:
-            data_pair (Tuple[dict, dict]): A pair of ground truth and patient data for agent simulation.
-            agent_test_data (dict): Input test data containing metadata and agent-specific data for processing.
-            agent_results (dict): Results produced by the agent (e.g., LLM output) to be validated.
-            environment (HospitalEnvironment): Hospital environment instance to manage patient schedules.
+#         Args:
+#             data_pair (Tuple[dict, dict]): A pair of ground truth and patient data for agent simulation.
+#             agent_test_data (dict): Input test data containing metadata and agent-specific data for processing.
+#             agent_results (dict): Results produced by the agent (e.g., LLM output) to be validated.
+#             environment (HospitalEnvironment): Hospital environment instance to manage patient schedules.
 
-        Returns:
-            dict: A dictionary containing lists for each processed item with keys:
-                - 'gt': ground truth FHIR resource API commands.
-                - 'pred': predicted FHIR resource API commands from the LLM.
-                - 'status': boolean flags indicating pass/fail of sanity checks.
-                - 'status_code': human-readable status codes explaining the validation result.
-        """
-        gt, test_data = data_pair
-        self._metadata = agent_test_data.get('metadata')
-        self._department_data = agent_test_data.get('department')
-        fhir_resource, sanity = self.__extract_fhir_resource(gt, agent_results)
-        results = self.get_result_dict()
+#         Returns:
+#             dict: A dictionary containing lists for each processed item with keys:
+#                 - 'gt': ground truth FHIR resource API commands.
+#                 - 'pred': predicted FHIR resource API commands from the LLM.
+#                 - 'status': boolean flags indicating pass/fail of sanity checks.
+#                 - 'status_code': human-readable status codes explaining the validation result.
+#         """
+#         gt, test_data = data_pair
+#         self._metadata = agent_test_data.get('metadata')
+#         self._department_data = agent_test_data.get('department')
+#         fhir_resource, sanity = self.__extract_fhir_resource(gt, agent_results)
+#         results = self.get_result_dict()
         
-        # Append a ground truth Appointment FHIR resource and API command
-        gt_api = self.__get_api(
-            self._get_fhir_appointment(
-                gt_resource_path=self._fhir_data_path / 'appointment' / gt.get('fhir_resource'),
-                data={'metadata': deepcopy(self._metadata),
-                      'department': deepcopy(self._department_data),
-                      'information': deepcopy(gt)}
-            )
-        )
-        results['gt'].append(gt_api)
+#         # Append a ground truth Appointment FHIR resource and API command
+#         gt_api = self.__get_api(
+#             self._get_fhir_appointment(
+#                 gt_resource_path=self._fhir_data_path / 'appointment' / gt.get('fhir_resource'),
+#                 data={'metadata': deepcopy(self._metadata),
+#                       'department': deepcopy(self._department_data),
+#                       'information': deepcopy(gt)}
+#             )
+#         )
+#         results['gt'].append(gt_api)
 
-        # If the precedent resource data is invalid, continue
-        if not sanity:
-            results['pred'].append('')
-            results['status'].append(False)
-            results['status_code'].append(STATUS_CODES['preceding'])
-            return results
+#         # If the precedent resource data is invalid, continue
+#         if not sanity:
+#             results['pred'].append('')
+#             results['status'].append(False)
+#             results['status_code'].append(STATUS_CODES['preceding'])
+#             return results
 
-        # LLM call and compare the validity of the LLM output
-        user_prompt = self.user_prompt_template.format(FHIR_URL=self._fhir_url, RESOURCE=json.dumps(fhir_resource))
-        prediction = self.client(
-            user_prompt,
-            system_prompt=self.system_prompt, 
-            using_multi_turn=False
-        )
-        prediction = MakeFHIRAPI.postprocessing(prediction)
-        expected_prediction = self.__get_api(fhir_resource)
-        status, status_code, prediction = self._sanity_check(prediction, expected_prediction)
+#         # LLM call and compare the validity of the LLM output
+#         user_prompt = self.user_prompt_template.format(FHIR_URL=self._fhir_url, RESOURCE=json.dumps(fhir_resource))
+#         prediction = self.client(
+#             user_prompt,
+#             system_prompt=self.system_prompt, 
+#             using_multi_turn=False
+#         )
+#         prediction = MakeFHIRAPI.postprocessing(prediction)
+#         expected_prediction = self.__get_api(fhir_resource)
+#         status, status_code, prediction = self._sanity_check(prediction, expected_prediction)
         
-        # Append results
-        results['pred'].append(prediction)
-        results['status'].append(status)
-        results['status_code'].append(status_code)
+#         # Append results
+#         results['pred'].append(prediction)
+#         results['status'].append(status)
+#         results['status_code'].append(status_code)
             
-        return results
+#         return results

@@ -67,6 +67,7 @@ class AgentDataBuilder:
                 schedule_time_segments[0],
                 schedule_time_segments[-1]
             )
+            # TODO: schedule 등 불필요한 정보 제거
             gt = {
                 'patient': patient,
                 'gender': patient_values['gender'],
@@ -91,7 +92,6 @@ class AgentDataBuilder:
                 'birthDate': patient_values['birthDate'],
                 'symptom': generate_random_symptom(department, symptom_file_path),
                 'constraint': {
-                    'duration': float(Decimal(str(schedule_time_range[-1])) - Decimal(str(schedule_time_range[0]))),
                     'preference': patient_values['preference'],
                     'attending_physician': doctor,
                     'symptom_level': patient_values['symptom_level'],

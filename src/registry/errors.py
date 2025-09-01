@@ -5,6 +5,7 @@ STATUS_CODES = {
     'department & patient': 'incorrect department and patient information',
     'simulation': 'incomplete simulation',
     'schedule': 'invalid schedule',
+    'duration': 'wrong duration',
     'conflict': {
         'physician': 'physician conflict', 
         'time': 'time conflict'
@@ -13,6 +14,7 @@ STATUS_CODES = {
         'physician': 'mismatched physician',
         'asap': 'not earlist schedule'
     },
+    'workload': 'workload balancing',
     'preceding': 'preceding task failed',
     'correct': 'pass',
 }
@@ -38,7 +40,12 @@ SCHEDULING_ERROR_CAUSE = {
         "* The scheduling result may fall outside the hospital's operating hours.",
         "* The scheduling result may be in the past relative to the current time.",
         "* The scheduling result may not be a valid date.",
-        "* The patient's required duration does not match the scheduled duration.",
         "* The assigned doctor may not belong to the department the patient should visit."
+    ],
+    'wrong duration': [
+        "* The patient's schedule does not match the consultation duration required by the doctor.",
+    ],
+    'workload balancing': [
+        "* You must schedule the appointment with a doctor who has a lower workload than the current doctor."
     ]
 }

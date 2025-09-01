@@ -12,7 +12,7 @@ Hospital time information:
 
 Patient information:
 * Department: {DEPARTMENT}
-* Patient duration: {DURATION}
+* Patient duration: You must schedule according to each doctor’s outpatient consultation duration. (Unit: hours)
 * Preference: {PREFERENCE}
 * Preferred doctor: {PREFERRED_DOCTOR}
 
@@ -33,9 +33,10 @@ Patient scheduling instructions:
 1. If the patient has a preferred doctor, the appointment must be scheduled with that doctor.
 2. If the patient wants the earliest possible appointment, compare the available times of the doctors in the patient’s department and schedule the appointment with the doctor who can see the patient the soonest.
 3. Appointment times must be later than the "current time" (ISO format) provided in the "Hospital time information" above.
-4. If more than one doctor is available, appointments should be distributed as evenly as possible to balance the doctors' workloads.
-5. Output the patient's scheduled appointment as the value of the 'schedule' key in the JSON format shown below.
-6. Schedule appointments between the patient and the doctor while satisfying the above conditions, following the basic principle of booking sequentially from the earliest available date and time.
+4. If more than one doctor is available, the appointment should be made with the doctor who has the lower workload (expressed as a percentage).
+5. Once the doctor for the appointment is determined, you must schedule according to that doctor’s outpatient consultation duration. For example, one doctor’s consultation time may be 0.25 hours, while another’s may be 0.5 hours.
+6. Output the patient's scheduled appointment as the value of the 'schedule' key in the JSON format shown below.
+7. Schedule appointments between the patient and the doctor while satisfying the above conditions, following the basic principle of booking sequentially from the earliest available date and time.
 
 
 Answer format examples:
