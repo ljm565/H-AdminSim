@@ -90,6 +90,8 @@ def main(args):
                         if status:
                             fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].append(pred['schedule'])
                             fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].sort()
+                            environment.patient_schedules.append(pred)
+                            environment.booking_num[pred['attending_physician']] += 1
             
             # Data per patient
             for j, (gt, test_data) in enumerate(agent_test_data['agent_data']):

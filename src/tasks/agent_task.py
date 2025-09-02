@@ -488,7 +488,7 @@ class AssignSchedule(Task):
             if v['department'] == department:
                 tmp_schedule = deepcopy(v)
                 del tmp_schedule['capacity_per_hour'], tmp_schedule['capacity'], tmp_schedule['gender'], tmp_schedule['telecom'], tmp_schedule['birthDate']
-                tmp_schedule['workload'] = f"{environment.booking_num[k] / v['capacity'] * 100}%"
+                tmp_schedule['workload'] = f"{round(environment.booking_num[k] / v['capacity'] * 100, 2)}%"
                 tmp_schedule['outpatient_duration'] = 1 / v['capacity_per_hour']
                 filtered_doctor_information['doctor'][k] = tmp_schedule
         
@@ -597,7 +597,7 @@ class AssignSchedule(Task):
             assert patient_condition['department'] == doctor_information[doctor_name]['department']
             
             # Duration mismatched case
-            if not patient_condition['duration'] == round(end - start, 4):
+            if not round(1 / doctor_information[doctor_name]['capacity_per_hour'], 4) == round(end - start, 4):
                 return False, STATUS_CODES['duration'], prediction, doctor_information
             
         except KeyError:
