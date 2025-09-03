@@ -91,11 +91,16 @@ class ScheduleAssigner:
         segment_n = int(len(segments) * p // avg_chunk_size)
 
         if segment_n > 0:
-            random.shuffle(segments)
             chosen = []
             used = set()
-
+            max_index = max(segments)
+            random.shuffle(segments)
+            
             for s in segments:
+                max_possible_size = min(max_chunk_size, max_index - s + 1)
+                if max_possible_size < min_chunk_size:
+                    continue
+
                 chunk_size = random.randint(min_chunk_size, max_chunk_size)
                 trip = set(range(s, s + chunk_size))
 
