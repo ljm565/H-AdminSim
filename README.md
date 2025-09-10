@@ -71,6 +71,6 @@ python3 src/run/synthesize_data.py --config config/data_synthesis.yaml
 1. [Getting Started](./docs/1_getting_started.md)
 2. [How to perform CRUD on FHIR](./docs/2_fhir_crud.md)
 3. [Hospital Data Synthesis](./docs/3_data_synthesis.md)
-4. [Agent Test](./docs/4_agent_test.md)
+4. [Agent Simulation](./docs/4_agent_test.md)
 
 &nbsp;

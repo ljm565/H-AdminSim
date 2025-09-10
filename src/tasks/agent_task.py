@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 from copy import deepcopy
 from typing import Tuple, Union, Optional
 from patientsim import AdminStaffAgent, PatientAgent
@@ -21,7 +20,6 @@ from utils.common_utils import (
     convert_segment_to_time,
     convert_time_to_segment,
     compare_iso_time,
-    get_utc_offset,
     get_iso_time,
 )
 
@@ -255,7 +253,7 @@ class OutpatientIntake(Task):
             return False, STATUS_CODES['simulation'], prediction
         
         ############################ Check with the ground truth #############################
-        wrong_department = prediction['department'] != gt['department']
+        wrong_department = prediction['department'][0] not in gt['department']
         wrong_info = prediction['patient'] != gt['patient']
         if wrong_department and wrong_info:
             return False, STATUS_CODES['department & patient'], prediction
@@ -291,7 +289,7 @@ class OutpatientIntake(Task):
         results = self.get_result_dict()
         
         # Append a ground truth
-        name, gender, birth_date = test_data['patient'], test_data['gender'], test_data['birthDate']
+        name, gender, birth_date = gt['patient'], gt['gender'], gt['birthDate']
         gt_data = {
             'patient': {
                 'name': name, 
@@ -301,17 +299,20 @@ class OutpatientIntake(Task):
             'department': gt['department']
         }
         results['gt'].append(gt_data)
-        
+
         # LLM call: Conversation and department decision
+        department_candidates = test_data['constraint']['symptom']['department']    # NOTE: Same as gt['department]
+        diagnosis = 'Unknown for now' if test_data['constraint']['symptom_level'] == 'simple' else test_data['constraint']['symptom']['disease']   # NOTE: `simple` or `with_history`
         patient_agent = PatientAgent(
             self.task_model,
             'outpatient',
             lang_proficiency_level='B',
-            department=gt['department'],
-            symptom=test_data['symptom'],
+            department=department_candidates,
             name=name,
             birth_date=birth_date,
             gender=gender,
+            diagnosis=diagnosis,
+            chiefcomplaint=test_data['constraint']['symptom']['symptom'],
             random_seed=42,
             temperature=0
         )
@@ -351,7 +352,7 @@ class OutpatientIntake(Task):
 
         # Sanity check
         department = self._department_decision(prediction_department, prediction_supervision)
-        prediction = {'patient': prediction_supervision, 'department': department}
+        prediction = {'patient': prediction_supervision, 'department': [department]}
         status, status_code, prediction = self._sanity_check(
             prediction=prediction,
             gt=gt_data,
@@ -445,7 +446,7 @@ class AssignSchedule(Task):
             return str(text)
 
 
-    def __extract_departments(self, gt: dict, agent_results: dict) -> Tuple[str, bool]:
+    def __extract_departments(self, gt: dict, agent_results: dict) -> Tuple[list[str], bool]:
         """
         Extracts the predicted department from agent results.
         If predictions are not available, falls back to using ground truth labels.
@@ -455,14 +456,14 @@ class AssignSchedule(Task):
             agent_results (dict): A dictionary that may contain predicted department results under the key 'department'.
 
         Returns:
-            Tuple[str, bool]: A department, either predicted or ground truth and its sanity status.
+            Tuple[list[str], bool]: A department list, either predicted or ground truth and its sanity status.
         """
         try:
-            department = agent_results['intake']['pred'][-1]['department']
+            department = agent_results['intake']['pred'][-1]['department'][0]
             sanity = agent_results['intake']['status'][-1]
         except:
             log('The predicted department is not given. The ground truth value will be used.', 'warning')
-            department = gt['department']
+            department = gt['department'][0]
             sanity = True
 
         return department, sanity
@@ -729,20 +730,21 @@ class AssignSchedule(Task):
         patient_condition = {
             'patient': test_data.get('patient'), 
             'department': department, 
-            'preference': test_data.get('constraint').get('preference'), 
+            'preference': test_data.get('constraint').get('preference'),
             'preferred_doctor': test_data.get('constraint').get('attending_physician') if test_data.get('constraint').get('preference') == 'doctor' else "Doesn't matter",
+            'symptom_level': test_data.get('constraint').get('symptom_level')
         }
         results = self.get_result_dict()
 
         # Append an example of exemplary answer
-        gt_results = {
+        gt_data = {
             'patient': gt.get('patient'),
             'attending_physician': gt.get('attending_physician'),
             'department': gt.get('department'),
-            'schedule': gt.get('schedule').get('time'),
             'preference': gt.get('preference'),
+            'symptom_level': gt.get('symptom_level'),
         }
-        results['gt'].append(gt_results)
+        results['gt'].append(gt_data)
 
         # If the precedent department data is wrong, continue
         if not sanity:

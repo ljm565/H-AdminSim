@@ -1,17 +1,11 @@
 import os
 from tqdm import tqdm
 from typing import Optional
-from decimal import Decimal, getcontext
+from decimal import getcontext
 
-from utils import Information
 from utils.fhir_utils import *
 from utils.random_utils import generate_random_symptom
 from utils.filesys_utils import json_load, json_save_fast, get_files
-from utils.common_utils import (
-    get_iso_time,
-    get_utc_offset,
-    convert_time_to_segment,
-)
 
 
 
@@ -45,56 +39,34 @@ class AgentDataBuilder:
                     - Ground-truth scheduling information.
                     - Agent input (symptom and constraints).
         """
-        hospital_name = data.get('metadata')['hospital_name']
-        department_data = data.get('department')
-        country_code = data.get('metadata').get('country_code', 'KR')
-        time_zone = data.get('metadata').get('timezone', None)
-        utc_offset = get_utc_offset(country_code, time_zone)
-        start_hour = data.get('metadata')['time']['start_hour']
-        end_hour = data.get('metadata')['time']['end_hour']
-        interval_hour = data.get('metadata')['time']['interval_hour']
         agent_data = {'metadata': data['metadata'], 'department': data['department'], 'doctor': data['doctor'], 'agent_data': []}
         
         for patient, patient_values in data['patient'].items():
             doctor = patient_values['attending_physician']
             department = patient_values['department']
-            date = patient_values['date']
-            schedule_time_range = patient_values['schedule']
-            schedule_time_segments = convert_time_to_segment(start_hour, end_hour, interval_hour, schedule_time_range)
-            appointment_id = get_appointment_id(
-                get_individual_id(hospital_name, department_data[department]['code'], doctor),
-                date,
-                schedule_time_segments[0],
-                schedule_time_segments[-1]
-            )
-            # TODO: schedule 등 불필요한 정보 제거
+            gender, telecom, birthDate = patient_values['gender'], patient_values['telecom'], patient_values['birthDate']
+            disease = generate_random_symptom(department, symptom_file_path)
+            gt_department = disease['department'] if isinstance(disease, dict) else [department]
             gt = {
                 'patient': patient,
-                'gender': patient_values['gender'],
-                'telecom': patient_values['telecom'],
-                'birthDate': patient_values['birthDate'],
-                'department': department,
-                'examination': data['doctor'][doctor]['specialty'],
+                'gender': gender,
+                'telecom': telecom,
+                'birthDate': birthDate,
+                'department': gt_department,
                 'attending_physician': doctor,
-                'schedule': {
-                    'time': schedule_time_range, 
-                    'segment': schedule_time_segments,
-                    'iso': {'start': get_iso_time(schedule_time_range[0], date, utc_offset), 'end': get_iso_time(schedule_time_range[1], date, utc_offset)}
-                },
                 'preference': patient_values['preference'],
                 'symptom_level': patient_values['symptom_level'],
-                'fhir_resource': f'{appointment_id}.fhir.json'
             }
             agent = {
                 'patient': patient,
-                'gender': patient_values['gender'],
-                'telecom': patient_values['telecom'],
-                'birthDate': patient_values['birthDate'],
-                'symptom': generate_random_symptom(department, symptom_file_path),
+                'gender': gender,
+                'telecom': telecom,
+                'birthDate': birthDate,
                 'constraint': {
                     'preference': patient_values['preference'],
                     'attending_physician': doctor,
                     'symptom_level': patient_values['symptom_level'],
+                    'symptom': disease,
                 }
             }
             agent_data['agent_data'].append((gt, agent))

@@ -1,11 +1,11 @@
-# Agent test
+# Agent Simulation
 We introduce how to test the capabilities required of agents in a hospital booking system.
 To begin, you should first build the agent test data by following [this guideline 2.2](./3_data_synthesis.md).
 <br><br>We support [Gemini-based LLMs](https://ai.google.dev/gemini-api/docs/models) and [GPT-based LLMs](https://platform.openai.com/docs/pricing).
 
 &nbsp;
 
-## Agent Test Guides
+## Agent Simulation Guides
 ### 0. Preliminary
 We need to complete the `config/agent_test.yaml` file.
 ```yaml

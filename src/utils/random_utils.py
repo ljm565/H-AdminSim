@@ -87,23 +87,34 @@ def generate_random_prob(has_schedule_prob: float, coverage_min: float, coverage
 
 def generate_random_symptom(department: str, 
                             symptom_file_path: str = './asset/departments/symptom.json',
-                            verbose: bool = True) -> str:
+                            min_n: int = 2,
+                            max_n: int = 4,
+                            verbose: bool = True) -> Union[dict, str]:
     """
     Generate a string of random symptom from pre-defined data file.
 
     Args:
         department (str): A name of hospital department.
         symptom_file_path (str): A path of pre-defined symptom data. Defaults to './asset/departments/symptom.json'.
+        min_n (int): Minimum number of symptoms to select. Defaults to 2.
+        max_n (int): Maximum number of symptoms to select. Defaults to 4.
         verbose (bool): If True, print a warning message when no matching department is found. Defaults to True.
 
     Returns:
-        str: A randomly selected symptom.
+        Union[dict, str]:
+            - dict: A randomly selected disease and its associated symptoms for the given department.  
+            - str: The string `"${PLACEHOLDER}"` if the department is not found in the data.
     """
     if registry.SYMPTOM_MAP is None:
         registry.SYMPTOM_MAP = json_load(symptom_file_path)
     
     if department in registry.SYMPTOM_MAP:
-        return random.choice(registry.SYMPTOM_MAP[department])
+        disease_info = random.choice(registry.SYMPTOM_MAP[department])
+        disease = list(disease_info.keys())[0]
+        disease_info = {'disease': disease, **disease_info[disease]}
+        symptom_n = min(random.randint(min_n, max_n), len(disease_info['symptom']))
+        disease_info['symptom'] = random.sample(disease_info['symptom'], symptom_n)
+        return disease_info
     
     if verbose:
         log(f'No matched department {department}. `${{PLACEHOLDER}}` string will return.', 'warning')
