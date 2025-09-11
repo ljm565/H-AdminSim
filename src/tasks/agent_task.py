@@ -265,7 +265,7 @@ class OutpatientIntake(Task):
         return True, STATUS_CODES['correct'], prediction
         
 
-    def __call__(self, data_pair: Tuple[dict, dict],  agent_test_data: dict, agent_results: dict, environment) -> dict:
+    def __call__(self, data_pair: Tuple[dict, dict],  agent_test_data: dict, agent_results: dict, environment, verbose: bool = False) -> dict:
         """
         Estimates the most appropriate medical department for each patient using an LLM agent.
 
@@ -276,6 +276,7 @@ class OutpatientIntake(Task):
                     - 'department': Dictionary of available departments.
             agent_results (dict): Placeholder for compatibility; not used in this method.
             environment (HospitalEnvironment): Hospital environment instance to manage patient schedules.
+            verbose (bool): Whether logging the each result or not.
 
         Returns:
             dict: A dictionary with:
@@ -358,6 +359,11 @@ class OutpatientIntake(Task):
             gt=gt_data,
             conversations=dialogs
         )
+
+        if verbose:
+            log(f'GT    : {gt_data}')
+            log(f'Pred  : {prediction}')
+            log(f'Status: {status_code}\n\n\n')
         
         # Append results
         results['pred'].append(prediction)
@@ -695,7 +701,7 @@ class AssignSchedule(Task):
         return feedback
             
 
-    def __call__(self, data_pair: Tuple[dict, dict], agent_test_data: dict, agent_results: dict, environment) -> dict:
+    def __call__(self, data_pair: Tuple[dict, dict], agent_test_data: dict, agent_results: dict, environment, verbose: bool = False) -> dict:
         """
         This method uses agent test data to prompt an LLM for scheduling decisions, post-processes
         the output, runs sanity checks on predicted schedules, and collects the results for evaluation.
@@ -710,6 +716,7 @@ class AssignSchedule(Task):
             agent_results (dict): Optional dictionary containing prior department predictions.
                 Used to extract department-level guidance per patient. Can be empty.
             environment (HospitalEnvironment): Hospital environment instance to manage patient schedules.
+            verbose (bool): Whether logging the each result or not.
 
         Returns:
             dict: A dictionary with three keys:
@@ -804,6 +811,9 @@ class AssignSchedule(Task):
                 doctor_information,
                 environment
             )
+            if verbose: 
+                log(f'Pred  : {prediction}')
+                log(f'Status: {status_code}')
             
             if not status and self.use_supervisor and feedback_cnt < self.max_feedback_number:
                 prev_prediction += json.dumps(prediction) + f': {status_code}\n'
@@ -812,6 +822,9 @@ class AssignSchedule(Task):
                 continue
             
             break
+        
+        if verbose:
+            log(f'Final Status: {status_code}\n\n\n')   
 
         # POST/PUT to FHIR
         fhir_patient, fhir_appointment = None, None

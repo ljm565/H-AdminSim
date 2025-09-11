@@ -99,7 +99,7 @@ def main(args):
                     continue
 
                 for task in queue:
-                    result = task((gt, test_data), agent_test_data, agent_results, environment)
+                    result = task((gt, test_data), agent_test_data, agent_results, environment, args.verbose)
                     
                     # Append a single result 
                     agent_results.setdefault(task.name, {'gt': [], 'pred': [], 'status': [], 'status_code': []})
@@ -132,6 +132,7 @@ if __name__ == '__main__':
     parser.add_argument('-o', '--output_dir', type=str, required=True, help='Path to save agent test results')
     parser.add_argument('--skip_saved_file', action='store_true', required=False, help='Skip inference if results already exsist')
     parser.add_argument('--continuing', action='store_true', required=False, help='Continue the stopped processing')
+    parser.add_argument('--verbose', action='store_true', required=False, help='Whether logging the each result or not')
     args = parser.parse_args()
 
     main(args)
