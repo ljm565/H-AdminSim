@@ -204,7 +204,9 @@ class DataConverter:
                 ],
                 'gender': patient_values['gender'],
                 'telecom': patient_values['telecom'],
-                'birthDate': patient_values['birthDate']
+                'birthDate': patient_values['birthDate'],
+                'identifier': patient_values['identifier'],
+                'address': patient_values['address']
             }
             patients.append(patient_obj)
 

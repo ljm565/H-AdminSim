@@ -1,6 +1,5 @@
 import os
 import random
-import numpy as np
 from tqdm import tqdm
 from typing import Optional, Tuple
 
@@ -14,7 +13,9 @@ from utils.random_utils import (
     generate_random_date,
     generate_random_code,
     generate_random_names,
+    generate_random_address,
     generate_random_telecom,
+    generate_random_id_number,
     generate_random_specialty,
     generate_random_code_with_prob,
 )
@@ -204,6 +205,7 @@ class DataSynthesizer:
                             config.hospital_data.symptom.type,
                             config.hospital_data.symptom.probs
                         )
+                        birth_date =  generate_random_date()
                         patient_info[patient] = {
                             'department': department,
                             'attending_physician': doctor,
@@ -217,7 +219,17 @@ class DataSynthesizer:
                                 'value': generate_random_telecom(),
                                 'use': generate_random_code('use')
                             }],
-                            'birthDate': generate_random_date()
+                            'birthDate': birth_date,
+                            'identifier': [{
+                                'value': generate_random_id_number(birth_date=birth_date),
+                                'use': 'official'
+
+                            }],
+                            'address': [{
+                                'type': 'postal',
+                                'text': generate_random_address(),
+                                'use': 'home'
+                            }]
                         }
             
         # Finalize data structure

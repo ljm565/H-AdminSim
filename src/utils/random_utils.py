@@ -1,7 +1,7 @@
 import uuid
 import random
-from typing import Tuple, Any, Union
 from datetime import datetime, timedelta
+from typing import Tuple, Any, Union, Optional
 
 import registry
 from utils import log
@@ -30,6 +30,21 @@ def random_uuid(is_develop: bool = False) -> str:
 
 
 
+def generate_random_number_string(length: int) -> str:
+    """
+    Generate a random numeric string of the given length.
+
+    Args:
+        length (int): The desired length of the random numeric string.
+
+    Returns:
+        str: A string consisting of randomly generated digits (0-9) 
+             with the specified length.
+    """
+    return ''.join(str(random.randint(0, 9)) for _ in range(length))
+
+
+
 def generate_random_names(n: int,
                           first_name_file: str = 'asset/names/firstname.txt',
                           last_name_file: str = 'asset/names/lastname.txt') -> list[str]:
@@ -38,8 +53,8 @@ def generate_random_names(n: int,
 
     Args:
         n (int): Number of random names to generate.
-        first_name_file (str): Path to the file containing first names. Defaults to 'asset/names/firstname.txt'.
-        last_name_file (str): Path to the file containing last names. Defaults to 'asset/names/lastname.txt'.
+        first_name_file (str, optional): Path to the file containing first names. Defaults to 'asset/names/firstname.txt'.
+        last_name_file (str, optional): Path to the file containing last names. Defaults to 'asset/names/lastname.txt'.
 
     Returns:
         list[str]: List of randomly generated names in the format "First Last".
@@ -62,6 +77,39 @@ def generate_random_names(n: int,
                 
         names.add(f"{first_name} {last_name}")
     return sorted(list(names))
+
+
+
+def generate_random_address(address_file_path: str = 'asset/country/address.json',
+                            format: str = '{street}, {district}, {city}') -> str:
+    """
+    Generate random address.
+
+    Args:
+        address_file (str, optional): Path to the file containing addresses. Defaults to 'asset/country/address.json'.
+        format (str, optional): Format of the address.
+
+    Returns:
+        str: Random generated address based on the asset.
+    """
+    if registry.ADDRESSES is None:
+        registry.ADDRESSES = json_load(address_file_path)
+    
+    kwargs = dict()
+    if 'street' in format:
+        kwargs['street'] = f'{generate_random_number_string(random.randint(1, 2))}, {random.choice(registry.ADDRESSES["street"])}'
+    if 'neighborhood' in format:
+        kwargs['neighborhood'] = random.choice(registry.ADDRESSES['neighborhood'])
+    if 'district' in format:
+        kwargs['district'] = random.choice(registry.ADDRESSES['district'])
+    if 'county' in format:
+        kwargs['county'] = random.choice(registry.ADDRESSES['county'])
+    if 'city' in format:
+        kwargs['city'] = random.choice(registry.ADDRESSES['city'])
+    if 'state' in format:
+        kwargs['state'] = random.choice(registry.ADDRESSES['state'])
+    
+    return format.format(**kwargs)
 
 
 
@@ -94,16 +142,16 @@ def generate_random_symptom(department: str,
     Generate a string of random symptom from pre-defined data file.
 
     Args:
-        department (str): A name of hospital department.
-        symptom_file_path (str): A path of pre-defined symptom data. Defaults to './asset/departments/symptom.json'.
-        min_n (int): Minimum number of symptoms to select. Defaults to 2.
-        max_n (int): Maximum number of symptoms to select. Defaults to 4.
-        verbose (bool): If True, print a warning message when no matching department is found. Defaults to True.
+        department (str, optional): A name of hospital department.
+        symptom_file_path (str, optional): A path of pre-defined symptom data. Defaults to './asset/departments/symptom.json'.
+        min_n (int, optional): Minimum number of symptoms to select. Defaults to 2.
+        max_n (int, optional): Maximum number of symptoms to select. Defaults to 4.
+        verbose (bool, optional): If True, print a warning message when no matching department is found. Defaults to True.
 
     Returns:
         Union[dict, str]:
             - dict: A randomly selected disease and its associated symptoms for the given department.  
-            - str: The string `"${PLACEHOLDER}"` if the department is not found in the data.
+            - str: The string `"{PLACEHOLDER}"` if the department is not found in the data.
     """
     if registry.SYMPTOM_MAP is None:
         registry.SYMPTOM_MAP = json_load(symptom_file_path)
@@ -117,8 +165,8 @@ def generate_random_symptom(department: str,
         return disease_info
     
     if verbose:
-        log(f'No matched department {department}. `${{PLACEHOLDER}}` string will return.', 'warning')
-    return '${PLACEHOLDER}'
+        log(f'No matched department {department}. `{{PLACEHOLDER}}` string will return.', 'warning')
+    return '{PLACEHOLDER}'
 
 
 
@@ -130,11 +178,11 @@ def generate_random_telecom(min_length: int = 8,
     Generate a random telecom number including the country dialing code.
 
     Args:
-        min_length (int): The minimum length of the subscriber number (excluding country code). Defaults to 8.
-        max_length (int): The maximum length of the subscriber number (excluding country code). Defaults to 13.
-        country_code (str): The ISO country code to determine the dialing prefix. Default is 'KR' (South Korea).
-        country_to_dial_map_file (str): Path to the JSON file mapping country codes to their dialing prefixes.
-                                        Defaults to 'asset/country/country_code.json'.
+        min_length (int, optional): The minimum length of the subscriber number (excluding country code). Defaults to 8.
+        max_length (int, optional): The maximum length of the subscriber number (excluding country code). Defaults to 13.
+        country_code (str, optional): The ISO country code to determine the dialing prefix. Default is 'KR' (South Korea).
+        country_to_dial_map_file (str, optional): Path to the JSON file mapping country codes to their dialing prefixes.
+                                                  Defaults to 'asset/country/country_code.json'.
 
     Returns:
         str: A random telecom number string starting with the country dialing code, followed by a random sequence of digits.
@@ -162,8 +210,8 @@ def generate_random_date(start_date: Union[str, datetime] = '1960-01-01',
     Generate a random date string in 'YYYY-MM-DD' format between the given start and end dates.
 
     Args:
-        start_date (Union[str, datetime]): The start date in 'YYYY-MM-DD' format. Default is '2000-01-01'.
-        end_date (Union[str, datetime]): The end date in 'YYYY-MM-DD' format. Default is '2025-12-31'.
+        start_date (Union[str, datetime], optional): The start date in 'YYYY-MM-DD' format. Default is '2000-01-01'.
+        end_date (Union[str, datetime], optional): The end date in 'YYYY-MM-DD' format. Default is '2025-12-31'.
 
     Returns:
         str: A randomly generated date string in 'YYYY-MM-DD' format.
@@ -174,6 +222,31 @@ def generate_random_date(start_date: Union[str, datetime] = '1960-01-01',
     random_days = random.randint(0, delta)
     random_date = start + timedelta(days=random_days)
     return datetime_to_str(random_date, '%Y-%m-%d')
+
+
+
+def generate_random_id_number(start_date: Union[str, datetime] = '1960-01-01',
+                              end_date: Union[str, datetime] = '2000-12-31',
+                              birth_date: Optional[str] = None) -> str:
+    """
+    Generate a random ID number consisting of a birth date and a random numeric sequence.
+
+    Args:
+        start_date (Union[str, datetime], optional): The earliest possible date of birth 
+                                                     to consider when generating a random date. Defaults to '1960-01-01'.
+        end_date (Union[str, datetime], optional): The latest possible date of birth 
+                                                   to consider when generating a random date. Defaults to '2000-12-31'.
+        birth_date (Optional[str], optional): A specific birth date in 'YYYY-MM-DD' format. 
+                                              If provided, this date is used instead of generating a random one. Defaults to None.
+
+    Returns:
+        str: A randomly generated ID number in the format 'YYMMDD-XXXXXXX', 
+        where 'YYMMDD' is the birth date and 'XXXXXXX' is a 7-digit random number.
+    """
+    if not birth_date:
+        birth_date = generate_random_date(start_date, end_date)
+    birth_date = birth_date.replace('-', '')[2:]
+    return f"{birth_date}-{generate_random_number_string(7)}"
 
 
 
@@ -242,7 +315,7 @@ def generate_random_specialty(department: str,
 
     Returns:
         Tuple[str, str]: A tuple containing a randomly selected specialty (str) and its code (int).
-                         If the department is not found, returns ('${PLACEHOLDER}', '${PLACEHOLDER}').
+                         If the department is not found, returns ('{PLACEHOLDER}', '{PLACEHOLDER}').
     """
     if registry.SPECIALTIES is None:
         department_data = json_load(specialty_path)['specialty']
@@ -253,5 +326,5 @@ def generate_random_specialty(department: str,
         return registry.SPECIALTIES[department]['field'][index], f"{registry.SPECIALTIES[department]['code']}-{index}"
     
     if verbose:
-        log(f'No matched department {department}. `${{PLACEHOLDER}}` string will return.', 'warning')
-    return '${PLACEHOLDER}', '${PLACEHOLDER}'
+        log(f'No matched department {department}. `{{PLACEHOLDER}}` string will return.', 'warning')
+    return '{PLACEHOLDER}', '{PLACEHOLDER}'

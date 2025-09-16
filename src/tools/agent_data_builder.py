@@ -44,14 +44,17 @@ class AgentDataBuilder:
         for patient, patient_values in data['patient'].items():
             doctor = patient_values['attending_physician']
             department = patient_values['department']
-            gender, telecom, birthDate = patient_values['gender'], patient_values['telecom'], patient_values['birthDate']
+            gender, telecom, birth_date, identifier, address = \
+                patient_values['gender'], patient_values['telecom'], patient_values['birthDate'], patient_values['identifier'], patient_values['address']
             disease = generate_random_symptom(department, symptom_file_path)
             gt_department = disease['department'] if isinstance(disease, dict) else [department]
             gt = {
                 'patient': patient,
                 'gender': gender,
                 'telecom': telecom,
-                'birthDate': birthDate,
+                'birthDate': birth_date,
+                'identifier': identifier,
+                'address': address,
                 'department': gt_department,
                 'attending_physician': doctor,
                 'preference': patient_values['preference'],
@@ -61,7 +64,9 @@ class AgentDataBuilder:
                 'patient': patient,
                 'gender': gender,
                 'telecom': telecom,
-                'birthDate': birthDate,
+                'birthDate': birth_date,
+                'identifier': identifier,
+                'address': address,
                 'constraint': {
                     'preference': patient_values['preference'],
                     'attending_physician': doctor,
