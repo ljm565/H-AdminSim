@@ -3,6 +3,7 @@ import sys
 import random
 import numpy as np
 from sconf import Config
+from typing import Tuple
 from argparse import ArgumentParser
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
@@ -39,7 +40,38 @@ def shuffle_agent_test_data(agent_test_data: dict):
         agent_test_data (dict): An agent test data to simulate a hospital environmnet.
     """
     random.shuffle(agent_test_data['agent_data'])        # In-place logic
+
+
+def resume_results(agent_test_data: dict, results_path: str) -> Tuple[dict, dict, int]:
+    """
+    Resume a previously saved simulation by aligning agent results.
+
+    Args:
+        agent_test_data (dict): Static agent test data for a simulation.
+        results_path (str): Path to the JSON file containing the saved simulation results.
+
+    Returns:
+        Tuple[dict, int]:
+            - dict: Schedule updated static agent test data.
+            - dict: Trimmed agent results, where each list is sliced to the minimum ground truth length.
+            - int: The determined minimum length (`done_length`) used for trimming.
+    """
+    # Prune the previously interrupted results to the minimum data length
+    agent_results = json_load(results_path)
+    done_length = min([len(v['gt']) for v in agent_results.values()])
+    for k, v in agent_results.items():
+        agent_results[k] = {dk: dv[:done_length] for dk, dv in v.items()}
+
+    # Updated doctor schedules based on the resumed results
+    if 'schedule' in agent_results:
+        fixed_schedule = agent_test_data['doctor']
+        for status, pred in zip(agent_results['schedule']['status'], agent_results['schedule']['pred']):
+            if status:
+                fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].append(pred['schedule'])
+                fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].sort()
     
+    return agent_test_data, agent_results, done_length
+
 
 def main(args):
     # Init config
@@ -47,7 +79,7 @@ def main(args):
     config.yaml_file = args.config
     
     # Init environment
-    env_setup(config, args.continuing)
+    env_setup(config, args.resume)
 
     # Initialize tasks
     queue = list()
@@ -75,27 +107,14 @@ def main(args):
             save_path = os.path.join(args.output_dir, f'{basename}_result.json')
             log(f'{basename} simulation started..', color=True)
             
-            # Skip if the result already exits
-            if args.skip_saved_file and os.path.exists(save_path):
-                continue
+            # Resume the results and the virtual hospital environment
+            if args.resume and os.path.exists(save_path):
+                agent_test_data, agent_results, done_length = resume_results(agent_test_data, save_path)
+                environment.resume(agent_results)
 
-            if args.continuing and os.path.exists(save_path):
-                agent_results = json_load(save_path)
-                key = list(agent_results.keys())[0]
-                done_length = len(agent_results[key]['gt'])
-
-                if 'schedule' in agent_results:
-                    fixed_schedule = agent_test_data['doctor']
-                    for status, pred in zip(agent_results['schedule']['status'], agent_results['schedule']['pred']):
-                        if status:
-                            fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].append(pred['schedule'])
-                            fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].sort()
-                            environment.patient_schedules.append(pred)
-                            environment.booking_num[pred['attending_physician']] += 1
-            
             # Data per patient
             for j, (gt, test_data) in enumerate(agent_test_data['agent_data']):
-                if args.continuing and j < done_length:
+                if args.resume and j < done_length:
                     continue
 
                 for task in queue:
@@ -105,7 +124,7 @@ def main(args):
                     agent_results.setdefault(task.name, {'gt': [], 'pred': [], 'status': [], 'status_code': []})
                     for k in result:
                         agent_results[task.name][k] += result[k]
-                                  
+
             # Logging the results
             for task_name, result in agent_results.items():
                 correctness = result['status']
@@ -119,7 +138,8 @@ def main(args):
         log(f"Agent completed the tasks successfully", color=True)
     
     except Exception as e:
-        json_save_fast(save_path, agent_results)
+        if len(agent_results):
+            json_save_fast(save_path, agent_results)
         log("Error occured while execute the tasks.", level='error')
         raise e
     
@@ -130,8 +150,7 @@ if __name__ == '__main__':
     parser.add_argument('-c', '--config', type=str, required=True, help='Path to the configuration file')
     parser.add_argument('-t', '--type', type=str, required=True, nargs='+', choices=['intake', 'schedule'], help='Task types you want to execute (you can specify multiple)')
     parser.add_argument('-o', '--output_dir', type=str, required=True, help='Path to save agent test results')
-    parser.add_argument('--skip_saved_file', action='store_true', required=False, help='Skip inference if results already exsist')
-    parser.add_argument('--continuing', action='store_true', required=False, help='Continue the stopped processing')
+    parser.add_argument('--resume', action='store_true', required=False, help='Continue the stopped processing')
     parser.add_argument('--verbose', action='store_true', required=False, help='Whether logging the each result or not')
     args = parser.parse_args()
 

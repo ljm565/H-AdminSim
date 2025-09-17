@@ -21,18 +21,9 @@ from utils.common_utils import (
 
 class HospitalEnvironment:
     def __init__(self, config, agent_test_data):
+        # FHIR manager
         self.fhir_manager = FHIRManager(config)
-        self.__init_variable(config, agent_test_data)
         
-
-    def __init_variable(self, config, agent_test_data: dict):
-        """
-        Initialize the environment variables based on the agent test data.
-
-        Args:
-            config (Config): Configuration parameters of the agent simulation.
-            agent_test_data (dict): An agent test data to simulate a hospital environmnet.
-        """
         # Basic
         getcontext().prec = 10
         self._epsilon = 1e-6
@@ -154,6 +145,26 @@ class HospitalEnvironment:
             **{'start': self._START_HOUR, 'end': self._END_HOUR, 'interval': self._TIME_UNIT}
         )
         return doctor_information
+    
+
+    def resume(self, agent_results: dict):
+        """
+        Resume the hospital environment from previously saved agent results.
+
+        Args:
+            agent_test_data (dict): Input data containing static information 
+                                    about doctors, patients, and other hospital resources.
+            agent_results (dict): Previously saved results from the agent's simulation.
+        """
+        if 'schedule' in agent_results:
+            for status, pred in zip(agent_results['schedule']['status'], agent_results['schedule']['pred']):
+                if status:
+                    self.patient_schedules.append(pred)
+                    self.booking_num[pred['attending_physician']] += 1
+                    self.current_time = pred['last_updated_time']
+            
+            self.update_current_time()
+            self.update_patient_status()
     
 
     def update_fhir(self, fhir_resources: dict):
