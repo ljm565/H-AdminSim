@@ -1,8 +1,9 @@
 import json
+import random
 from copy import deepcopy
 from typing import Tuple, Union, Optional
-from patientsim import AdminStaffAgent, PatientAgent
 from patientsim.environment import OPSimulation
+from patientsim import AdminStaffAgent, PatientAgent
 
 from tools import (
     GeminiClient,
@@ -357,6 +358,7 @@ class AssignSchedule(Task):
             'asap': 'The patient wants the earliest available doctor in the department for the outpatient visit.',
             'doctor': 'The patient has a preferred doctor for the outpatient visit.'
         }
+        self.schedule_cancellation_prob = config.schedule_cancellation_prob
 
         # Initialize prompts
         self.task_system_prompt = txt_load(self._task_system_prompt_path)
@@ -633,7 +635,35 @@ class AssignSchedule(Task):
             'preferred_doctor': patient_condition.get('preferred_doctor'),
         }
         return True, STATUS_CODES['correct'], prediction, doctor_information
-    
+
+
+    def schedule_cancel(self, doctor_information: dict, environment) -> dict:
+        """
+        Cancel a doctor's scheduled appointment.
+
+        Args:
+            schedule (dict):
+            doctor_information (dict): A dictionary containing information about the doctor(s) involved,
+                                       including availability and other relevant details.
+            environment (Environment): Hospital environment.
+
+        Returns:
+            dict: The updated doctor information with the cancelled schedule removed.
+        """
+        cancelled_schedule = environment.schedule_cancel_event()
+        if len(cancelled_schedule):
+            doctor, date, time = cancelled_schedule['attending_physician'], cancelled_schedule['date'], cancelled_schedule['schedule']
+            schedule_list = doctor_information[doctor]['schedule'][date]
+            schedule_list.remove(time)
+
+            if self.integration_with_fhir:
+                fhir_appointment = self._get_fhir_appointment(data={'metadata': deepcopy(self._metadata),
+                                                                    'department': deepcopy(self._department_data),
+                                                                    'information': deepcopy(cancelled_schedule)})
+                environment.delete_fhir({'Appointment': fhir_appointment})
+
+        return doctor_information
+
 
     def feedback(self, prediction: str, error_code: str, doctor_information: dict, environment) -> str:
         """
@@ -695,12 +725,12 @@ class AssignSchedule(Task):
                 - 'status_code': List of status codes explaining each status.
         """
         gt, test_data = data_pair
-        metadata = agent_test_data.get('metadata')
-        department_data = agent_test_data.get('department')
-        self._START_HOUR = metadata.get('time').get('start_hour')
-        self._END_HOUR = metadata.get('time').get('end_hour')
-        self._TIME_UNIT = metadata.get('time').get('interval_hour')
-        self._DAY = metadata.get('days')
+        self._metadata = agent_test_data.get('metadata')
+        self._department_data = agent_test_data.get('department')
+        self._START_HOUR = self._metadata.get('time').get('start_hour')
+        self._END_HOUR = self._metadata.get('time').get('end_hour')
+        self._TIME_UNIT = self._metadata.get('time').get('interval_hour')
+        self._DAY = self._metadata.get('days')
         doctor_information = environment.doctor_info_from_fhir() if self.integration_with_fhir else agent_test_data.get('doctor')
         department, sanity = self.__extract_departments(gt, agent_results)
         patient_condition = {
@@ -804,12 +834,12 @@ class AssignSchedule(Task):
         if status and self.integration_with_fhir:
             # Even if a failure occurs during a later API tasks, update the FHIR resources to ensure continued scheduling task 
             fhir_patient = DataConverter.data_to_patient(
-                {'metadata': deepcopy(metadata),
-                 'department': deepcopy(department_data),
+                {'metadata': deepcopy(self._metadata),
+                 'department': deepcopy(self._department_data),
                  'patient': {test_data['patient']: {'department': department, **deepcopy(test_data)}}}
             )[0]
-            fhir_appointment = self._get_fhir_appointment(data={'metadata': deepcopy(metadata),
-                                                                'department': deepcopy(department_data),
+            fhir_appointment = self._get_fhir_appointment(data={'metadata': deepcopy(self._metadata),
+                                                                'department': deepcopy(self._department_data),
                                                                 'information': deepcopy(prediction)})
             
         agent_test_data['doctor'] = doctor_information    # Update the doctor information in the agent test data
@@ -823,5 +853,13 @@ class AssignSchedule(Task):
         results['pred'].append(prediction)
         results['status'].append(status)
         results['status_code'].append(status_code)
+        
+        # Other events
+        ## Schedule cancellation
+        if random.random() < self.schedule_cancellation_prob:
+            agent_test_data['doctor'] = self.schedule_cancel(
+                doctor_information=doctor_information,
+                environment=environment
+            )
 
         return results

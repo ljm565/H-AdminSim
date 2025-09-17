@@ -167,6 +167,21 @@ class HospitalEnvironment:
             self.update_patient_status()
     
 
+    def schedule_cancel_event(self) -> dict:
+        """
+        Cancel the schedule.
+
+        Returns:
+            dict: Cancelled schedule information. 
+        """
+        candidate_idx = [i for i, schedule in enumerate(self.patient_schedules) if schedule['status'] == 'scheduled']
+        if len(candidate_idx):
+            idx = random.choice(candidate_idx)
+            self.patient_schedules[idx]['status'] = 'cancelled'
+            return self.patient_schedules[idx]
+        return {}
+
+
     def update_fhir(self, fhir_resources: dict):
         """
         Update resources on the FHIR server.
@@ -178,7 +193,21 @@ class HospitalEnvironment:
         for resource_type, resource in fhir_resources.items():
             if resource and resource_type.lower() in ['patient', 'appointment']:
                 self.fhir_manager.create(resource_type, resource, verbose=False)
+                
 
+    def delete_fhir(self, fhir_resources: dict):
+        """
+        Delete resources on the FHIR server.
+
+        Args:
+            fhir_resources (dict): Dictionary where each key is a FHIR resource type (e.g., 'Appointment', 'Slot'),
+                                   and each value is the corresponding FHIR resource data to be updated.
+        """
+        # Delete the existing FHIR resources
+        for resource_type, resource in fhir_resources.items():
+            if resource and resource_type.lower() in ['patient', 'appointment']:
+                self.fhir_manager.delete(resource_type, resource['id'], verbose=False)
+    
 
     def update_current_time(self):
         """
@@ -194,6 +223,9 @@ class HospitalEnvironment:
         Update the status of each patient based on the current hospital time.
         """
         for schedule in self.patient_schedules:            
+            if schedule.get('status') == 'cancelled':
+                continue
+
             tmp_st_iso_time = get_iso_time(schedule['schedule'][0], utc_offset=self._utc_offset)
             tmp_tr_iso_time = get_iso_time(schedule['schedule'][-1], utc_offset=self._utc_offset)
 
