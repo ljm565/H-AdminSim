@@ -5,6 +5,7 @@ STATUS_CODES = {
     'department & patient': 'incorrect department and patient information',
     'simulation': 'incomplete simulation',
     'schedule': 'invalid schedule',
+    'moving up schedule': 'fail to move up the schedule',
     'duration': 'wrong duration',
     'conflict': {
         'physician': 'physician conflict', 
@@ -35,6 +36,7 @@ SCHEDULING_ERROR_CAUSE = {
     'not earlist schedule': [
         '* The patient wants the earliest possible appointment in the department, but the assigned time is not the earliest available based on the current time.',
         '* When scheduling, it is possible to assign an earlier date or time.'
+        "* The previous patient's schedule may have been cancelled. Therefore, it is necessary to carefully compare the hospital's start time with the doctor's schedule to identify available time slots."
     ],
     'invalid schedule': [
         "* The scheduling result may fall outside the hospital's operating hours.",

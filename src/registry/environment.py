@@ -5,7 +5,7 @@ from decimal import getcontext
 from datetime import datetime, timedelta
 
 from tasks import FHIRManager
-from utils import log
+from utils import log, colorstr
 from utils.fhir_utils import convert_fhir_resources_to_doctor_info
 from utils.common_utils import (
     get_iso_time,
@@ -50,6 +50,7 @@ class HospitalEnvironment:
         
         # Misc.
         self.patient_schedules = list()
+        self.waiting_list = list()
         self.first_verbose_flag = True
 
         # Cache variables
@@ -167,19 +168,59 @@ class HospitalEnvironment:
             self.update_patient_status()
     
 
-    def schedule_cancel_event(self) -> dict:
+    def schedule_cancel_event(self, idx: int, verbose: bool = False):
         """
-        Cancel the schedule.
+        Cancel a scheduled event for the patient.
+        This method updates the status of a scheduled event at the given index
+        to 'cancelled'. Index values greater than or equal to 0 are allowed.
 
-        Returns:
-            dict: Cancelled schedule information. 
+        Args:
+            idx (int): The index of the schedule to cancel. Must be 0 or a positive integer.
+            verbose (bool, optional): Whether logging the each result or not. Defaults to False.
         """
-        candidate_idx = [i for i, schedule in enumerate(self.patient_schedules) if schedule['status'] == 'scheduled']
-        if len(candidate_idx):
-            idx = random.choice(candidate_idx)
+        if idx >= 0:
+            for turn, (_, schedule) in enumerate(self.waiting_list):
+                if schedule == self.patient_schedules[idx]:
+                    self.pop_waiting_list(turn, verbose)
+                    break
             self.patient_schedules[idx]['status'] = 'cancelled'
-            return self.patient_schedules[idx]
-        return {}
+            if verbose:
+                log(f'{colorstr("CANCELED")}: {self.patient_schedules[idx]} schedule is canceled.')
+    
+
+    def add_waiting_list(self, idx: int, verbose: bool = False):
+        """
+        Add a schedule to the waiting list for an earlier appointment if needed.
+
+        Args:
+            idx (int): The index of the schedule to add to the waiting list. Must be 0 or a positive integer.
+            verbose (bool, optional): Whether logging the each result or not. Defaults to False.
+        """
+        if idx >= 0:
+            requested_schedule = self.patient_schedules[idx]
+            if all(requested_schedule != s[1] for s in self.waiting_list):
+                self.waiting_list.append((idx, requested_schedule))
+                if verbose:
+                    log(f'{colorstr("WAITING LIST")}: {requested_schedule} schedule is appended to the waiting list.')
+
+    
+    def pop_waiting_list(self, idx: Union[list[int], int], verbose: bool = False):
+        """
+        Pop a schedule to the waiting list.
+
+        Args:
+            idx (Union[list[int], int]): The index list (or index) of the schedule to pop from the waiting list.
+            verbose (bool, optional): Whether logging the each result or not. Defaults to False.
+        """
+        if isinstance(idx, int) and idx >= 0:
+            idx = [idx]
+
+        if len(idx):
+            idx = sorted(idx, reverse=True)
+            for _id in idx:
+                schedule = self.waiting_list.pop(_id)
+                if verbose:
+                    log(f'{colorstr("WAITING LIST")}: {schedule[1]} schedule is popped from the waiting list.')
 
 
     def update_fhir(self, fhir_resources: dict):

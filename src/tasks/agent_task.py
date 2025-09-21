@@ -18,6 +18,7 @@ from utils import log
 from utils.fhir_utils import *
 from utils.filesys_utils import txt_load, json_load
 from utils.common_utils import (
+    group_consecutive_segments,
     convert_segment_to_time,
     convert_time_to_segment,
     compare_iso_time,
@@ -294,7 +295,7 @@ class OutpatientIntake(Task):
             temperature=0
         )
         environment = OPSimulation(patient_agent, admin_staff_agent)
-        dialogs = environment.simulate(verbose=False)
+        dialogs = environment.simulate(verbose=False)['dialog_history']
         prediction_department = OutpatientIntake.postprocessing_department(dialogs[-1]['content'])
 
         # LLM call: Supervisor which should extract demographic information of the patient and evaluation the department decision result
@@ -359,6 +360,7 @@ class AssignSchedule(Task):
             'doctor': 'The patient has a preferred doctor for the outpatient visit.'
         }
         self.schedule_cancellation_prob = config.schedule_cancellation_prob
+        self.request_early_schedule_prob = config.request_early_schedule_prob
 
         # Initialize prompts
         self.task_system_prompt = txt_load(self._task_system_prompt_path)
@@ -423,7 +425,7 @@ class AssignSchedule(Task):
             return str(text)
 
 
-    def __extract_departments(self, gt: dict, agent_results: dict) -> Tuple[list[str], bool]:
+    def __extract_department(self, gt: dict, agent_results: dict, doctor_information: dict) -> Tuple[str, bool]:
         """
         Extracts the predicted department from agent results.
         If predictions are not available, falls back to using ground truth labels.
@@ -431,16 +433,22 @@ class AssignSchedule(Task):
         Args:
             gt (dict): Ground truth data of a patient.
             agent_results (dict): A dictionary that may contain predicted department results under the key 'department'.
+            doctor_information (dict): Dictionary of doctor data including their existing schedules.
+                                       Each key is a doctor's name, and each value includes a 'schedule' field.
 
         Returns:
-            Tuple[list[str], bool]: A department list, either predicted or ground truth and its sanity status.
+            Tuple[str, bool]: A department, either predicted or ground truth and its sanity status.
         """
+        # Prediction results are existing case
         try:
             department = agent_results['intake']['pred'][-1]['department'][0]
             sanity = agent_results['intake']['status'][-1]
+        
+        # Loading from the ground truth
         except:
             log('The predicted department is not given. The ground truth value will be used.', 'warning')
-            department = gt['department'][0]
+            department = doctor_information[gt['attending_physician']]['department']
+            assert department in gt['department']
             sanity = True
 
         return department, sanity
@@ -505,6 +513,7 @@ class AssignSchedule(Task):
             if preference_type == 'doctor' and k != pred_doctor_name:
                 continue
             
+            min_time_slot_n = int(v['outpatient_duration'] / self._TIME_UNIT)
             fixed_schedule = v['schedule']
             for date, schedule in fixed_schedule.items():
                 # date > pred_date case
@@ -521,9 +530,10 @@ class AssignSchedule(Task):
                 else:
                     all_time_segments = convert_time_to_segment(self._START_HOUR, self._END_HOUR, self._TIME_UNIT)
                     free_time = [s for s in range(len(all_time_segments)) if s not in fixed_schedule_segments]
-
+                
                 if len(free_time):
-                    free_max_st, _ = convert_segment_to_time(self._START_HOUR, self._END_HOUR, self._TIME_UNIT, [free_time[-1]])
+                    valid_time_segments = sum([seg for seg in group_consecutive_segments(free_time) if len(seg) >= min_time_slot_n], [])
+                    free_max_st, _ = convert_segment_to_time(self._START_HOUR, self._END_HOUR, self._TIME_UNIT, [valid_time_segments[-min_time_slot_n]])
                     free_max_st_iso = get_iso_time(free_max_st, date, utc_offset=utc_offset)
 
                     if compare_iso_time(free_max_st_iso, current_time):
@@ -637,21 +647,26 @@ class AssignSchedule(Task):
         return True, STATUS_CODES['correct'], prediction, doctor_information
 
 
-    def schedule_cancel(self, doctor_information: dict, environment) -> dict:
+    def schedule_cancel(self, doctor_information: dict, environment, idx: Optional[int] = None, verbose: bool = False) -> dict:
         """
         Cancel a doctor's scheduled appointment.
 
         Args:
-            schedule (dict):
             doctor_information (dict): A dictionary containing information about the doctor(s) involved,
                                        including availability and other relevant details.
             environment (Environment): Hospital environment.
+            idx (int, optional): Specific patient schedule index.
+            verbose (bool, optional): Whether logging the each result or not. Defaults to False.
 
         Returns:
             dict: The updated doctor information with the cancelled schedule removed.
         """
-        cancelled_schedule = environment.schedule_cancel_event()
-        if len(cancelled_schedule):
+        if not idx:
+            candidate_idx = [i for i, schedule in enumerate(environment.patient_schedules) if schedule['status'] == 'scheduled']
+            idx = random.choice(candidate_idx) if len(candidate_idx) else -1
+
+        if idx >= 0:
+            cancelled_schedule = environment.patient_schedules[idx]
             doctor, date, time = cancelled_schedule['attending_physician'], cancelled_schedule['date'], cancelled_schedule['schedule']
             schedule_list = doctor_information[doctor]['schedule'][date]
             schedule_list.remove(time)
@@ -662,7 +677,88 @@ class AssignSchedule(Task):
                                                                     'information': deepcopy(cancelled_schedule)})
                 environment.delete_fhir({'Appointment': fhir_appointment})
 
+            environment.schedule_cancel_event(idx, verbose)
+
         return doctor_information
+    
+
+    def move_up_schedule(self, doctor_information: dict, environment, verbose: bool = False) -> dict:
+        """
+        Move up the patient's schedule in the waiting list.
+
+        Args:
+            doctor_information (dict): A dictionary containing information about the doctor(s) involved,
+                                       including availability and other relevant details.
+            environment (Environment): Hospital environment.
+            verbose (bool, optional): Whether logging the each result or not. Defaults to False.
+
+        Returns:
+            dict: The updated doctor information with the schedule moved up.
+        """
+        statuses, status_codes, predictions, moved_schedule_idx = list(), list(), list(), list()
+        for turn, (idx, schedule) in enumerate(environment.waiting_list):
+            if schedule['status'] == 'scheduled':
+                is_earlist = self.__check_is_earlist(
+                    {
+                        'schedule': {
+                            schedule['attending_physician']: {
+                                'date': schedule['date'],
+                                'start': schedule['schedule'][0],
+                                'end': schedule['schedule'][1]
+                            }
+                        }
+                    },
+                    doctor_information,
+                    schedule['department'],
+                    environment,
+                    schedule['preference']
+                )
+                if not is_earlist:
+                    status, status_code, prediction, doctor_information = self.scheduling(
+                        {
+                            'patient': schedule['patient'],
+                            'department': schedule['department'],
+                            'preference': schedule['preference'],
+                            'preferred_doctor': schedule['preferred_doctor'],
+                        },
+                        doctor_information,
+                        environment,
+                        verbose
+                    )
+
+                    if status:
+                        statuses.append(status)
+                        status_codes.append(status_code)
+                        predictions.append(prediction)
+                        doctor_information = self.schedule_cancel(doctor_information, environment, idx)
+                        self.update_env(status, prediction, environment)
+                        moved_schedule_idx.appned(turn)
+                    else:
+                        statuses.append(status)
+                        status_codes.append(STATUS_CODES['moving up schedule'])
+                        predictions.append(prediction)
+        
+        # Pop the rescheduled schedule from the waiting list
+        environment.pop_waiting_list(moved_schedule_idx, verbose)
+
+        return statuses, status_codes, predictions, doctor_information
+    
+
+    def add_waiting_list(self, environment, idx: Optional[int] = None, verbose: bool = False):
+        """
+        Add a patient schedule to the waiting list in the given environment.
+
+        Args:
+            environment (Environment): Hospital environment.
+            idx (int, optional): Specific patient schedule index.
+            verbose (bool, optional): Whether logging the each result or not. Defaults to False.
+        """
+        if not idx:
+            candidate_idx = [i for i, schedule in enumerate(environment.patient_schedules) if schedule['status'] == 'scheduled']
+            idx = random.choice(candidate_idx) if len(candidate_idx) else -1
+        
+        if idx >= 0:
+            environment.add_waiting_list(idx, verbose)
 
 
     def feedback(self, prediction: str, error_code: str, doctor_information: dict, environment) -> str:
@@ -698,68 +794,27 @@ class AssignSchedule(Task):
             verbose=False
         )
         return feedback
-            
+    
 
-    def __call__(self, data_pair: Tuple[dict, dict], agent_test_data: dict, agent_results: dict, environment, verbose: bool = False) -> dict:
+    def scheduling(self, patient_condition: dict, doctor_information: dict, environment, verbose: bool = False):
         """
-        This method uses agent test data to prompt an LLM for scheduling decisions, post-processes
-        the output, runs sanity checks on predicted schedules, and collects the results for evaluation.
+        Make an appointment between the doctor and the patient.
 
         Args:
-            data_pair (Tuple[dict, dict]): A pair of ground truth and patient data for agent simulation.
-            agent_test_data (dict): Dictionary containing test data and metadata for a single hospital.
-                Expected keys include:
-                    - 'metadata': A dict containing start_hour, end_hour, and interval_hour under 'time'.
-                    - 'agent_data': A list of (ground_truth, test_data) pairs.
-                    - 'doctor': A dictionary of doctor profiles with department and schedule info.
-            agent_results (dict): Optional dictionary containing prior department predictions.
-                Used to extract department-level guidance per patient. Can be empty.
-            environment (HospitalEnvironment): Hospital environment instance to manage patient schedules.
-            verbose (bool): Whether logging the each result or not.
+            patient_condition (dict): The conditions including name, preference, etc.
+            doctor_information (dict): A dictionary containing information about the doctor(s) involved,
+                                       including availability and other relevant details.
+            environment (Environment): Hospital environment.
+            verbose (bool, optional): Whether logging the each result or not. Defaults to False.
 
-        Returns:
-            dict: A dictionary with three keys:
-                - 'gt': List of ground truth results, each including patient info, attending physician, department, and schedule.
-                - 'pred': List of predicted results (either valid dict or fallback string).
-                - 'status': List of booleans indicating whether each prediction passed sanity checks.
-                - 'status_code': List of status codes explaining each status.
+        Return
+            Tuple[bool, str, Union[str, dict], dict]: 
+                - A boolean indicating whether the prediction passed all sanity checks.
+                - A string explaining its status.
+                - The original prediction (wrong case) or processed prediction (correct case) (either unchanged or used for debugging/logging if invalid).
+                - Updated doctor information after processing the prediction.
         """
-        gt, test_data = data_pair
-        self._metadata = agent_test_data.get('metadata')
-        self._department_data = agent_test_data.get('department')
-        self._START_HOUR = self._metadata.get('time').get('start_hour')
-        self._END_HOUR = self._metadata.get('time').get('end_hour')
-        self._TIME_UNIT = self._metadata.get('time').get('interval_hour')
-        self._DAY = self._metadata.get('days')
-        doctor_information = environment.doctor_info_from_fhir() if self.integration_with_fhir else agent_test_data.get('doctor')
-        department, sanity = self.__extract_departments(gt, agent_results)
-        patient_condition = {
-            'patient': test_data.get('patient'), 
-            'department': department, 
-            'preference': test_data.get('constraint').get('preference'),
-            'preferred_doctor': test_data.get('constraint').get('attending_physician') if test_data.get('constraint').get('preference') == 'doctor' else "Doesn't matter",
-            'symptom_level': test_data.get('constraint').get('symptom_level')
-        }
-        results = self.get_result_dict()
-
-        # Append an example of exemplary answer
-        gt_data = {
-            'patient': gt.get('patient'),
-            'attending_physician': gt.get('attending_physician'),
-            'department': gt.get('department'),
-            'preference': gt.get('preference'),
-            'symptom_level': gt.get('symptom_level'),
-        }
-        results['gt'].append(gt_data)
-
-        # If the precedent department data is wrong, continue
-        if not sanity:
-            results['pred'].append({})
-            results['status'].append(False)
-            results['status_code'].append(STATUS_CODES['preceding'])
-            return results
-        
-        # LLM call and compare the validity of the LLM output
+        department = patient_condition['department']
         feedback, prev_prediction = '', ''
         feedback_cnt = 0
         while 1:
@@ -825,30 +880,120 @@ class AssignSchedule(Task):
                 continue
             
             break
-        
-        if verbose:
-            log(f'Final Status: {status_code}\n\n\n')   
 
+        return status, status_code, prediction, doctor_information
+    
+
+    def update_env(self, status: bool, prediction: Union[dict, str], environment, department: Optional[str] = None, test_data: Optional[dict] = None):
+        """
+        Update the simulation environment with scheduling results and optionally synchronize FHIR resources.
+
+        Args:
+            status (bool): Whether the scheduling task was successful. If True, FHIR resources may be updated.
+            prediction (Union[dict, str]): The predicted scheduling result (e.g., patient schedule information).
+            environment: The environment instance to be updated (must implement `update_env`).
+            department (Optional[str], optional): Department assigned to the patient, required when test_data is provided. Defaults to None.
+            test_data (Optional[dict], optional): Patient-related test data used to generate FHIR Patient resources. Defaults to None.
+
+        """
         # POST/PUT to FHIR
         fhir_patient, fhir_appointment = None, None
         if status and self.integration_with_fhir:
             # Even if a failure occurs during a later API tasks, update the FHIR resources to ensure continued scheduling task 
-            fhir_patient = DataConverter.data_to_patient(
-                {'metadata': deepcopy(self._metadata),
-                 'department': deepcopy(self._department_data),
-                 'patient': {test_data['patient']: {'department': department, **deepcopy(test_data)}}}
-            )[0]
+            if test_data and department:
+                fhir_patient = DataConverter.data_to_patient(
+                    {'metadata': deepcopy(self._metadata),
+                    'department': deepcopy(self._department_data),
+                    'patient': {test_data['patient']: {'department': department, **deepcopy(test_data)}}}
+                )[0]
             fhir_appointment = self._get_fhir_appointment(data={'metadata': deepcopy(self._metadata),
                                                                 'department': deepcopy(self._department_data),
                                                                 'information': deepcopy(prediction)})
             
-        agent_test_data['doctor'] = doctor_information    # Update the doctor information in the agent test data
         environment.update_env(
             status=status, 
             patient_schedule=prediction,
             fhir_resources={'Patient': fhir_patient, 'Appointment': fhir_appointment}
         )
+            
+
+    def __call__(self, data_pair: Tuple[dict, dict], agent_test_data: dict, agent_results: dict, environment, verbose: bool = False) -> dict:
+        """
+        This method uses agent test data to prompt an LLM for scheduling decisions, post-processes
+        the output, runs sanity checks on predicted schedules, and collects the results for evaluation.
+
+        Args:
+            data_pair (Tuple[dict, dict]): A pair of ground truth and patient data for agent simulation.
+            agent_test_data (dict): Dictionary containing test data and metadata for a single hospital.
+                Expected keys include:
+                    - 'metadata': A dict containing start_hour, end_hour, and interval_hour under 'time'.
+                    - 'agent_data': A list of (ground_truth, test_data) pairs.
+                    - 'doctor': A dictionary of doctor profiles with department and schedule info.
+            agent_results (dict): Optional dictionary containing prior department predictions.
+                Used to extract department-level guidance per patient. Can be empty.
+            environment (HospitalEnvironment): Hospital environment instance to manage patient schedules.
+            verbose (bool, option): Whether logging the each result or not.
+
+        Returns:
+            dict: A dictionary with three keys:
+                - 'gt': List of ground truth results, each including patient info, attending physician, department, and schedule.
+                - 'pred': List of predicted results (either valid dict or fallback string).
+                - 'status': List of booleans indicating whether each prediction passed sanity checks.
+                - 'status_code': List of status codes explaining each status.
+        """
+        gt, test_data = data_pair
+        self._metadata = agent_test_data.get('metadata')
+        self._department_data = agent_test_data.get('department')
+        self._START_HOUR = self._metadata.get('time').get('start_hour')
+        self._END_HOUR = self._metadata.get('time').get('end_hour')
+        self._TIME_UNIT = self._metadata.get('time').get('interval_hour')
+        self._DAY = self._metadata.get('days')
+        doctor_information = environment.doctor_info_from_fhir() if self.integration_with_fhir else agent_test_data.get('doctor')
+        department, sanity = self.__extract_department(gt, agent_results, doctor_information)
+        patient_condition = {
+            'patient': test_data.get('patient'), 
+            'department': department, 
+            'preference': test_data.get('constraint').get('preference'),
+            'preferred_doctor': test_data.get('constraint').get('attending_physician') if test_data.get('constraint').get('preference') == 'doctor' else "Doesn't matter",
+        }
+        results = self.get_result_dict()
+
+        # Append an example of exemplary answer
+        gt_data = {
+            'patient': gt.get('patient'),
+            'attending_physician': gt.get('attending_physician'),
+            'department': gt.get('department'),
+            'preference': gt.get('preference'),
+        }
+        results['gt'].append(gt_data)
+
+        # If the precedent department data is wrong, continue
+        if not sanity:
+            results['pred'].append({})
+            results['status'].append(False)
+            results['status_code'].append(STATUS_CODES['preceding'])
+            return results
         
+        # LLM call and compare the validity of the LLM output
+        status, status_code, prediction, doctor_information = self.scheduling(
+            patient_condition,
+            doctor_information,
+            environment,
+            verbose,
+        )
+        if verbose:
+            log(f'Final Status: {status_code}\n\n\n')   
+
+        # Update the simulation environment and the doctor information in the agent test data
+        self.update_env(
+            status=status,
+            prediction=prediction,
+            environment=environment,
+            department=department,
+            test_data=test_data,
+        )
+        agent_test_data['doctor'] = doctor_information
+
         # Append results
         results['pred'].append(prediction)
         results['status'].append(status)
@@ -859,7 +1004,23 @@ class AssignSchedule(Task):
         if random.random() < self.schedule_cancellation_prob:
             agent_test_data['doctor'] = self.schedule_cancel(
                 doctor_information=doctor_information,
-                environment=environment
+                environment=environment,
+                verbose=verbose,
             )
+        
+        ## Try to move up the existing patient schedule
+        if random.random() < self.request_early_schedule_prob:
+            self.add_waiting_list(environment, verbose=verbose)
+
+        ## Regular check of the waiting list 
+        statuses, status_codes, predictions, doctor_information = self.move_up_schedule(
+            doctor_information=doctor_information,
+            environment=environment,
+            verbose=verbose,
+        )
+        agent_test_data['doctor'] = doctor_information
+        results['pred'].extend(predictions)
+        results['status'].extend(statuses)
+        results['status_code'].extend(status_codes)
 
         return results
