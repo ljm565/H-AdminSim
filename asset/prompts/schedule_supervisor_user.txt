@@ -6,7 +6,8 @@ Lastly, review the doctor's schedule and recommend a final available schedule by
 
 ## Important Guidelines:
 1. Appointments are generally scheduled sequentially from the earliest available time slots after the current time during hospital operating hours.
-2. However, if a previous patient's appointment is cancelled, the appointment of a patient on the waiting list **must** be moved forward. Therefore, carefully review the doctor's schedule and assign the patient to the earliest available date and time slot. Refer to the Rescheduling request below to confirm whether rescheduling is required.
+2. However, if a previous patient's appointment is cancelled, the appointment of a patient on the waiting list **must** be moved forward. Therefore, carefully review the doctor's schedule and assign the patient to the earliest available date and time slot. Refer to the `Rescheduling request` below to confirm whether rescheduling is required. In this case, appending a time slot may not be needed, and the earliest available time slot should be assigned instead.
+3. Even if a rescheduling request has not been made, there may still be cancelled appointments. Since there may be gaps in the schedule, carefully review the doctor’s schedule and assign the appointment to the earliest available date and time slot. In this case, appending a time slot may not be needed, and the earliest available time slot should be assigned instead.
 
 
 ## Hospital time information:
