@@ -454,7 +454,7 @@ class AssignSchedule(Task):
         return department, sanity
     
 
-    def __filter_doctor_schedule(self, doctor_information: dict, department: str, environment) -> dict:
+    def __filter_doctor_schedule(self, doctor_information: dict, department: str, environment, express_detail: bool = False) -> dict:
         """
         Filter doctor information by department.
 
@@ -463,6 +463,7 @@ class AssignSchedule(Task):
                                        including their department and schedule details.
             department (str): The department name used to filter the doctors.
             environment (Environment): Environment object containing booking number of each doctor.
+            express_detail (bool, optional): Whether to express the timetable in detail. Defaults to False.
 
         Returns:
             dict: A dictionary containing only the doctors who belong to the specified 
@@ -477,7 +478,14 @@ class AssignSchedule(Task):
                 tmp_schedule['workload'] = f"{round(environment.booking_num[k] / v['capacity'] * 100, 2)}%"
                 tmp_schedule['outpatient_duration'] = 1 / v['capacity_per_hour']
                 filtered_doctor_information['doctor'][k] = tmp_schedule
-        
+
+        if express_detail:
+             for _, info in filtered_doctor_information['doctor'].items():
+                info['schedule'] = {
+                    date: [{'start': s[0], 'end': s[1]} for s in schedule]
+                    for date, schedule in info['schedule'].items()
+                }
+
         return filtered_doctor_information
     
 
@@ -835,7 +843,7 @@ class AssignSchedule(Task):
         reschedule_desc = "Rescheduling requested. This is the rescheduling of a patient who wishes to move their appointment earlier due to a previous patient's cancelled reservation" \
             if reschedule_flag else 'Not requested.'
         while 1:
-            filtered_doctor_information = self.__filter_doctor_schedule(doctor_information, department, environment)
+            filtered_doctor_information = self.__filter_doctor_schedule(doctor_information, department, environment, True)
             if self.ensure_output_format:
                 prediction = self.task_client(
                     user_prompt=self.task_user_prompt_template,
