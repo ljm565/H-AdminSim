@@ -270,8 +270,8 @@ class HospitalEnvironment:
             if schedule.get('status') == 'cancelled':
                 continue
 
-            tmp_st_iso_time = get_iso_time(schedule['schedule'][0], utc_offset=self._utc_offset)
-            tmp_tr_iso_time = get_iso_time(schedule['schedule'][-1], utc_offset=self._utc_offset)
+            tmp_st_iso_time = get_iso_time(schedule['schedule'][0], date=schedule['date'], utc_offset=self._utc_offset)
+            tmp_tr_iso_time = get_iso_time(schedule['schedule'][-1], date=schedule['date'], utc_offset=self._utc_offset)
 
             if compare_iso_time(self.current_time, tmp_tr_iso_time):
                 status = 'completed'
