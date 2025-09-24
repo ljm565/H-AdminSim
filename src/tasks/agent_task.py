@@ -275,6 +275,7 @@ class OutpatientIntake(Task):
             self.task_model,
             'outpatient',
             lang_proficiency_level='B',
+            recall_level='no_history' if test_data['constraint']['symptom_level'] == 'simple' else 'high',
             department=department_candidates,
             name=name,
             birth_date=birth_date,
