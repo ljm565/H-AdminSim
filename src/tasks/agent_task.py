@@ -1053,5 +1053,6 @@ class AssignSchedule(Task):
         results['pred'].extend(predictions)
         results['status'].extend(statuses)
         results['status_code'].extend(status_codes)
+        results['gt'].extend(deepcopy(predictions))     # To syncronize the number of each result
 
         return results

@@ -66,7 +66,7 @@ def resume_results(agent_test_data: dict, results_path: str) -> Tuple[dict, dict
     if 'schedule' in agent_results:
         fixed_schedule = agent_test_data['doctor']
         for status, pred in zip(agent_results['schedule']['status'], agent_results['schedule']['pred']):
-            if status:
+            if status and pred['status'] != 'cancelled':
                 fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].append(pred['schedule'])
                 fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].sort()
     
