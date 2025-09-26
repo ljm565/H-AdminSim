@@ -9,7 +9,6 @@ vllm_url: http://0.0.0.0:8000     # Used only when using vllm.
 
 # Agent test data and converted FHIR data folder
 agent_test_data: synthetic_data/hospital_small/agent_data
-fhir_data: synthetic_data/hospital_small/fhir_data
 fhir_url: http://localhost:8080/fhir
 integration_with_fhir: False
 
