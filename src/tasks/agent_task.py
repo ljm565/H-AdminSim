@@ -92,6 +92,7 @@ class OutpatientIntake(Task):
         self._sup_system_prompt_path = config.outpatient_intake.supervisor_system_prompt
         self._sup_user_prompt_path = config.outpatient_intake.supervisor_user_prompt
         self.ensure_output_format = config.ensure_output_format
+        self.max_inferences = config.intake_max_inference
         
         # Initialize prompts
         self.system_prompt = txt_load(self._sup_system_prompt_path)
@@ -297,7 +298,7 @@ class OutpatientIntake(Task):
             random_seed=42,
             temperature=0
         )
-        environment = OPSimulation(patient_agent, admin_staff_agent)
+        environment = OPSimulation(patient_agent, admin_staff_agent, max_inferences=self.max_inferences)
         dialogs = environment.simulate(verbose=False)['dialog_history']
         prediction_department = OutpatientIntake.postprocessing_department(dialogs[-1]['content'])
 
