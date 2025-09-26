@@ -3,7 +3,7 @@ seed: 9999
 
 # LLM model
 supervisor_model: gpt-4o
-task_model: gemini-2.5-flash-preview-05-20
+task_model: gpt-4o
 ensure_output_format: False     # If you set to True, JsonOutputParser provided from LangChain will be used.
 vllm_url: http://0.0.0.0:8000     # Used only when using vllm.
 
@@ -17,6 +17,7 @@ booking_days_before_simulation: 3       # Number of days before the simulation d
 fhir_max_connection_retries: 5          # Maximum number of retry attempts when retrieving data from the FHIR server
 schedule_cancellation_prob: 0.05
 request_early_schedule_prob: 0.1
+intake_max_inference: 5
 
 # Prompt paths
 outpatient_intake:
