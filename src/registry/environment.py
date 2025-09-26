@@ -2,7 +2,7 @@ import time
 import random
 from typing import Union
 from decimal import getcontext
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from tasks import FHIRManager
 from utils import log, colorstr
