@@ -299,6 +299,7 @@ class OutpatientIntake(Task):
         admin_staff_agent = AdminStaffAgent(
             self.task_model,
             departments,
+            max_inferences=self.max_inferences,
             random_seed=42,
             temperature=0 if not 'gpt-5' in self.task_model.lower() else 1
         )
