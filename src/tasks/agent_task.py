@@ -90,7 +90,7 @@ class OutpatientIntake(Task):
     def __init__(self, config):
         # Initialize variables
         self.name = 'intake'
-        self.max_retries = 5
+        self.max_retries = 8
         self.supervisor_model = config.supervisor_model
         self.task_model = config.task_model
         self._sup_system_prompt_path = config.outpatient_intake.supervisor_system_prompt
