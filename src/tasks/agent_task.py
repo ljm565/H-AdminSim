@@ -756,7 +756,6 @@ class AssignSchedule(Task):
         statuses, status_codes, predictions, trials = list(), list(), list(), list()
         for turn, (idx, schedule) in enumerate(environment.waiting_list):
             if schedule['status'] == 'scheduled':
-                # TODO: valid_from option
                 is_earlist = self.__check_is_earlist(
                     {
                         'schedule': {
