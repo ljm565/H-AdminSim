@@ -381,7 +381,8 @@ class AssignSchedule(Task):
         self.integration_with_fhir = config.integration_with_fhir
         self.preference_phrase = {
             'asap': 'The patient wants the earliest available doctor in the department for the outpatient visit.',
-            'doctor': 'The patient has a preferred doctor for the outpatient visit.'
+            'doctor': 'The patient has a preferred doctor for the outpatient visit.',
+            'date': 'The patient wants the earliest available doctor in the department for the outpatient visit, starting from **{date}**.'
         }
         self.schedule_cancellation_prob = config.schedule_cancellation_prob
         self.request_early_schedule_prob = config.request_early_schedule_prob
@@ -513,7 +514,13 @@ class AssignSchedule(Task):
         return filtered_doctor_information
     
 
-    def __check_is_earlist(self, prediction: dict, doctor_information: dict, department: str, environment, preference_type: str) -> bool:
+    def __check_is_earlist(self, 
+                           prediction: dict, 
+                           doctor_information: dict, 
+                           department: str, 
+                           environment, 
+                           preference_type: str, 
+                           valid_from: Optional[str] = None) -> bool:
         """
         Check if the predicted schedule is the earliest possible option.
 
@@ -523,6 +530,7 @@ class AssignSchedule(Task):
             department (str): Department name used to filter relevant doctors.
             environment (Environment): Environment object containing current time and UTC offset.
             preference_type (str): Scheduling preference type, e.g., 'doctor' (specific doctor) or 'department'.
+            valid_from (str, optional): Indicates the earliest possible reservation date. This field is present only if the preference type is ‘date’. Defaults to None.
 
         Returns:
             bool: True if the predicted schedule is the earliest available, False otherwise.
@@ -550,6 +558,10 @@ class AssignSchedule(Task):
             for date, schedule in fixed_schedule.items():
                 # date > pred_date case
                 if compare_iso_time(date, pred_date):
+                    continue
+                
+                # valid_from > date case (preference == 'date' case)
+                if valid_from and compare_iso_time(valid_from, date):
                     continue
 
                 fixed_schedule_segments = sum([convert_time_to_segment(self._START_HOUR, 
@@ -643,26 +655,31 @@ class AssignSchedule(Task):
             if patient_condition.get('preferred_doctor') != doctor_name:
                 return False, STATUS_CODES['preference']['physician'], prediction, doctor_information
         
+        if patient_condition['preference'] == 'date':
+            if compare_iso_time(patient_condition.get('valid_from'), date):
+                return False, STATUS_CODES['preference']['date'], prediction, doctor_information
+        
         is_earlist = self.__check_is_earlist(
             prediction,
             doctor_information,
             patient_condition['department'],
             environment,
-            patient_condition['preference']
+            patient_condition['preference'],
+            valid_from=patient_condition['valid_from'] if patient_condition['preference'] == 'date' else None
         )
         if not is_earlist:
             return False, STATUS_CODES['preference']['asap'], prediction, doctor_information
         
-        ###################### Check the doctors' workload balance  #####################
-        if not patient_condition['preference'] == 'doctor':
-            schedule_candidates = self.__filter_doctor_schedule(
-                doctor_information,
-                patient_condition.get('department'),
-                environment
-            )['doctor']
-            selected_doctor_wl = float(schedule_candidates[doctor_name]['workload'][:-1])
-            if not all(float(v['workload'][:-1]) >= selected_doctor_wl for k, v in schedule_candidates.items() if k != doctor_name):
-                return False, STATUS_CODES['workload'], prediction, doctor_information 
+        # ###################### Check the doctors' workload balance  #####################
+        # if not patient_condition['preference'] == 'doctor':
+        #     schedule_candidates = self.__filter_doctor_schedule(
+        #         doctor_information,
+        #         patient_condition.get('department'),
+        #         environment
+        #     )['doctor']
+        #     selected_doctor_wl = float(schedule_candidates[doctor_name]['workload'][:-1])
+        #     if not all(float(v['workload'][:-1]) >= selected_doctor_wl for k, v in schedule_candidates.items() if k != doctor_name):
+        #         return False, STATUS_CODES['workload'], prediction, doctor_information 
                 
         # Finally update schedule of the doctor
         doctor_information[doctor_name]['schedule'][date].append([start, end])    # In-place logic
@@ -675,6 +692,7 @@ class AssignSchedule(Task):
             'schedule': [start, end],
             'preference': patient_condition.get('preference'),
             'preferred_doctor': patient_condition.get('preferred_doctor'),
+            'valid_from': patient_condition.get('valid_from')
         }
         return True, STATUS_CODES['correct'], prediction, doctor_information
 
@@ -738,6 +756,7 @@ class AssignSchedule(Task):
         statuses, status_codes, predictions, trials = list(), list(), list(), list()
         for turn, (idx, schedule) in enumerate(environment.waiting_list):
             if schedule['status'] == 'scheduled':
+                # TODO: valid_from option
                 is_earlist = self.__check_is_earlist(
                     {
                         'schedule': {
@@ -751,7 +770,8 @@ class AssignSchedule(Task):
                     doctor_information,
                     schedule['department'],
                     environment,
-                    schedule['preference']
+                    schedule['preference'],
+                    valid_from=schedule['valid_from'] if schedule['preference'] == 'date' else None
                 )
                 if not is_earlist:
                     status, status_code, prediction, doctor_information, trial = self.scheduling(
@@ -760,6 +780,7 @@ class AssignSchedule(Task):
                             'department': schedule['department'],
                             'preference': schedule['preference'],
                             'preferred_doctor': schedule['preferred_doctor'],
+                            'valid_from': schedule['valid_from'],
                         },
                         doctor_information,
                         environment,
@@ -879,6 +900,8 @@ class AssignSchedule(Task):
             if reschedule_flag else 'Not requested.'
         while 1:
             filtered_doctor_information = self.__filter_doctor_schedule(doctor_information, department, environment, True)
+            preference_desc = self.preference_phrase[patient_condition.get('preference')] if patient_condition.get('preference') != 'date' \
+                else self.preference_phrase[patient_condition.get('preference')].format(date=patient_condition.get('valid_from'))
             if self.ensure_output_format:
                 prediction = self.task_client(
                     user_prompt=self.task_user_prompt_template,
@@ -889,7 +912,7 @@ class AssignSchedule(Task):
                         'TIME_UNIT': self._TIME_UNIT,
                         'CURRENT_TIME': environment.current_time,
                         'DEPARTMENT': department,
-                        'PREFERENCE': self.preference_phrase[patient_condition.get('preference')],
+                        'PREFERENCE': preference_desc,
                         'PREFERRED_DOCTOR': patient_condition.get('preferred_doctor'),
                         'RESCHEDULING_FLAG': reschedule_desc,
                         'DAY': self._DAY,
@@ -906,7 +929,7 @@ class AssignSchedule(Task):
                     TIME_UNIT=self._TIME_UNIT,
                     CURRENT_TIME=environment.current_time,
                     DEPARTMENT=department,
-                    PREFERENCE=self.preference_phrase[patient_condition.get('preference')],
+                    PREFERENCE=preference_desc,
                     PREFERRED_DOCTOR=patient_condition.get('preferred_doctor'),
                     RESCHEDULING_FLAG=reschedule_desc,
                     DAY=self._DAY,
@@ -1022,15 +1045,17 @@ class AssignSchedule(Task):
             'department': department, 
             'preference': test_data.get('constraint').get('preference'),
             'preferred_doctor': test_data.get('constraint').get('attending_physician') if test_data.get('constraint').get('preference') == 'doctor' else "Doesn't matter",
+            'valid_from': test_data.get('constraint').get('valid_from')
         }
         results = self.get_result_dict()
 
         # Append an example of exemplary answer
         gt_data = {
             'patient': gt.get('patient'),
-            'attending_physician': gt.get('attending_physician'),
             'department': gt.get('department'),
             'preference': gt.get('preference'),
+            'attending_physician': gt.get('attending_physician'),
+            'valid_from': gt.get('valid_from'),
         }
         results['gt'].append(gt_data)
 

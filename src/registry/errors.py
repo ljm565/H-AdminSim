@@ -13,9 +13,10 @@ STATUS_CODES = {
     },
     'preference': {
         'physician': 'mismatched physician',
-        'asap': 'not earlist schedule'
+        'asap': 'not earlist schedule',
+        'date': 'not valid date',
     },
-    'workload': 'workload balancing',
+    # 'workload': 'workload balancing',
     'preceding': 'preceding task failed',
     'correct': 'pass',
 }
@@ -38,6 +39,9 @@ SCHEDULING_ERROR_CAUSE = {
         '* When scheduling, it is possible to assign an earlier date or time.',
         "* The previous patient's schedule may have been cancelled. Therefore, it is necessary to carefully compare the hospital's start time with the doctor's schedule to identify available time slots.",
     ],
+    'not valid date': [
+        '* The patient is available after a specific date and would like to make an appointment. Please choose the earliest possible time after that date.',
+    ],
     'invalid schedule': [
         "* The scheduling result may fall outside the hospital's operating hours.",
         "* The scheduling result may be in the past relative to the current time.",
@@ -47,7 +51,7 @@ SCHEDULING_ERROR_CAUSE = {
     'wrong duration': [
         "* The patient's schedule does not match the consultation duration required by the doctor.",
     ],
-    'workload balancing': [
-        "* You must schedule the appointment with a doctor who has a lower workload than the current doctor.",
-    ]
+    # 'workload balancing': [
+    #     "* You must schedule the appointment with a doctor who has a lower workload than the current doctor.",
+    # ]
 }

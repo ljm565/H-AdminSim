@@ -33,13 +33,14 @@ NOTE: The schedule field lists the time intervals that are already occupied (boo
 ## Patient scheduling instructions:
 1. If the patient has a preferred doctor, the appointment must be scheduled with that doctor.
 2. If the patient wants the earliest possible appointment, compare the available times of the doctors in the patient’s department and schedule the appointment with the doctor who can see the patient the soonest.
-3. Appointment times must be later than the "current time" (ISO format) provided in the "Hospital time information" above.
-4. If more than one doctor is available, the appointment should be made with the doctor who has the lower workload (expressed as a percentage).
-5. Once the doctor for the appointment is determined, you must schedule according to that doctor’s outpatient consultation duration. For example, one doctor’s consultation time may be 0.25 hours, while another’s may be 0.5 hours.
-6. Output the patient's scheduled appointment as the value of the 'schedule' key in the JSON format shown below.
-7. Schedule appointments between the patient and the doctor while satisfying the above conditions, following the basic principle of booking sequentially from the earliest available date and time.
-8. If a patient requests rescheduling due to a previous patient’s appointment cancellation, you **must** find and assign the earliest available date and time slot. Since there may be gaps in the schedule, carefully check the doctor’s schedule when assigning. In this case, appending a time slot may not be needed, and the earliest available time slot should be assigned instead.
-9. Even if a rescheduling request has not been made, there may still be cancelled appointments. Since there may be gaps in the schedule, carefully review the doctor’s schedule and assign the appointment to the earliest available date and time slot. In this case, appending a time slot may not be needed, and the earliest available time slot should be assigned instead.
+3. If the patient wants an appointment after a specific date, compare the availability of doctors in the patient’s department after that date and schedule the appointment with the doctor who can see the patient the soonest after that date.
+4. Appointment times must be later than the "current time" (ISO format) provided in the "Hospital time information" above.
+5. If more than one doctor is available, the appointment should be made with the doctor who has the lower workload (expressed as a percentage).
+6. Once the doctor for the appointment is determined, you must schedule according to that doctor’s outpatient consultation duration. For example, one doctor’s consultation time may be 0.25 hours, while another’s may be 0.5 hours.
+7. Output the patient's scheduled appointment as the value of the 'schedule' key in the JSON format shown below.
+8. Schedule appointments between the patient and the doctor while satisfying the above conditions, following the basic principle of booking sequentially from the earliest available date and time.
+9. If a patient requests rescheduling due to a previous patient’s appointment cancellation, you **must** find and assign the earliest available date and time slot. Since there may be gaps in the schedule, carefully check the doctor’s schedule when assigning. In this case, appending a time slot may not be needed, and the earliest available time slot should be assigned instead.
+10. Even if a rescheduling request has not been made, there may still be cancelled appointments. Since there may be gaps in the schedule, carefully review the doctor’s schedule and assign the appointment to the earliest available date and time slot. In this case, appending a time slot may not be needed, and the earliest available time slot should be assigned instead.
 
 
 ## Answer format examples:

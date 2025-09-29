@@ -40,8 +40,8 @@ hospital_data:
         min: 0.2
         max: 0.5
     preference:
-        type: ['asap', 'doctor']    # Types of patient preferences.
-        probs: [0.5, 0.5]           # Types probability distribution.
+        type: ['asap', 'doctor', 'date']    # Types of patient preferences.
+        probs: [0.4, 0.4, 0.2]           # Types probability distribution.
     symptom:
         type: ['simple', 'with_history']    # Types of patient history.
         probs: [0.7, 0.3]                   # Types probability distribution.

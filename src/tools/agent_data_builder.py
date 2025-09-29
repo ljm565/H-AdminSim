@@ -42,10 +42,10 @@ class AgentDataBuilder:
         agent_data = {'metadata': data['metadata'], 'department': data['department'], 'doctor': data['doctor'], 'agent_data': []}
         
         for patient, patient_values in data['patient'].items():
-            doctor = patient_values['attending_physician']
-            department = patient_values['department']
+            doctor, department, date = patient_values['attending_physician'], patient_values['department'], patient_values['date']
             gender, telecom, birth_date, identifier, address = \
                 patient_values['gender'], patient_values['telecom'], patient_values['birthDate'], patient_values['identifier'], patient_values['address']
+            preference, symptom_level = patient_values['preference'], patient_values['symptom_level']
             disease = generate_random_symptom(
                 department,
                 symptom_file_path, 
@@ -61,8 +61,9 @@ class AgentDataBuilder:
                 'address': address,
                 'department': gt_department,
                 'attending_physician': doctor,
-                'preference': patient_values['preference'],
-                'symptom_level': patient_values['symptom_level'],
+                'valid_from': date if preference == 'date' else 'N/A',
+                'preference': preference,
+                'symptom_level': symptom_level,
             }
             agent = {
                 'patient': patient,
@@ -72,9 +73,10 @@ class AgentDataBuilder:
                 'identifier': identifier,
                 'address': address,
                 'constraint': {
-                    'preference': patient_values['preference'],
+                    'preference': preference,
                     'attending_physician': doctor,
-                    'symptom_level': patient_values['symptom_level'],
+                    'valid_from': date if preference == 'date' else 'N/A',
+                    'symptom_level': symptom_level,
                     'symptom': disease,
                 }
             }
