@@ -17,6 +17,7 @@ class GPTClient:
         self.model = model
         self._init_environment()
         self.histories = list()
+        self.token_usages = dict()
         self.__first_turn = True
 
 
@@ -37,6 +38,7 @@ class GPTClient:
         """
         self.__first_turn = True
         self.histories = list()
+        self.token_usages = dict()
         if verbose:
             log('Conversation history has been reset.', color=True)
 
@@ -131,6 +133,13 @@ class GPTClient:
             )
             assistant_msg = response.choices[0].message
             self.histories.append({"role": assistant_msg.role, "content": assistant_msg.content})
+
+            # Logging token usage
+            if response.usage:
+                self.token_usages.setdefault("prompt_tokens", []).append(response.usage.prompt_tokens)
+                self.token_usages.setdefault("completion_tokens", []).append(response.usage.completion_tokens)
+                self.token_usages.setdefault("total_tokens", []).append(response.usage.total_tokens)
+                self.token_usages.setdefault("reasoning_tokens", []).append(response.usage.completion_tokens_details.reasoning_tokens)
 
             return assistant_msg.content
         

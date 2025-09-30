@@ -20,6 +20,7 @@ class GeminiClient:
         self.model = model
         self._init_environment()
         self.histories = list()
+        self.token_usages = dict()
 
 
     def _init_environment(self):
@@ -38,6 +39,7 @@ class GeminiClient:
             verbose (bool): Whether to print verbose output. Defaults to True.
         """
         self.histories = list()
+        self.token_usages = dict()
         if verbose:
             log('Conversation history has been reset.', color=True)
 
@@ -126,6 +128,12 @@ class GeminiClient:
                         **kwargs
                     )
                 )
+
+                # Logging token usage
+                if response.usage_metadata:
+                    self.token_usages.setdefault("prompt_tokens", []).append(response.usage_metadata.prompt_token_count)
+                    self.token_usages.setdefault("completion_tokens", []).append(response.usage_metadata.candidates_token_count)
+                    self.token_usages.setdefault("total_tokens", []).append(response.usage_metadata.total_token_count)
 
                 # After the maximum retries
                 if count >= retry_count:
