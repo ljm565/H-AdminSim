@@ -98,9 +98,14 @@ class OutpatientIntake(Task):
         self.ensure_output_format = config.ensure_output_format
         self.max_inferences = config.intake_max_inference
         
-        # Initialize prompts
+        # Initialize prompts and token data
         self.system_prompt = txt_load(self._sup_system_prompt_path)
         self.user_prompt_template = txt_load(self._sup_user_prompt_path)
+        self.token_stats = {
+            'patient_token': {'input':[], 'output': [], 'reasoning': []}, 
+            'admin_staff_token': {'input': [], 'output': [], 'reasoning': []}, 
+            'supervisor_token': {'input':[], 'output': [], 'reasoning': []}
+        }
 
         # Initialize models
         self.task_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.task_model.lower() else {}
@@ -148,11 +153,14 @@ class OutpatientIntake(Task):
         try:
             if isinstance(text, str):
                 match = re.search(r'```json\s*(\{.*?\})\s*```', text, re.DOTALL)
-                if not match:
-                    return text
-                json_str = match.group(1)
-                text_dict = json.loads(json_str)
-                
+                if match:
+                    json_str = match.group(1)
+                    text_dict = json.loads(json_str)
+                else:
+                    try:
+                        text_dict = json.loads(text)
+                    except:
+                        return text
             else:
                 text_dict = text
             
@@ -160,6 +168,34 @@ class OutpatientIntake(Task):
             return text_dict
         except:
             return str(text)
+        
+    
+    def save_token_data(self, patient_token: dict, admin_staff_token: dict, supervisor_token: dict):
+        """
+        Save the API token usage data
+
+        Args:
+            patient_token (dict): Patient token information.
+            admin_staff_token (dict): Administration staff token information.
+            supervisor_token (dict): Supervisor token information.
+        """
+        if patient_token:
+            self.token_stats['patient_token']['input'].extend(patient_token['prompt_tokens'])
+            self.token_stats['patient_token']['output'].extend(patient_token['completion_tokens'])
+            if 'reasoning_tokens' in patient_token:
+                self.token_stats['patient_token']['reasoning'].extend(patient_token['reasoning_tokens'])
+
+        if admin_staff_token:
+            self.token_stats['admin_staff_token']['input'].extend(admin_staff_token['prompt_tokens'])
+            self.token_stats['admin_staff_token']['output'].extend(admin_staff_token['completion_tokens'])
+            if 'reasoning_tokens' in admin_staff_token:
+                self.token_stats['admin_staff_token']['reasoning'].extend(admin_staff_token['reasoning_tokens'])
+
+        if supervisor_token:
+            self.token_stats['supervisor_token']['input'].extend(supervisor_token['prompt_tokens'])
+            self.token_stats['supervisor_token']['output'].extend(supervisor_token['completion_tokens'])
+            if 'reasoning_tokens' in supervisor_token:
+                self.token_stats['supervisor_token']['reasoning'].extend(supervisor_token['reasoning_tokens'])
         
     
     def _department_decision(self, prediction_department: str, prediction_supervison: Union[str, dict]) -> Tuple[str, list[str]]:
@@ -311,7 +347,8 @@ class OutpatientIntake(Task):
         retry_count = 0
         while 1:
             try:
-                dialogs = environment.simulate(verbose=False, **self.task_reasoning_kwargs)['dialog_history']
+                output = environment.simulate(verbose=False, **self.task_reasoning_kwargs)
+                dialogs, patient_token, admin_staff_token = output['dialog_history'], output.get('patient_token_usage'), output.get('admin_staff_token_usage')
                 break
             except ServerError as e:
                 if retry_count >= self.max_retries:
@@ -349,6 +386,9 @@ class OutpatientIntake(Task):
                 **self.sup_reasoning_kwargs
             )
         prediction_supervision = OutpatientIntake.postprocessing_information(prediction_supervision)
+        
+        # Append token data
+        self.save_token_data(patient_token, admin_staff_token, self.supervisor_client.token_usages)
 
         # Sanity check
         department, trial = self._department_decision(prediction_department, prediction_supervision)
@@ -369,7 +409,7 @@ class OutpatientIntake(Task):
         results['status'].append(status)
         results['status_code'].append(status_code)
         results['trial'].append(trial)
-        
+
         return results
 
 
@@ -393,9 +433,13 @@ class AssignSchedule(Task):
         self.schedule_cancellation_prob = config.schedule_cancellation_prob
         self.request_early_schedule_prob = config.request_early_schedule_prob
 
-        # Initialize prompts
+        # Initialize prompts and token data
         self.task_system_prompt = txt_load(self._task_system_prompt_path)
         self.task_user_prompt_template = txt_load(self._task_user_prompt_path)
+        self.token_stats = {
+            'task_token': {'input':[], 'output': [], 'reasoning': []}, 
+            'supervisor_token': {'input':[], 'output': [], 'reasoning': []}
+        }
 
         # Initialize task model
         if 'gemini' in self.task_model.lower():
@@ -403,7 +447,7 @@ class AssignSchedule(Task):
             self.task_reasoning_kwargs = {}
         elif 'gpt' in self.task_model.lower():
             self.task_client = GPTLangChainClient(self.task_model) if self.ensure_output_format else GPTClient(self.task_model)
-            self.task_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.supervisor_model.lower() else {}
+            self.task_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.task_model.lower() else {}
         else:
             self.task_client = VLLMClient(self.task_model, config.vllm_url)
             self.task_reasoning_kwargs = {}
@@ -463,6 +507,27 @@ class AssignSchedule(Task):
         
         except:
             return str(text)
+    
+
+    def save_token_data(self, task_token: dict, supervisor_token: dict):
+        """
+        Save the API token usage data
+
+        Args:
+            task_token (dict): Patient token information.
+            supervisor_token (dict): Administration staff token information.
+        """
+        if task_token:
+            self.token_stats['task_token']['input'].extend(task_token['prompt_tokens'])
+            self.token_stats['task_token']['output'].extend(task_token['completion_tokens'])
+            if 'reasoning_tokens' in task_token:
+                self.token_stats['task_token']['reasoning'].extend(task_token['reasoning_tokens'])
+
+        if supervisor_token:
+            self.token_stats['supervisor_token']['input'].extend(supervisor_token['prompt_tokens'])
+            self.token_stats['supervisor_token']['output'].extend(supervisor_token['completion_tokens'])
+            if 'reasoning_tokens' in supervisor_token:
+                self.token_stats['supervisor_token']['reasoning'].extend(supervisor_token['reasoning_tokens'])
 
 
     def __extract_department(self, gt: dict, agent_results: dict, doctor_information: dict) -> Tuple[str, bool]:
@@ -1013,7 +1078,9 @@ class AssignSchedule(Task):
                 continue
             
             break
-
+        
+        # Append token data and reset agents
+        self.save_token_data(self.task_client.token_usages, self.supervisor_client.token_usages)
         self.task_client.reset_history(verbose=False)
         self.supervisor_client.reset_history(verbose=False)
 
