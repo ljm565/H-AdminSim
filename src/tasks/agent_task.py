@@ -2,6 +2,7 @@ import json
 import time
 import random
 from copy import deepcopy
+from decimal import Decimal, getcontext
 from typing import Tuple, Union, Optional
 from patientsim.environment import OPSimulation
 from patientsim import AdminStaffAgent, PatientAgent
@@ -432,6 +433,7 @@ class AssignSchedule(Task):
         }
         self.schedule_cancellation_prob = config.schedule_cancellation_prob
         self.request_early_schedule_prob = config.request_early_schedule_prob
+        getcontext().prec = 10
 
         # Initialize prompts and token data
         self.task_system_prompt = txt_load(self._task_system_prompt_path)
@@ -633,7 +635,7 @@ class AssignSchedule(Task):
             if preference_type == 'doctor' and k != pred_doctor_name:
                 continue
             
-            min_time_slot_n = int(v['outpatient_duration'] / self._TIME_UNIT)
+            min_time_slot_n = int(Decimal(str(v['outpatient_duration'])) / Decimal(str(self._TIME_UNIT)))
             fixed_schedule = v['schedule']
             for date, schedule in fixed_schedule.items():
                 # date > pred_date case
@@ -648,20 +650,32 @@ class AssignSchedule(Task):
                                                                        self._END_HOUR, 
                                                                        self._TIME_UNIT, 
                                                                        fs) for fs in schedule], [])
-                if date == pred_date:                
-                    free_time = [s for s in range(prediction_schedule_segments[0]) if s not in fixed_schedule_segments]
-                # date < pred_date case
-                else:
-                    all_time_segments = convert_time_to_segment(self._START_HOUR, self._END_HOUR, self._TIME_UNIT)
-                    free_time = [s for s in range(len(all_time_segments)) if s not in fixed_schedule_segments]
+                # if date == pred_date:                
+                #     free_time = [s for s in range(prediction_schedule_segments[0]) if s not in fixed_schedule_segments]
+                # # date < pred_date case
+                # else:
+                #     all_time_segments = convert_time_to_segment(self._START_HOUR, self._END_HOUR, self._TIME_UNIT)
+                #     free_time = [s for s in range(len(all_time_segments)) if s not in fixed_schedule_segments]
+                
+                # if len(free_time):
+                #     valid_time_segments = sum([seg for seg in group_consecutive_segments(free_time) if len(seg) >= min_time_slot_n], [])
+                #     free_max_st, _ = convert_segment_to_time(self._START_HOUR, self._END_HOUR, self._TIME_UNIT, [valid_time_segments[-min_time_slot_n]])
+                #     free_max_st_iso = get_iso_time(free_max_st, date, utc_offset=utc_offset)
+
+                #     if compare_iso_time(free_max_st_iso, current_time):
+                #         return False
+                    
+                all_time_segments = convert_time_to_segment(self._START_HOUR, self._END_HOUR, self._TIME_UNIT)
+                free_time = [s for s in range(len(all_time_segments)) if s not in fixed_schedule_segments]
                 
                 if len(free_time):
-                    valid_time_segments = sum([seg for seg in group_consecutive_segments(free_time) if len(seg) >= min_time_slot_n], [])
-                    free_max_st, _ = convert_segment_to_time(self._START_HOUR, self._END_HOUR, self._TIME_UNIT, [valid_time_segments[-min_time_slot_n]])
-                    free_max_st_iso = get_iso_time(free_max_st, date, utc_offset=utc_offset)
-
-                    if compare_iso_time(free_max_st_iso, current_time):
-                        return False
+                    valid_time_segments = [seg for seg in group_consecutive_segments(free_time) if len(seg) >= min_time_slot_n]
+                    for valid_time in valid_time_segments:
+                        if (valid_time[0] < prediction_schedule_segments[0] and pred_date == date) or (len(valid_time) and compare_iso_time(pred_date, date)):
+                            free_max_st, _ = convert_segment_to_time(self._START_HOUR, self._END_HOUR, self._TIME_UNIT, [valid_time[0]])
+                            free_max_st_iso = get_iso_time(free_max_st, date, utc_offset=utc_offset)
+                            if compare_iso_time(free_max_st_iso, current_time):
+                                return False
         return True
     
 
@@ -709,7 +723,7 @@ class AssignSchedule(Task):
             assert patient_condition['department'] == doctor_information[doctor_name]['department']
             
             # Duration mismatched case
-            if not round(1 / doctor_information[doctor_name]['capacity_per_hour'], 4) == round(end - start, 4):
+            if not float(Decimal(str(1)) / Decimal(str(doctor_information[doctor_name]['capacity_per_hour']))) == float(Decimal(str(end)) - Decimal(str(start))):
                 return False, STATUS_CODES['duration'], prediction, doctor_information
             
         except KeyError:
