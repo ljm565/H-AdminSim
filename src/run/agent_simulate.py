@@ -54,13 +54,11 @@ def resume_results(agent_test_data: dict, results_path: str) -> Tuple[dict, dict
         Tuple[dict, int]:
             - dict: Schedule updated static agent test data.
             - dict: Trimmed agent results, where each list is sliced to the minimum ground truth length.
-            - int: The determined minimum length (`done_length`) used for trimming.
+            - dict: A dictionary containing patients that have already been processed for each task.
     """
     # Prune the previously interrupted results to the minimum data length
     agent_results = json_load(results_path)
-    done_length = min([len(v['gt']) for v in agent_results.values()])
-    for k, v in agent_results.items():
-        agent_results[k] = {dk: dv[:done_length] for dk, dv in v.items()}
+    done_patients = {k: {done['patient']['name'] if isinstance(done['patient'], dict) else done['patient'] for done in v['gt']} for k, v in agent_results.items()}
 
     # Updated doctor schedules based on the resumed results
     if 'schedule' in agent_results:
@@ -70,7 +68,7 @@ def resume_results(agent_test_data: dict, results_path: str) -> Tuple[dict, dict
                 fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].append(pred['schedule'])
                 fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].sort()
     
-    return agent_test_data, agent_results, done_length
+    return agent_test_data, agent_results, done_patients
 
 
 def main(args):
@@ -100,7 +98,7 @@ def main(args):
         
         # Data per hospital
         for i, agent_test_data in enumerate(all_agent_test_data):
-            agent_results, done_length = dict(), 0
+            agent_results, done_patients = dict(), dict()
             shuffle_agent_test_data(agent_test_data)
             environment = HospitalEnvironment(config, agent_test_data)
             basename = os.path.splitext(os.path.basename(agent_test_data_files[i]))[0]
@@ -109,17 +107,17 @@ def main(args):
             
             # Resume the results and the virtual hospital environment
             if args.resume and os.path.exists(save_path):
-                agent_test_data, agent_results, done_length = resume_results(agent_test_data, save_path)
+                agent_test_data, agent_results, done_patients = resume_results(agent_test_data, save_path)
                 environment.resume(agent_results)
 
             # Data per patient
             for j, (gt, test_data) in enumerate(agent_test_data['agent_data']):
-                if args.resume and j < done_length:
-                    continue
-
                 for task in queue:
+                    if task.name in done_patients and gt['patient'] in done_patients[task.name]:
+                        continue
+
                     result = task((gt, test_data), agent_test_data, agent_results, environment, args.verbose)
-                    
+
                     # Append a single result 
                     agent_results.setdefault(task.name, {'gt': [], 'pred': [], 'status': [], 'status_code': [], 'trial': []})
                     for k in result:

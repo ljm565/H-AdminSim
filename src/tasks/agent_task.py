@@ -269,7 +269,7 @@ class OutpatientIntake(Task):
         return True, STATUS_CODES['correct'], prediction
         
 
-    def __call__(self, data_pair: Tuple[dict, dict],  agent_test_data: dict, agent_results: dict, environment, verbose: bool = False) -> dict:
+    def __call__(self, data_pair: Tuple[dict, dict], agent_test_data: dict, agent_results: dict, environment, verbose: bool = False) -> dict:
         """
         Estimates the most appropriate medical department for each patient using an LLM agent.
 
@@ -334,14 +334,12 @@ class OutpatientIntake(Task):
             medical_history=medical_history,
             diagnosis=diagnosis,
             chiefcomplaint=test_data['constraint']['symptom']['symptom'],
-            random_seed=42,
             temperature=0 if not 'gpt-5' in self.task_model.lower() else 1
         )
         admin_staff_agent = AdminStaffAgent(
             self.task_model,
             departments,
             max_inferences=self.max_inferences,
-            random_seed=42,
             temperature=0 if not 'gpt-5' in self.task_model.lower() else 1
         )
         environment = OPSimulation(patient_agent, admin_staff_agent, max_inferences=self.max_inferences)
@@ -548,8 +546,14 @@ class AssignSchedule(Task):
         """
         # Prediction results are existing case
         try:
-            department = agent_results['intake']['pred'][-1]['department'][0]
-            sanity = agent_results['intake']['status'][-1]
+            for i, intake_gt in enumerate(agent_results['intake']['gt']):
+                if gt['patient'] == intake_gt['patient']['name']:
+                    break
+
+            department = agent_results['intake']['pred'][i]['department'][0]
+            sanity = agent_results['intake']['status'][i]
+
+            assert gt['patient'] == agent_results['intake']['gt'][i]['patient']['name']
         
         # Loading from the ground truth
         except:
@@ -1168,6 +1172,7 @@ class AssignSchedule(Task):
         self._DAY = self._metadata.get('days')
         doctor_information = environment.doctor_info_from_fhir() if self.integration_with_fhir else agent_test_data.get('doctor')
         department, sanity = self.__extract_department(gt, agent_results, doctor_information)
+
         patient_condition = {
             'patient': test_data.get('patient'), 
             'department': department, 

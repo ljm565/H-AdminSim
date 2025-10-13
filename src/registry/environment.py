@@ -189,7 +189,7 @@ class HospitalEnvironment:
             self.patient_schedules[idx]['status'] = 'cancelled'
             self.booking_num[self.patient_schedules[idx]['attending_physician']] -= 1
             if verbose:
-                log(f'{colorstr("CANCELED")}: {self.patient_schedules[idx]} schedule is canceled.')
+                log(f'{colorstr("CANCELLED")}: {self.patient_schedules[idx]} schedule is cancelled.')
     
 
     def add_waiting_list(self, idx: int, verbose: bool = False):
