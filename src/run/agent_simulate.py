@@ -42,24 +42,39 @@ def shuffle_agent_test_data(agent_test_data: dict):
     random.shuffle(agent_test_data['agent_data'])        # In-place logic
 
 
-def resume_results(agent_test_data: dict, results_path: str) -> Tuple[dict, dict, int]:
+def resume_results(agent_test_data: dict, results_path: str, d_results_path: str) -> Tuple[dict, dict, dict, set]:
     """
     Resume a previously saved simulation by aligning agent results.
 
     Args:
         agent_test_data (dict): Static agent test data for a simulation.
         results_path (str): Path to the JSON file containing the saved simulation results.
+        d_results_path (str): Path to the JSON file containing the saved dialog results.
 
     Returns:
         Tuple[dict, int]:
             - dict: Schedule updated static agent test data.
-            - dict: Trimmed agent results, where each list is sliced to the minimum ground truth length.
-            - dict: A dictionary containing patients that have already been processed for each task.
+            - dict: Previously saved agent results.
+            - dict: Previously saved dialog results.
+            - set: A dictionary containing patients that have already been processed for each task.
     """
-    # Prune the previously interrupted results to the minimum data length
+    # Load previous results
     agent_results = json_load(results_path)
-    done_patients = {k: {done['patient']['name'] if isinstance(done['patient'], dict) else done['patient'] for done in v['gt']} for k, v in agent_results.items()}
+    dialog_results = json_load(d_results_path) if os.path.exists(d_results_path) else dict()
 
+    # Get patients that have already been processed for each task
+    done_patients = dict()
+    for task_name, result in agent_results.items():
+        if task_name == 'intake':
+            done_patients[task_name] = {done['patient']['name'] for done in result['gt']}
+        elif task_name == 'schedule':
+            done_patients[task_name] = set()
+            for done in result['gt']:
+                try:
+                    done_patients[task_name].add(done['patient'])
+                except KeyError:
+                    continue
+    
     # Updated doctor schedules based on the resumed results
     if 'schedule' in agent_results:
         fixed_schedule = agent_test_data['doctor']
@@ -68,7 +83,7 @@ def resume_results(agent_test_data: dict, results_path: str) -> Tuple[dict, dict
                 fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].append(pred['schedule'])
                 fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].sort()
     
-    return agent_test_data, agent_results, done_patients
+    return agent_test_data, agent_results, dialog_results, done_patients
 
 
 def main(args):
@@ -98,16 +113,17 @@ def main(args):
         
         # Data per hospital
         for i, agent_test_data in enumerate(all_agent_test_data):
-            agent_results, done_patients = dict(), dict()
+            agent_results, done_patients, dialog_results = dict(), dict(), dict()
             shuffle_agent_test_data(agent_test_data)
             environment = HospitalEnvironment(config, agent_test_data)
             basename = os.path.splitext(os.path.basename(agent_test_data_files[i]))[0]
             save_path = os.path.join(args.output_dir, f'{basename}_result.json')
+            d_save_path = os.path.join(args.output_dir, f'{basename}_dialog.json')
             log(f'{basename} simulation started..', color=True)
             
             # Resume the results and the virtual hospital environment
             if args.resume and os.path.exists(save_path):
-                agent_test_data, agent_results, done_patients = resume_results(agent_test_data, save_path)
+                agent_test_data, agent_results, dialog_results, done_patients = resume_results(agent_test_data, save_path, d_save_path)
                 environment.resume(agent_results)
 
             # Data per patient
@@ -117,12 +133,16 @@ def main(args):
                         continue
 
                     result = task((gt, test_data), agent_test_data, agent_results, environment, args.verbose)
+                    dialogs = result.pop('dialog')
 
                     # Append a single result 
                     agent_results.setdefault(task.name, {'gt': [], 'pred': [], 'status': [], 'status_code': [], 'trial': []})
                     for k in result:
                         agent_results[task.name][k] += result[k]
-
+                    
+                    if task.name == 'intake':
+                        dialog_results[gt['patient']] = dialogs[0]
+            
             # Logging the results
             for task_name, result in agent_results.items():
                 correctness = result['status']
@@ -132,12 +152,16 @@ def main(args):
                 log(f'   - accuracy: {accuracy:.3f}, length: {len(correctness)}, status_code: {status_code}')
             
             json_save_fast(save_path, agent_results)
+            if 'intake' in args.type:
+                json_save_fast(d_save_path, dialog_results)
             
         log(f"Agent completed the tasks successfully", color=True)
     
     except Exception as e:
         if len(agent_results):
             json_save_fast(save_path, agent_results)
+            if 'intake' in args.type:
+                json_save_fast(d_save_path, dialog_results)
         log("Error occured while execute the tasks.", level='error')
         raise e
     

@@ -3,10 +3,11 @@ import time
 import random
 from copy import deepcopy
 from decimal import Decimal, getcontext
+from openai import InternalServerError
 from typing import Tuple, Union, Optional
+from google.genai.errors import ServerError
 from patientsim.environment import OPSimulation
 from patientsim import AdminStaffAgent, PatientAgent
-from google.genai.errors import ServerError
 
 from tools import (
     GeminiClient,
@@ -39,7 +40,7 @@ class Task:
         Returns:
             dict: Initialized result dictionary.
         """
-        return {'gt': [], 'pred': [], 'status': [], 'status_code': [], 'trial': []}
+        return {'gt': [], 'pred': [], 'status': [], 'status_code': [], 'trial': [], 'dialog': []}
     
 
     def _get_fhir_appointment(self,
@@ -199,7 +200,7 @@ class OutpatientIntake(Task):
                 self.token_stats['supervisor_token']['reasoning'].extend(supervisor_token['reasoning_tokens'])
         
     
-    def _department_decision(self, prediction_department: str, prediction_supervison: Union[str, dict]) -> Tuple[str, list[str]]:
+    def _department_decision(self, prediction_department: str, prediction_supervison: Union[str, dict], gt_department: str) -> Tuple[str, list[str]]:
         """
         Determine the final department decision by considering both 
         the interaction agent result and the supervisor agent result.
@@ -208,14 +209,23 @@ class OutpatientIntake(Task):
             prediction_department (str): The department predicted by the interaction agent.
             prediction_supervison (Union[str, dict]): The supervisor agent's result. 
                 If this is a dictionary, it should contain a 'department' field.
+            gt_department (str): The ground truth department for the patient.
 
         Returns:
             str: The final department decision.
         """
         try:
-            department = prediction_supervison.pop('department')
-            trial = ['match'] if prediction_department == department else ['mismatch']
-            return department, trial
+            sup_department = prediction_supervison.pop('department')
+            if prediction_department == sup_department:
+                trial = ['match']
+            else:
+                if prediction_department in gt_department and sup_department not in gt_department:
+                    trial = ['mismatch - worse']
+                elif prediction_department not in gt_department and sup_department in gt_department:
+                    trial = ['mismatch - better']
+                else:
+                    trial = ['mismatch - both wrong']
+            return sup_department, trial
         except:
             return prediction_department, ['supervisor error']
         
@@ -349,7 +359,7 @@ class OutpatientIntake(Task):
                 output = environment.simulate(verbose=False, **self.task_reasoning_kwargs)
                 dialogs, patient_token, admin_staff_token = output['dialog_history'], output.get('patient_token_usage'), output.get('admin_staff_token_usage')
                 break
-            except ServerError as e:
+            except (ServerError, InternalServerError) as e:
                 if retry_count >= self.max_retries:
                     log(f"\nMax retries reached. Last error: {e}", level='error')
                     raise e
@@ -377,20 +387,34 @@ class OutpatientIntake(Task):
                 CONVERSATION=dialogs,
                 DEPARTMENTS=''.join([f'{i+1}. {department}\n' for i, department in enumerate(departments)])
             )
-            prediction_supervision = self.supervisor_client(
-                user_prompt,
-                system_prompt=self.system_prompt, 
-                using_multi_turn=False,
-                verbose=False,
-                **self.sup_reasoning_kwargs
-            )
+            retry_count = 0
+            while 1:
+                try:
+                    prediction_supervision = self.supervisor_client(
+                        user_prompt,
+                        system_prompt=self.system_prompt, 
+                        using_multi_turn=False,
+                        verbose=False,
+                        **self.sup_reasoning_kwargs
+                    )
+                    break
+                except (ServerError, InternalServerError) as e:
+                    if retry_count >= self.max_retries:
+                        log(f"\nMax retries reached. Last error: {e}", level='error')
+                        raise e
+                    wait_time = exponential_backoff(retry_count)
+                    log(f"[{retry_count + 1}/{self.max_retries}] {type(e).__name__}: {e}. Retrying in {wait_time:.1f} seconds...", level='warning')
+                    time.sleep(wait_time)
+                    retry_count += 1
+                    continue
+
         prediction_supervision = OutpatientIntake.postprocessing_information(prediction_supervision)
         
         # Append token data
         self.save_token_data(patient_token, admin_staff_token, self.supervisor_client.token_usages)
 
         # Sanity check
-        department, trial = self._department_decision(prediction_department, prediction_supervision)
+        department, trial = self._department_decision(prediction_department, prediction_supervision, gt['department'])
         prediction = {'patient': prediction_supervision, 'department': [department]}
         status, status_code, prediction = self._sanity_check(
             prediction=prediction,
@@ -408,6 +432,7 @@ class OutpatientIntake(Task):
         results['status'].append(status)
         results['status_code'].append(status_code)
         results['trial'].append(trial)
+        results['dialog'].append(dialogs)
 
         return results
 
@@ -969,7 +994,7 @@ class AssignSchedule(Task):
                     **self.sup_reasoning_kwargs
                 )
                 break
-            except ServerError as e:
+            except (ServerError, InternalServerError) as e:
                 if retry_count >= self.max_retries:
                     log(f"\nMax retries reached. Last error: {e}", level='error')
                     raise e
@@ -1064,7 +1089,7 @@ class AssignSchedule(Task):
                             **self.task_reasoning_kwargs
                         )
                         break
-                    except ServerError as e:
+                    except (ServerError, InternalServerError) as e:
                         if retry_count >= self.max_retries:
                             log(f"\nMax retries reached. Last error: {e}", level='error')
                             raise e

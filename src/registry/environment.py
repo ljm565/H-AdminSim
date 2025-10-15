@@ -167,6 +167,12 @@ class HospitalEnvironment:
                     self.current_time = pred['last_updated_time']
             
             self.waiting_list = sorted([(i, s) for i, s in enumerate(self.patient_schedules) if s['waiting_order'] >= 0], key=lambda x: x[1]['waiting_order'])
+            
+            log(f"Resumed hospital time set to {self.current_time}.")
+            log(f"Resumed hospital environment with {len(self.patient_schedules)} patient schedules.")
+            log(f"Resumed waiting list with {len(self.waiting_list)} patient schedules.")
+            log(f"Current booking numbers per doctor: {self.booking_num}")
+
             self.update_current_time()
             self.update_patient_status()
     
