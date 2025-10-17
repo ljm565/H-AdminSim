@@ -30,3 +30,4 @@ config/
 output/*
 fhir_data/*
 synthetic_data*/*
+adminsim-arena/
