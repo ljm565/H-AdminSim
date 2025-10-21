@@ -47,7 +47,9 @@ class Evaluator:
             status_code = sum(value['status_code'], [])
             accuracy = sum(status) / len(status) * 100
             failed_cases = [c for s, c in zip(status, status_code) if not s]
-            log(f'{colorstr(task):<27} | accuracy: {colorstr("green", f"{accuracy:.2f}%")}, length: {len(status)}')
+            error_rate = (len(failed_cases) / len(status)) * 100
+            log(f'{colorstr(task):<27} | accuracy: {colorstr("green", f"{accuracy:.2f}%")}, length: {sum(status)} / {len(status)}')
+            log(f'{colorstr(task):<27} | Error   : {colorstr("red", f"{error_rate:.2f}%")}, length: {len(failed_cases)} / {len(status)}')
 
             if failed_cases:
                 fail_summary = Counter(failed_cases)
