@@ -2,6 +2,7 @@
 
 
 ### Recent updates 📣
+* *October 2025 (v0.7.0)*: Simulation has been improved reflecting feedbacks from experts.
 * *September 2025 (v0.6.0)*: Simulation has been improved reflecting feedbacks from experts.
 * *August 2025 (v0.5.2)*: We has supported vLLM inference of the Hugging Face models.
 * *August 2025 (v0.5.1)*: Now you can easily set the virtual environment using Poetry.
