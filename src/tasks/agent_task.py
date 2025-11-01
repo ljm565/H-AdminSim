@@ -478,13 +478,13 @@ class AssignSchedule(Task):
             self.task_reasoning_kwargs = {}
 
         # If you use supervisor model
+        self.max_feedback_number = config.schedule_task.max_feedback_number
         if self.use_supervisor:
             self.supervisor_model = config.supervisor_model
             self._sup_system_prompt_path = config.schedule_task.supervisor_system_prompt
             self._sup_user_prompt_path = config.schedule_task.supervisor_user_prompt
             self.sup_system_prompt = txt_load(self._sup_system_prompt_path)
             self.sup_user_prompt_template = txt_load(self._sup_user_prompt_path)
-            self.max_feedback_number = config.schedule_task.max_feedback_number
 
             if 'gemini' in self.supervisor_model.lower():
                 self.supervisor_client = GeminiClient(self.supervisor_model)
@@ -1084,7 +1084,7 @@ class AssignSchedule(Task):
                         prediction = self.task_client(
                             user_prompt,
                             system_prompt=self.task_system_prompt, 
-                            using_multi_turn=self.use_supervisor,
+                            using_multi_turn=self.max_feedback_number > 0,
                             verbose=False,
                             **self.task_reasoning_kwargs
                         )
@@ -1098,6 +1098,7 @@ class AssignSchedule(Task):
                         time.sleep(wait_time)
                         retry_count += 1
                         continue
+            
             prediction = AssignSchedule.postprocessing(prediction)    
             status, status_code, prediction, doctor_information = self._sanity_check(
                 prediction, 
@@ -1114,18 +1115,32 @@ class AssignSchedule(Task):
                 log(f'Pred  : {prediction}')
                 log(f'Status: {status_code}')
             
-            if not status and self.use_supervisor and feedback_cnt < self.max_feedback_number:
+            if not status and feedback_cnt < self.max_feedback_number:
                 prev_prediction += json.dumps(prediction) + f': {status_code}\n'
-                feedback = self.feedback(prediction, status_code, prev_prediction, filtered_doctor_information, environment)
-                feedback_cnt += 1
+                
+                # Supervisor's feedback
+                if self.use_supervisor:
+                    feedback = self.feedback(prediction, status_code, prev_prediction, filtered_doctor_information, environment)
+                    feedback_cnt += 1
+                
+                # Self feedback
+                else:
+                    reasons = '\n'.join(SCHEDULING_ERROR_CAUSE[status_code])
+                    feedback = f'{status_code}\n{reasons}'
+                    feedback_cnt += 1
+
                 continue
             
             break
         
         # Append token data and reset agents
-        self.save_token_data(self.task_client.token_usages, self.supervisor_client.token_usages)
+        self.save_token_data(
+            self.task_client.token_usages, 
+            supervisor_token=self.supervisor_client.token_usages if self.use_supervisor else None
+        )
         self.task_client.reset_history(verbose=False)
-        self.supervisor_client.reset_history(verbose=False)
+        if self.use_supervisor:
+            self.supervisor_client.reset_history(verbose=False)
 
         return status, status_code, prediction, doctor_information, trial
     
