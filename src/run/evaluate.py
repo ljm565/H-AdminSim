@@ -27,13 +27,17 @@ def main(args):
         evaluator.department_evaluation()
         log('')
 
+    if 'rounds' in args.type:
+        evaluator.calculate_avg_rounds()
+        log('')
+
 
 
 
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('-p', '--path', type=str, required=True, help='Agent test results folder directory')
-    parser.add_argument('-t', '--type', type=str, required=True, nargs='+', choices=['task', 'supervisor', 'human', 'department'], help='Task types you want to evaluate (you can specify multiple)')
+    parser.add_argument('-t', '--type', type=str, required=True, nargs='+', choices=['task', 'supervisor', 'human', 'department', 'rounds'], help='Task types you want to evaluate (you can specify multiple)')
     args = parser.parse_args()
 
     main(args)

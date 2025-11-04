@@ -1,4 +1,5 @@
 import os
+import numpy as np
 from collections import Counter
 
 from utils import log, colorstr
@@ -13,6 +14,11 @@ class Evaluator:
         self.files = get_files(self.path, '_result.json')
         if human_eval:
             self.human_eval_files = get_files(self.path, '.txt')
+        
+        try:
+            self.dialog_files = get_files(self.path, '_dialog.json')
+        except:
+            pass
 
 
     def task_evaluation(self):
@@ -184,3 +190,20 @@ class Evaluator:
         
         log('--------------Department Evaluation--------------')
         log(f'Error rate: {colorstr("red", f"{(dept_err_n/total_n)*100:.2f}%")}, length: {dept_err_n} / {total_n}')
+
+
+    def calculate_avg_rounds(self):
+        """
+        Calculate average required intake rounds 
+        """
+        counts = list()
+        for file in self.dialog_files:
+            data = json_load(file)
+            dialogs = list(data.values())
+            for dialog in dialogs:
+                counts.append(dialog.count('Staff: ')-1)
+
+        mean, stdv = np.mean(counts), np.std(counts)
+        log('-----------------Average Rounds-----------------')
+        log(f'Average Rounds: {mean:.2f} ± {stdv:.2f}')        
+        
