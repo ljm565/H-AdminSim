@@ -136,7 +136,7 @@ def main(args):
                     dialogs = result.pop('dialog')
 
                     # Append a single result 
-                    agent_results.setdefault(task.name, {'gt': [], 'pred': [], 'status': [], 'status_code': [], 'trial': []})
+                    agent_results.setdefault(task.name, {'gt': [], 'pred': [], 'status': [], 'status_code': [], 'trial': [], 'feedback': []})
                     for k in result:
                         agent_results[task.name][k] += result[k]
                     

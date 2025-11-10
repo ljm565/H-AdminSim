@@ -40,7 +40,7 @@ class Task:
         Returns:
             dict: Initialized result dictionary.
         """
-        return {'gt': [], 'pred': [], 'status': [], 'status_code': [], 'trial': [], 'dialog': []}
+        return {'gt': [], 'pred': [], 'status': [], 'status_code': [], 'trial': [], 'dialog': [], 'feedback': []}
     
 
     def _get_fhir_appointment(self,
@@ -876,7 +876,7 @@ class AssignSchedule(Task):
                 - Updated doctor information after processing the prediction.
                 - Multiple results of trial information.
         """
-        statuses, status_codes, predictions, trials = list(), list(), list(), list()
+        statuses, status_codes, predictions, trials, feedback_msgs = list(), list(), list(), list(), list()
         for turn, (idx, schedule) in enumerate(environment.waiting_list):
             if schedule['status'] == 'scheduled':
                 is_earliest = self.__check_is_earliest(
@@ -896,7 +896,7 @@ class AssignSchedule(Task):
                     valid_from=schedule['valid_from'] if schedule['preference'] == 'date' else None
                 )
                 if not is_earliest:
-                    status, status_code, prediction, doctor_information, trial = self.scheduling(
+                    status, status_code, prediction, doctor_information, trial, feedback_msg = self.scheduling(
                         {
                             'patient': schedule['patient'],
                             'department': schedule['department'],
@@ -915,6 +915,7 @@ class AssignSchedule(Task):
                         status_codes.append(status_code)
                         predictions.append(prediction)
                         trials.append(trial)
+                        feedback_msgs.append(feedback_msg)
                         doctor_information = self.schedule_cancel(doctor_information, environment, idx)
                         self.update_env(status, prediction, environment)
                     else:
@@ -922,8 +923,9 @@ class AssignSchedule(Task):
                         status_codes.append(STATUS_CODES['moving up schedule'])
                         predictions.append(prediction)
                         trials.append(trial)
+                        feedback_msgs.append(feedback_msg)
         
-        return statuses, status_codes, predictions, doctor_information, trials
+        return statuses, status_codes, predictions, doctor_information, trials, feedback_msgs
     
 
     def add_waiting_list(self, environment, idx: Optional[int] = None, verbose: bool = False):
@@ -1034,7 +1036,7 @@ class AssignSchedule(Task):
         """
         department = patient_condition['department']
         feedback, prev_prediction = '', ''
-        feedback_cnt, trial = 0, list()
+        feedback_cnt, trial, feedback_msg = 0, list(), list()
         reschedule_desc = "Rescheduling requested. This is the rescheduling of a patient who wishes to move their appointment earlier due to a previous patient's cancelled reservation" \
             if reschedule_flag else 'Not requested.'
         while 1:
@@ -1128,7 +1130,8 @@ class AssignSchedule(Task):
                     reasons = '\n'.join(SCHEDULING_ERROR_CAUSE[status_code])
                     feedback = f'{status_code}\n{reasons}'
                     feedback_cnt += 1
-
+                
+                feedback_msg.append(feedback)
                 continue
             
             break
@@ -1142,7 +1145,7 @@ class AssignSchedule(Task):
         if self.use_supervisor:
             self.supervisor_client.reset_history(verbose=False)
 
-        return status, status_code, prediction, doctor_information, trial
+        return status, status_code, prediction, doctor_information, trial, feedback_msg
     
 
     def update_env(self, status: bool, prediction: Union[dict, str], environment, department: Optional[str] = None, test_data: Optional[dict] = None):
@@ -1238,10 +1241,11 @@ class AssignSchedule(Task):
             results['status'].append(False)
             results['status_code'].append(STATUS_CODES['preceding'])
             results['trial'].append(STATUS_CODES['preceding'])
+            results['feedback'].append([])
             return results
         
         # LLM call and compare the validity of the LLM output
-        status, status_code, prediction, doctor_information, trial = self.scheduling(
+        status, status_code, prediction, doctor_information, trial, feedback_msg = self.scheduling(
             patient_condition,
             doctor_information,
             environment,
@@ -1265,6 +1269,7 @@ class AssignSchedule(Task):
         results['status'].append(status)
         results['status_code'].append(status_code)
         results['trial'].append(trial)
+        results['feedback'].append(feedback_msg)
         
         # Other events
         ## Schedule cancellation
@@ -1280,7 +1285,7 @@ class AssignSchedule(Task):
             self.add_waiting_list(environment, verbose=verbose)
 
         ## Regular check of the waiting list 
-        statuses, status_codes, predictions, doctor_information, trials = self.move_up_schedule(
+        statuses, status_codes, predictions, doctor_information, trials, feedback_msgs = self.move_up_schedule(
             doctor_information=doctor_information,
             environment=environment,
             verbose=verbose,
@@ -1290,6 +1295,7 @@ class AssignSchedule(Task):
         results['status'].extend(statuses)
         results['status_code'].extend(status_codes)
         results['trial'].extend(trials)
+        results['feedback'].extend(feedback_msgs)
         results['gt'].extend(deepcopy(predictions))     # To syncronize the number of each result
 
         return results
