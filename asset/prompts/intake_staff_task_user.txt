@@ -1,0 +1,16 @@
+Please extract the patient's **name, gender, phone number, personal ID, address, and determined department**, and provide the output in the format shown in the examples below.
+
+
+## Answer format examples:
+Example 1:
+```json
+{"name": "Chuck Adamcik", "gender": "male", "phone_number": "+82707813973", "personal_id": "740925-6104539", "address": "93, Bomok 3-gil, Inje-gun, Gimpo-si", "department": "rheumatory"}
+```
+Example 2:
+```json
+{"name": "Garth Sumners", "gender": "female", "phone_number": "+5832802426", "personal_id": "856215-5992486", "address": "9, Jujung-ro 128beon-gil, Suyeong-gu, Yangsan-si", "department": "pulmonary"}
+```
+Example 3 (if the demographic information is unavailable):
+```json
+{"name": "none", "gender": "none", "phone_number": "none", "personal_id": "none", "address": "none", "department": "infectious diseases"}
+```

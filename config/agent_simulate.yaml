@@ -21,10 +21,12 @@ intake_max_inference: 5
 
 # Prompt paths
 outpatient_intake:
+    use_supervisor: False
+    staff_task_user_prompt: asset/prompts/intake_staff_task_user.txt
     supervisor_system_prompt: asset/prompts/intake_supervisor_system.txt
     supervisor_user_prompt: asset/prompts/intake_supervisor_user.txt
 schedule_task:
-    use_supervisor: True
+    use_supervisor: False
     max_feedback_number: 5
     supervisor_system_prompt: asset/prompts/schedule_supervisor_system.txt
     supervisor_user_prompt: asset/prompts/schedule_supervisor_user.txt

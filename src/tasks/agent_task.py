@@ -95,14 +95,17 @@ class OutpatientIntake(Task):
         self.max_retries = 8
         self.supervisor_model = config.supervisor_model
         self.task_model = config.task_model
+        self._staff_task_user_prompt_path = config.outpatient_intake.staff_task_user_prompt
         self._sup_system_prompt_path = config.outpatient_intake.supervisor_system_prompt
         self._sup_user_prompt_path = config.outpatient_intake.supervisor_user_prompt
         self.ensure_output_format = config.ensure_output_format
         self.max_inferences = config.intake_max_inference
+        self.use_supervisor = config.outpatient_intake.use_supervisor
         
         # Initialize prompts and token data
         self.system_prompt = txt_load(self._sup_system_prompt_path)
         self.user_prompt_template = txt_load(self._sup_user_prompt_path)
+        self.staff_prompt = txt_load(self._staff_task_user_prompt_path)
         self.token_stats = {
             'patient_token': {'input':[], 'output': [], 'reasoning': []}, 
             'admin_staff_token': {'input': [], 'output': [], 'reasoning': []}, 
@@ -390,13 +393,16 @@ class OutpatientIntake(Task):
             retry_count = 0
             while 1:
                 try:
-                    prediction_supervision = self.supervisor_client(
-                        user_prompt,
-                        system_prompt=self.system_prompt, 
-                        using_multi_turn=False,
-                        verbose=False,
-                        **self.sup_reasoning_kwargs
-                    )
+                    if self.use_supervisor:
+                        prediction_supervision = self.supervisor_client(
+                            user_prompt,
+                            system_prompt=self.system_prompt, 
+                            using_multi_turn=False,
+                            verbose=False,
+                            **self.sup_reasoning_kwargs
+                        )
+                    else:
+                        prediction_supervision = admin_staff_agent(self.staff_prompt, verbose=False, **self.task_reasoning_kwargs)
                     break
                 except (ServerError, InternalServerError) as e:
                     if retry_count >= self.max_retries:
