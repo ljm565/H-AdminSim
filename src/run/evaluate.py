@@ -14,6 +14,10 @@ def main(args):
     if 'task' in args.type:
         evaluator.task_evaluation()
         log('')
+    
+    if 'ipi' in args.type:
+        evaluator.ipi_evaluation()
+        log('')
 
     if 'supervisor' in args.type:
         evaluator.supervisor_evaluation()
@@ -37,7 +41,14 @@ def main(args):
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('-p', '--path', type=str, required=True, help='Agent test results folder directory')
-    parser.add_argument('-t', '--type', type=str, required=True, nargs='+', choices=['task', 'supervisor', 'human', 'department', 'rounds'], help='Task types you want to evaluate (you can specify multiple)')
+    parser.add_argument(
+        '-t', '--type', 
+        type=str, 
+        required=True, 
+        nargs='+', 
+        choices=['task', 'supervisor', 'human', 'department', 'rounds', 'ipi'], 
+        help='Task types you want to evaluate (you can specify multiple)'
+    )
     args = parser.parse_args()
 
     main(args)

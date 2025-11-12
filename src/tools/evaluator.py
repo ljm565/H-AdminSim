@@ -68,7 +68,43 @@ class Evaluator:
 
         draw_fail_donut_subplots(fail_data_dict, os.path.join(self.path, 'fails.png'))
 
+
+    def ipi_evaluation(self):
+        """
+        Micro-wise IPI performance evaluation on the aggregated results.
+        """
+        aggregated_results = dict()
+        for file in self.files:
+            data = json_load(file)
+
+            if not 'intake' in aggregated_results:
+                aggregated_results['intake'] = {'status': [], 'status_code': []}
+
+            aggregated_results['intake']['status'].append(data['intake']['status'])
+            aggregated_results['intake']['status_code'].append(data['intake']['status_code'])
     
+        # Micro-wise evaluation
+        log('')
+        log('------------------IPI Evaluation-----------------')
+        status = sum(aggregated_results['intake']['status'], [])
+        status_code = sum(aggregated_results['intake']['status_code'], [])
+        failed_cases = [c for s, c in zip(status, status_code) if not s]
+
+        if failed_cases:
+            if_err_count, ipi_err_count = 0, 0
+            fail_summary = Counter(failed_cases)
+            for fail_type, count in fail_summary.items():
+                if fail_type in ['incorrect department and patient information', 'incorrect patient information']:
+                    ipi_err_count += count
+                elif fail_type in ['incorrect format']:
+                    if_err_count += count
+            
+            if_percent = (if_err_count / len(status)) * 100
+            ipi_percent = (ipi_err_count / len(status)) * 100
+            log(f'    - Fail type {colorstr("red", "incorrect format"):<38}: {if_err_count} / {len(status)} ({if_percent:.2f}%)')
+            log(f'    - Fail type {colorstr("red", "incorrect patient information"):<38}: {ipi_err_count} / {len(status)} ({ipi_percent:.2f}%)')
+
+
     def supervisor_evaluation(self):
         """
         Evaluate the supervisor's necessity to intervene in tasks.
