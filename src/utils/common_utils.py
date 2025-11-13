@@ -436,7 +436,7 @@ def convert_time_to_segment(start: float,
         list[int]: List of segment indices, where each index corresponds to a time slot.
 
     Example:
-        >>> generate_time_segments(0, 24, 0.5)
+        >>> convert_time_to_segment(0, 24, 0.5)
         [0, 1, 2, ..., 47]  # Represents 48 half-hour segments from 00:00 to 24:00
     """
     assert start < end, log("Start time must be less than end time", "error")
@@ -478,7 +478,7 @@ def convert_segment_to_time(start: float,
 
     Example:
         >>> convert_segment_to_time(0, 24, 0.5, [0, 1, 2])
-        [0.0, 0.5, 1.0]
+        [0.0, 1.5]
     """
     assert start < end, log("Start time must be less than end time", "error")
     assert interval > 0, log("Interval must be greater than 0", "error")
