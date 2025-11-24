@@ -99,7 +99,6 @@ class OutpatientIntake(Task):
         self._staff_task_user_prompt_path = config.outpatient_intake.staff_task_user_prompt
         self._sup_system_prompt_path = config.outpatient_intake.supervisor_system_prompt
         self._sup_user_prompt_path = config.outpatient_intake.supervisor_user_prompt
-        self.ensure_output_format = config.ensure_output_format
         self.max_inferences = config.intake_max_inference
         self.use_supervisor = config.outpatient_intake.use_supervisor
         
@@ -116,10 +115,10 @@ class OutpatientIntake(Task):
         # Initialize models
         self.task_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.task_model.lower() else {}
         if 'gemini' in self.supervisor_model.lower():
-            self.supervisor_client = GeminiLangChainClient(self.supervisor_model) if self.ensure_output_format else GeminiClient(self.supervisor_model)
+            self.supervisor_client = GeminiClient(self.supervisor_model)
             self.sup_reasoning_kwargs = {}
         elif 'gpt' in self.supervisor_model.lower():
-            self.supervisor_client = GPTLangChainClient(self.supervisor_model) if self.ensure_output_format else GPTClient(self.supervisor_model)
+            self.supervisor_client = GPTClient(self.supervisor_model)
             self.sup_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.supervisor_model.lower() else {}
         else:
             self.supervisor_client = VLLMClient(self.supervisor_model, config.vllm_url)
@@ -377,43 +376,33 @@ class OutpatientIntake(Task):
 
         # LLM call: Supervisor which should extract demographic information of the patient and evaluation the department decision result
         dialogs = '\n'.join([f"{turn['role']}: {' '.join(turn['content'].split())}" for turn in dialogs])
-        if self.ensure_output_format:
-            prediction_supervision = self.supervisor_client(
-                user_prompt=self.user_prompt_template,
-                system_prompt=self.system_prompt,
-                **{
-                    'CONVERSATION': dialogs,
-                    'DEPARTMENTS': ''.join([f'{i+1}. {department}\n' for i, department in enumerate(departments)])
-                }
-            )
-        else:
-            user_prompt = self.user_prompt_template.format(
-                CONVERSATION=dialogs,
-                DEPARTMENTS=''.join([f'{i+1}. {department}\n' for i, department in enumerate(departments)])
-            )
-            retry_count = 0
-            while 1:
-                try:
-                    if self.use_supervisor:
-                        prediction_supervision = self.supervisor_client(
-                            user_prompt,
-                            system_prompt=self.system_prompt, 
-                            using_multi_turn=False,
-                            verbose=False,
-                            **self.sup_reasoning_kwargs
-                        )
-                    else:
-                        prediction_supervision = admin_staff_agent(self.staff_prompt, verbose=False, **self.task_reasoning_kwargs)
-                    break
-                except (ServerError, InternalServerError) as e:
-                    if retry_count >= self.max_retries:
-                        log(f"\nMax retries reached. Last error: {e}", level='error')
-                        raise e
-                    wait_time = exponential_backoff(retry_count)
-                    log(f"[{retry_count + 1}/{self.max_retries}] {type(e).__name__}: {e}. Retrying in {wait_time:.1f} seconds...", level='warning')
-                    time.sleep(wait_time)
-                    retry_count += 1
-                    continue
+        user_prompt = self.user_prompt_template.format(
+            CONVERSATION=dialogs,
+            DEPARTMENTS=''.join([f'{i+1}. {department}\n' for i, department in enumerate(departments)])
+        )
+        retry_count = 0
+        while 1:
+            try:
+                if self.use_supervisor:
+                    prediction_supervision = self.supervisor_client(
+                        user_prompt,
+                        system_prompt=self.system_prompt, 
+                        using_multi_turn=False,
+                        verbose=False,
+                        **self.sup_reasoning_kwargs
+                    )
+                else:
+                    prediction_supervision = admin_staff_agent(self.staff_prompt, verbose=False, **self.task_reasoning_kwargs)
+                break
+            except (ServerError, InternalServerError) as e:
+                if retry_count >= self.max_retries:
+                    log(f"\nMax retries reached. Last error: {e}", level='error')
+                    raise e
+                wait_time = exponential_backoff(retry_count)
+                log(f"[{retry_count + 1}/{self.max_retries}] {type(e).__name__}: {e}. Retrying in {wait_time:.1f} seconds...", level='warning')
+                time.sleep(wait_time)
+                retry_count += 1
+                continue
 
         prediction_supervision = OutpatientIntake.postprocessing_information(prediction_supervision)
         
@@ -454,7 +443,6 @@ class AssignSchedule(Task):
         self.task_model = config.task_model
         self._task_system_prompt_path = config.schedule_task.task_system_prompt
         self._task_user_prompt_path = config.schedule_task.task_user_prompt
-        self.ensure_output_format = config.ensure_output_format
         self.integration_with_fhir = config.integration_with_fhir
         self.preference_phrase = {
             'asap': 'The patient wants the earliest available doctor in the department for the outpatient visit.',
@@ -475,10 +463,10 @@ class AssignSchedule(Task):
 
         # Initialize task model
         if 'gemini' in self.task_model.lower():
-            self.task_client = GeminiLangChainClient(self.task_model) if self.ensure_output_format else GeminiClient(self.task_model)
+            self.task_client = GeminiClient(self.task_model)
             self.task_reasoning_kwargs = {}
         elif 'gpt' in self.task_model.lower():
-            self.task_client = GPTLangChainClient(self.task_model) if self.ensure_output_format else GPTClient(self.task_model)
+            self.task_client = GPTClient(self.task_model)
             self.task_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.task_model.lower() else {}
         else:
             self.task_client = VLLMClient(self.task_model, config.vllm_url)
@@ -1036,63 +1024,42 @@ class AssignSchedule(Task):
             filtered_doctor_information = self.__filter_doctor_schedule(doctor_information, department, environment, True)
             preference_desc = self.preference_phrase[patient_condition.get('preference')] if patient_condition.get('preference') != 'date' \
                 else self.preference_phrase[patient_condition.get('preference')].format(date=patient_condition.get('valid_from'))
-            if self.ensure_output_format:
-                prediction = self.task_client(
-                    user_prompt=self.task_user_prompt_template,
-                    system_prompt=self.task_system_prompt,
-                    **{
-                        'START_HOUR': self._START_HOUR,
-                        'END_HOUR': self._END_HOUR,
-                        'TIME_UNIT': self._TIME_UNIT,
-                        'CURRENT_TIME': environment.current_time,
-                        'DEPARTMENT': department,
-                        'PREFERENCE': preference_desc,
-                        'PREFERRED_DOCTOR': patient_condition.get('preferred_doctor'),
-                        'RESCHEDULING_FLAG': reschedule_desc,
-                        'DAY': self._DAY,
-                        'DOCTOR': json.dumps(filtered_doctor_information, indent=2),
-                        'PREV_ANSWER': prev_prediction,
-                        'FEEDBACK': feedback,
-                    }
-                )
-
-            else:
-                user_prompt = self.task_user_prompt_template.format(
-                    START_HOUR=self._START_HOUR,
-                    END_HOUR=self._END_HOUR,
-                    TIME_UNIT=self._TIME_UNIT,
-                    CURRENT_TIME=environment.current_time,
-                    DEPARTMENT=department,
-                    PREFERENCE=preference_desc,
-                    PREFERRED_DOCTOR=patient_condition.get('preferred_doctor'),
-                    RESCHEDULING_FLAG=reschedule_desc,
-                    DAY=self._DAY,
-                    DOCTOR=json.dumps(filtered_doctor_information, indent=2),
-                    PREV_ANSWER=prev_prediction,
-                    FEEDBACK= feedback,
-                )
-                
-                # Due to unstable gemini API
-                retry_count = 0
-                while 1:
-                    try:
-                        prediction = self.task_client(
-                            user_prompt,
-                            system_prompt=self.task_system_prompt, 
-                            using_multi_turn=self.max_feedback_number > 0,
-                            verbose=False,
-                            **self.task_reasoning_kwargs
-                        )
-                        break
-                    except (ServerError, InternalServerError) as e:
-                        if retry_count >= self.max_retries:
-                            log(f"\nMax retries reached. Last error: {e}", level='error')
-                            raise e
-                        wait_time = exponential_backoff(retry_count)
-                        log(f"[{retry_count + 1}/{self.max_retries}] {type(e).__name__}: {e}. Retrying in {wait_time:.1f} seconds...", level='warning')
-                        time.sleep(wait_time)
-                        retry_count += 1
-                        continue
+            user_prompt = self.task_user_prompt_template.format(
+                START_HOUR=self._START_HOUR,
+                END_HOUR=self._END_HOUR,
+                TIME_UNIT=self._TIME_UNIT,
+                CURRENT_TIME=environment.current_time,
+                DEPARTMENT=department,
+                PREFERENCE=preference_desc,
+                PREFERRED_DOCTOR=patient_condition.get('preferred_doctor'),
+                RESCHEDULING_FLAG=reschedule_desc,
+                DAY=self._DAY,
+                DOCTOR=json.dumps(filtered_doctor_information, indent=2),
+                PREV_ANSWER=prev_prediction,
+                FEEDBACK= feedback,
+            )
+            
+            # Due to unstable gemini API
+            retry_count = 0
+            while 1:
+                try:
+                    prediction = self.task_client(
+                        user_prompt,
+                        system_prompt=self.task_system_prompt, 
+                        using_multi_turn=self.max_feedback_number > 0,
+                        verbose=False,
+                        **self.task_reasoning_kwargs
+                    )
+                    break
+                except (ServerError, InternalServerError) as e:
+                    if retry_count >= self.max_retries:
+                        log(f"\nMax retries reached. Last error: {e}", level='error')
+                        raise e
+                    wait_time = exponential_backoff(retry_count)
+                    log(f"[{retry_count + 1}/{self.max_retries}] {type(e).__name__}: {e}. Retrying in {wait_time:.1f} seconds...", level='warning')
+                    time.sleep(wait_time)
+                    retry_count += 1
+                    continue
             
             prediction = AssignSchedule.postprocessing(prediction)    
             status, status_code, prediction, doctor_information = self._sanity_check(

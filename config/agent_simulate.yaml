@@ -4,7 +4,6 @@ seed: 9999
 # LLM model
 supervisor_model: gpt-4o
 task_model: gpt-4o
-ensure_output_format: False     # If you set to True, JsonOutputParser provided from LangChain will be used.
 vllm_url: http://0.0.0.0:8000     # Used only when using vllm.
 
 # Agent test data and converted FHIR data folder
