@@ -1,7 +1,7 @@
 import re
 from typing import Union
 
-from utils.common_utils import (
+from h_adminsim.utils.common_utils import (
     iso_to_hour,
     iso_to_date,
     convert_time_list_to_merged_time,

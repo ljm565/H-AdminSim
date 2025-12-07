@@ -1,11 +1,11 @@
 import os
 import logging.config
+from importlib import resources
 
 
 
-base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-version_file_path = os.path.join(base_path, 'version.txt')
-LOGGING_NAME = f"Reservation_Agent_{open(version_file_path).read().strip()}"
+version_file_path = resources.files("h_adminsim").joinpath("version.txt")
+LOGGING_NAME = f"H-AdminSim_{open(version_file_path).read().strip()}"
 VERBOSE = True
 
 

@@ -4,9 +4,9 @@ from decimal import Decimal, getcontext
 from datetime import datetime, timedelta
 from typing import Optional, Union, Tuple
 
-import registry
-from registry import Hospital
-from utils import Information, log, colorstr
+from h_adminsim import registry
+from h_adminsim.registry import Hospital
+from h_adminsim.utils import Information, log, colorstr
 
 
 
