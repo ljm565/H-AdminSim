@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "llm-agent-poetry"
+name = "h_adminsim"
 version = "0.7.2"
 description = "A Python package for simulating hospital administrative tasks."
 authors = ["Jun-Min Lee <ljm56897@gmail.com>"]
