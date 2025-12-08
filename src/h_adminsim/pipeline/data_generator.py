@@ -46,6 +46,8 @@ class DataGenerator:
         # Case 1: config is None -> load built-in config based on care_level
         if config is None:
             log(f"No config provided; using default {care_level} config.", "warning")
+            assert care_level in ['primary', 'secondary', 'tertiary'], \
+                log(f"Invalid care_level: '{care_level}'. Expected one of: primary, secondary, tertiary.", "error")
             default_path = str(resources.files("h_adminsim.assets.configs").joinpath(f"data4{care_level}.yaml"))
             return Config(default_path)
 
