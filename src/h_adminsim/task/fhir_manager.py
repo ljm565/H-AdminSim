@@ -1,6 +1,6 @@
 import requests
 
-from utils import log
+from h_adminsim.utils import log
 
 
 

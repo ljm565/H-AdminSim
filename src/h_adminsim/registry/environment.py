@@ -4,10 +4,10 @@ from typing import Union
 from decimal import getcontext
 from datetime import timedelta
 
-from tasks import FHIRManager
-from utils import log, colorstr
-from utils.fhir_utils import convert_fhir_resources_to_doctor_info
-from utils.common_utils import (
+from h_adminsim.task.fhir_manager import FHIRManager
+from h_adminsim.utils import log, colorstr
+from h_adminsim.utils.fhir_utils import convert_fhir_resources_to_doctor_info
+from h_adminsim.utils.common_utils import (
     get_iso_time,
     get_utc_offset,
     str_to_datetime,

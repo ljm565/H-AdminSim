@@ -3,9 +3,9 @@ from tqdm import tqdm
 from typing import Optional
 from decimal import getcontext
 
-from utils.fhir_utils import *
-from utils.random_utils import generate_random_symptom
-from utils.filesys_utils import json_load, json_save_fast, get_files
+from h_adminsim.utils.fhir_utils import *
+from h_adminsim.utils.random_utils import generate_random_symptom
+from h_adminsim.utils.filesys_utils import json_load, json_save_fast, get_files
 
 
 

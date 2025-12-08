@@ -3,8 +3,8 @@ from decimal import Decimal
 from typing import Tuple, Union
 from langchain.tools import tool
 
-from utils.fhir_utils import *
-from utils.common_utils import (
+from h_adminsim.utils.fhir_utils import *
+from h_adminsim.utils.common_utils import (
     group_consecutive_segments,
     convert_segment_to_time,
     convert_time_to_segment,

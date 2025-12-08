@@ -2,9 +2,9 @@ import os
 import numpy as np
 from collections import Counter
 
-from utils import log, colorstr
-from utils.filesys_utils import get_files, json_load
-from utils.image_preprocess_utils import draw_fail_donut_subplots
+from h_adminsim.utils import log, colorstr
+from h_adminsim.utils.filesys_utils import get_files, json_load
+from h_adminsim.utils.image_preprocess_utils import draw_fail_donut_subplots
 
 
 

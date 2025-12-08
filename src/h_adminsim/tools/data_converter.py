@@ -2,10 +2,10 @@ import os
 from tqdm import tqdm
 from typing import Optional
 
-from utils import Information, log
-from utils.fhir_utils import *
-from utils.filesys_utils import json_load, json_save_fast, get_files
-from utils.common_utils import (
+from h_adminsim.utils import Information, log
+from h_adminsim.utils.fhir_utils import *
+from h_adminsim.utils.filesys_utils import json_load, json_save_fast, get_files
+from h_adminsim.utils.common_utils import (
     get_iso_time,
     get_utc_offset,
     convert_time_to_segment,

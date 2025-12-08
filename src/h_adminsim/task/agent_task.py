@@ -1,36 +1,26 @@
+import os
 import json
 import time
 import random
 from copy import deepcopy
 from dotenv import load_dotenv
+from importlib import resources
 from decimal import Decimal, getcontext
 from openai import InternalServerError
 from typing import Tuple, Union, Optional
 from google.genai.errors import ServerError
 from patientsim.environment import OPSimulation
-from patientsim import AdminStaffAgent, PatientAgent
-from langchain_openai import ChatOpenAI
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.prompts.chat import ChatPromptTemplate
-from langchain.agents import (
-    AgentExecutor,
-    create_openai_tools_agent, 
-    create_tool_calling_agent, 
-)
+from patientsim import PatientAgent
+from patientsim import AdminStaffAgent as IntakeAdminStaffAgent
 
-from tools import (
-    GeminiClient,
-    GPTClient,
-    VLLMClient,
-    DataConverter,
-    SchedulingRule,
-)
-from tools.scheduling_rule import create_tools, scheduling_tool_calling
-from registry import STATUS_CODES, SCHEDULING_ERROR_CAUSE
-from utils import log
-from utils.fhir_utils import *
-from utils.filesys_utils import txt_load, json_load
-from utils.common_utils import (
+from h_adminsim import SupervisorAgent
+from h_adminsim import AdminStaffAgent as SchedulingAdminStaffAgent
+from h_adminsim.registry import STATUS_CODES, SCHEDULING_ERROR_CAUSE
+from h_adminsim.tools import DataConverter, SchedulingRule, scheduling_tool_calling
+from h_adminsim.utils import colorstr, log
+from h_adminsim.utils.fhir_utils import *
+from h_adminsim.utils.filesys_utils import txt_load, json_load
+from h_adminsim.utils.common_utils import (
     group_consecutive_segments,
     convert_segment_to_time,
     convert_time_to_segment,
@@ -41,7 +31,7 @@ from utils.common_utils import (
 
 
 
-class Task:
+class FirstVisitOutpatientTask:
     def get_result_dict(self) -> dict:
         """
         Initialize result dictionary.
@@ -50,6 +40,28 @@ class Task:
             dict: Initialized result dictionary.
         """
         return {'gt': [], 'pred': [], 'status': [], 'status_code': [], 'trial': [], 'dialog': [], 'feedback': []}
+    
+
+    def run_with_retry(self, func, *args, max_retries=8, **kwargs):
+        retry_count = 0
+
+        while 1:
+            try:
+                return func(*args, **kwargs)
+
+            except (ServerError, InternalServerError) as e:
+                if retry_count >= max_retries:
+                    log(f"\nMax retries reached. Last error: {e}", level='error')
+                    raise e
+
+                wait_time = exponential_backoff(retry_count)
+                log(
+                    f"[{retry_count + 1}/{max_retries}] {type(e).__name__}: {e}. "
+                    f"Retrying in {wait_time:.1f} seconds...",
+                    level='warning',
+                )
+                time.sleep(wait_time)
+                retry_count += 1
     
 
     def _get_fhir_appointment(self,
@@ -97,41 +109,61 @@ class Task:
         
 
 
-class OutpatientIntake(Task):
-    def __init__(self, config):
+class OutpatientFirstIntake(FirstVisitOutpatientTask):
+    def __init__(self, 
+                 patient_model: str,
+                 admin_staff_model: str,
+                 supervisor_agent: Optional[SupervisorAgent] = None,
+                 intake_max_inference: int = 5,
+                 max_retries: int = 8,
+                 admin_staff_last_task_user_prompt_path: Optional[str] = None):
+        
         # Initialize variables
         self.name = 'intake'
-        self.max_retries = 8
-        self.supervisor_model = config.supervisor_model
-        self.task_model = config.task_model
-        self._staff_task_user_prompt_path = config.outpatient_intake.staff_task_user_prompt
-        self._sup_system_prompt_path = config.outpatient_intake.supervisor_system_prompt
-        self._sup_user_prompt_path = config.outpatient_intake.supervisor_user_prompt
-        self.max_inferences = config.intake_max_inference
-        self.use_supervisor = config.outpatient_intake.use_supervisor
-        
-        # Initialize prompts and token data
-        self.system_prompt = txt_load(self._sup_system_prompt_path)
-        self.user_prompt_template = txt_load(self._sup_user_prompt_path)
-        self.staff_prompt = txt_load(self._staff_task_user_prompt_path)
+        self.patient_model = patient_model
+        self.admin_staff_model = admin_staff_model
+        self.use_supervisor = False if isinstance(supervisor_agent, SupervisorAgent) else True
+        self.supervisor_client = supervisor_agent if self.use_supervisor else None
+        self.max_inferences = intake_max_inference
+        self.max_retries = max_retries
+        self._init_last_task_prompt(admin_staff_last_task_user_prompt_path)
         self.token_stats = {
             'patient_token': {'input':[], 'output': [], 'reasoning': []}, 
             'admin_staff_token': {'input': [], 'output': [], 'reasoning': []}, 
             'supervisor_token': {'input':[], 'output': [], 'reasoning': []}
         }
+        self.patient_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.patient_model.lower() else {}
+        self.staff_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.admin_staff_model.lower() else {}
+    
 
-        # Initialize models
-        self.task_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.task_model.lower() else {}
-        if 'gemini' in self.supervisor_model.lower():
-            self.supervisor_client = GeminiClient(self.supervisor_model)
-            self.sup_reasoning_kwargs = {}
-        elif 'gpt' in self.supervisor_model.lower():
-            self.supervisor_client = GPTClient(self.supervisor_model)
-            self.sup_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.supervisor_model.lower() else {}
+    def _init_last_task_prompt(self, admin_staff_last_task_user_prompt_path: Optional[str] = None) -> str:
+        """
+        Initialize the user prompt for the admnistration staff agent's last task.
+
+        Args:
+            admin_staff_last_task_user_prompt_path (Optional[str], optional): Path to a custom user prompt file. 
+                                                                              If not provided, the default user prompt will be used. Defaults to None.
+
+        Returns:
+            str: The user prompt.
+
+        Raises:
+            FileNotFoundError: If the specified user prompt file does not exist.
+        """
+        if not self.use_supervisor:
+            if not admin_staff_last_task_user_prompt_path:
+                prompt_file_name = 'intake_staff_task_user.txt'
+                file_path = resources.files("h_adminsim.assets.prompts").joinpath(prompt_file_name)
+                self.last_task_user_prompt = file_path.read_text()
+            else:
+                if not os.path.exists(admin_staff_last_task_user_prompt_path):
+                    raise FileNotFoundError(colorstr("red", f"User prompt file not found: {admin_staff_last_task_user_prompt_path}"))
+                with open(admin_staff_last_task_user_prompt_path, 'r') as f:
+                    self.last_task_user_prompt = f.read()
         else:
-            self.supervisor_client = VLLMClient(self.supervisor_model, config.vllm_url)
-            self.sup_reasoning_kwargs = {}
-
+            if admin_staff_last_task_user_prompt_path:
+                log('The admin_staff_last_task_user_prompt_path setting is ignored when using supervisor model.', 'warning')
+    
     
     @staticmethod
     def postprocessing_department(text: str) -> str:
@@ -339,9 +371,10 @@ class OutpatientIntake(Task):
             diagnosis = test_data['constraint']['symptom']['disease']
         else:
             log("Patient's symptom level must be either 'simple' or 'with_history'.", "error")
-            
+        
+        # Simulation patient intake
         patient_agent = PatientAgent(
-            self.task_model,
+            self.patient_model,
             'outpatient',
             lang_proficiency_level='B',
             recall_level='no_history' if test_data['constraint']['symptom_level'] == 'simple' else 'high',
@@ -355,67 +388,57 @@ class OutpatientIntake(Task):
             medical_history=medical_history,
             diagnosis=diagnosis,
             chiefcomplaint=test_data['constraint']['symptom']['symptom'],
-            temperature=0 if not 'gpt-5' in self.task_model.lower() else 1
+            temperature=0 if not 'gpt-5' in self.patient_model.lower() else 1
         )
-        admin_staff_agent = AdminStaffAgent(
-            self.task_model,
+        admin_staff_agent = IntakeAdminStaffAgent(
+            self.admin_staff_model,
             departments,
             max_inferences=self.max_inferences,
-            temperature=0 if not 'gpt-5' in self.task_model.lower() else 1
+            temperature=0 if not 'gpt-5' in self.admin_staff_model.lower() else 1
         )
         environment = OPSimulation(patient_agent, admin_staff_agent, max_inferences=self.max_inferences)
-        retry_count = 0
-        while 1:
-            try:
-                output = environment.simulate(verbose=False, **self.task_reasoning_kwargs)
-                dialogs, patient_token, admin_staff_token = output['dialog_history'], output.get('patient_token_usage'), output.get('admin_staff_token_usage')
-                break
-            except (ServerError, InternalServerError) as e:
-                if retry_count >= self.max_retries:
-                    log(f"\nMax retries reached. Last error: {e}", level='error')
-                    raise e
-                wait_time = exponential_backoff(retry_count)
-                log(f"[{retry_count + 1}/{self.max_retries}] {type(e).__name__}: {e}. Retrying in {wait_time:.1f} seconds...", level='warning')
-                time.sleep(wait_time)
-                retry_count += 1
-                continue
-        
-        prediction_department = OutpatientIntake.postprocessing_department(dialogs[-1]['content'])
+        output = self.run_with_retry(
+                environment.simulate,
+                verbose=False,
+                patient_kwargs=self.patient_reasoning_kwargs, 
+                staff_kwargs=self.staff_reasoning_kwargs,
+                max_retries=self.max_retries,
+            )
+        dialogs, patient_token, admin_staff_token = output['dialog_history'], output.get('patient_token_usage'), output.get('admin_staff_token_usage')
+        prediction_department = OutpatientFirstIntake.postprocessing_department(dialogs[-1]['content'])
 
-        # LLM call: Supervisor which should extract demographic information of the patient and evaluation the department decision result
+        # LLM call: Agent which should extract demographic information of the patient and evaluation the department decision result
         dialogs = '\n'.join([f"{turn['role']}: {' '.join(turn['content'].split())}" for turn in dialogs])
-        user_prompt = self.user_prompt_template.format(
-            CONVERSATION=dialogs,
-            DEPARTMENTS=''.join([f'{i+1}. {department}\n' for i, department in enumerate(departments)])
-        )
-        retry_count = 0
-        while 1:
-            try:
-                if self.use_supervisor:
-                    prediction_supervision = self.supervisor_client(
-                        user_prompt,
-                        system_prompt=self.system_prompt, 
-                        using_multi_turn=False,
-                        verbose=False,
-                        **self.sup_reasoning_kwargs
-                    )
-                else:
-                    prediction_supervision = admin_staff_agent(self.staff_prompt, verbose=False, **self.task_reasoning_kwargs)
-                break
-            except (ServerError, InternalServerError) as e:
-                if retry_count >= self.max_retries:
-                    log(f"\nMax retries reached. Last error: {e}", level='error')
-                    raise e
-                wait_time = exponential_backoff(retry_count)
-                log(f"[{retry_count + 1}/{self.max_retries}] {type(e).__name__}: {e}. Retrying in {wait_time:.1f} seconds...", level='warning')
-                time.sleep(wait_time)
-                retry_count += 1
-                continue
+        
+        if self.use_supervisor:
+            user_prompt = self.supervisor_client.user_prompt_template.format(
+                CONVERSATION=dialogs,
+                DEPARTMENTS=''.join([f'{i+1}. {department}\n' for i, department in enumerate(departments)])
+            )
+            prediction_supervision = self.run_with_retry(
+                self.supervisor_client,
+                user_prompt,
+                using_multi_turn=False,
+                verbose=False,
+                max_retries=self.max_retries,
+            )
+        else:
+            prediction_supervision = self.run_with_retry(
+                admin_staff_agent,
+                self.last_task_user_prompt,
+                verbose=False,
+                max_retries=self.max_retries,
+                **self.staff_reasoning_kwargs,
+            )
 
-        prediction_supervision = OutpatientIntake.postprocessing_information(prediction_supervision)
+        prediction_supervision = OutpatientFirstIntake.postprocessing_information(prediction_supervision)
         
         # Append token data
-        self.save_token_data(patient_token, admin_staff_token, self.supervisor_client.token_usages)
+        self.save_token_data(
+            patient_token, 
+            admin_staff_token, 
+            supervisor_token=self.supervisor_client.client.token_usages if self.use_supervisor else {}
+        )
 
         # Sanity check
         department, trial = self._department_decision(prediction_department, prediction_supervision, gt['department'])
@@ -442,122 +465,63 @@ class OutpatientIntake(Task):
 
 
 
-class AssignSchedule(Task):
-    def __init__(self, config):
+class OutpatientFirstScheduling(FirstVisitOutpatientTask):
+    def __init__(self, 
+                 scheduling_strategy: str,
+                 admin_staff_agent: Optional[SchedulingAdminStaffAgent] = None,
+                 supervisor_agent: Optional[SupervisorAgent] = None,
+                 schedule_cancellation_prob: float = 0.05,
+                 request_early_schedule_prob: float = 0.1,
+                 max_feedback_number: int = 5,
+                 integration_with_fhir: bool = False,
+                 max_retries: int = 8):
+        
         # Initialize variables
+        getcontext().prec = 10
         self.name = 'schedule'
-        self.max_retries = 8
-        self.scheduling_strategy = config.schedule_task.scheduling_strategy
-        assert self.scheduling_strategy in ['llm', 'tool_calling', 'rule'], log('Scheduling strategy must be either "llm", "tool_calling", or "rule".', 'error')
-        self.use_supervisor = config.schedule_task.use_supervisor if self.scheduling_strategy == 'llm' else False
-        if self.use_supervisor != config.schedule_task.use_supervisor:
-            log('The use_supervisor setting is ignored when scheduling_strategy is not "llm".', 'warning')
-        self.task_model = config.task_model
-        self._task_system_prompt_path = config.schedule_task.task_system_prompt
-        self._task_user_prompt_path = config.schedule_task.task_user_prompt
-        self.integration_with_fhir = config.integration_with_fhir
+        
+        # Scheduling strategy and feedback mechanism
+        self.scheduling_strategy = scheduling_strategy
+        assert self.scheduling_strategy in ['llm', 'tool_calling', 'rule'], \
+            log('Scheduling strategy must be either "llm", "tool_calling", or "rule".', 'error')
+        if self.scheduling_strategy in ['llm', 'tool_calling']:
+            assert isinstance(admin_staff_agent, SchedulingAdminStaffAgent), \
+                    log('Administrative agent must be required.', 'error')
+        if self.scheduling_strategy == 'llm':
+            self.use_supervisor = True if isinstance(supervisor_agent, SupervisorAgent) else False
+            self.task_client = admin_staff_agent
+            self.supervisor_client = supervisor_agent
+            self.max_feedback_number = max_feedback_number
+            feedback_mechanism = 'supervisor agent-based feedback' if self.use_supervisor else 'self-feedback'
+            log(f'Scheduling strategy: {colorstr(self.scheduling_strategy)}, Feedback mechanism: {colorstr(feedback_mechanism)}, Maximum feedback: {colorstr(self.max_feedback_number)} times')
+        else:
+            load_dotenv(override=True)
+            self.use_supervisor = False
+            self.task_client = admin_staff_agent if self.scheduling_strategy == 'tool_calling' else None
+            self.supervisor_client = None
+            self.max_feedback_number = None
+            if isinstance(supervisor_agent, SupervisorAgent):
+                log('The use_supervisor setting is ignored when scheduling_strategy is not "llm".', 'warning')
+
+        # Scheduling parameters
+        self.schedule_cancellation_prob = schedule_cancellation_prob
+        self.request_early_schedule_prob = request_early_schedule_prob
+
+        # Others
+        self.integration_with_fhir = integration_with_fhir
+        self.max_retries = max_retries
+        self.tool_calling_system_prompt = txt_load(str(resources.files("h_adminsim.assets.prompts").joinpath('schedule_tool_calling_system.txt'))) \
+            if self.scheduling_strategy == 'tool_calling' else None
         self.preference_phrase = {
             'asap': 'The patient wants the earliest available doctor in the department for the outpatient visit.',
             'doctor': 'The patient has a preferred doctor for the outpatient visit.',
             'date': 'The patient wants the earliest available doctor in the department for the outpatient visit, starting from **{date}**.'
         }
-        self.schedule_cancellation_prob = config.schedule_cancellation_prob
-        self.request_early_schedule_prob = config.request_early_schedule_prob
-        getcontext().prec = 10
-
-        # Initialize prompts and token data
-        self.task_system_prompt = txt_load(self._task_system_prompt_path)
-        self.task_user_prompt_template = txt_load(self._task_user_prompt_path)
-        self.tool_calling_system_prompt = txt_load(config.schedule_task.tool_calling_prompt) if self.scheduling_strategy == 'tool_calling' else None
         self.token_stats = {
             'task_token': {'input':[], 'output': [], 'reasoning': []}, 
             'supervisor_token': {'input':[], 'output': [], 'reasoning': []}
         }
 
-        # Initialize task model
-        if self.scheduling_strategy == 'llm':
-            if 'gemini' in self.task_model.lower():
-                self.task_client = GeminiClient(self.task_model)
-                self.task_reasoning_kwargs = {}
-            elif 'gpt' in self.task_model.lower():
-                self.task_client = GPTClient(self.task_model)
-                self.task_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.task_model.lower() else {}
-            else:
-                self.task_client = VLLMClient(self.task_model, config.vllm_url)
-                self.task_reasoning_kwargs = {}
-        elif self.scheduling_strategy == 'tool_calling':
-            load_dotenv(override=True)
-            self.task_client = None
-
-        # If you use supervisor model
-        self.max_feedback_number = config.schedule_task.max_feedback_number
-        if self.use_supervisor:
-            self.supervisor_model = config.supervisor_model
-            self._sup_system_prompt_path = config.schedule_task.supervisor_system_prompt
-            self._sup_user_prompt_path = config.schedule_task.supervisor_user_prompt
-            self.sup_system_prompt = txt_load(self._sup_system_prompt_path)
-            self.sup_user_prompt_template = txt_load(self._sup_user_prompt_path)
-
-            if 'gemini' in self.supervisor_model.lower():
-                self.supervisor_client = GeminiClient(self.supervisor_model)
-                self.sup_reasoning_kwargs = {}
-            elif 'gpt' in self.supervisor_model.lower():
-                self.supervisor_client = GPTClient(self.supervisor_model)
-                self.sup_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.supervisor_model.lower() else {}
-            else:
-                self.supervisor_client = VLLMClient(self.supervisor_model, config.vllm_url)
-                self.sup_reasoning_kwargs = {}
-
-    
-    def build_agent(self, rule: SchedulingRule, doctor_info: dict) -> AgentExecutor:
-        """
-        Build a LangChain agent with scheduling tools.
-
-        Args:
-            rule (SchedulingRule): An instance of SchedulingRule containing scheduling logic.
-            doctor_info (dict): A dictionary containing information about doctors.
-
-        Returns:
-            AgentExecutor: A LangChain agent executor with the scheduling tools.
-        """
-        tools = create_tools(rule, doctor_info)
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", self.tool_calling_system_prompt),
-            ("user", "{input}"),
-            ("assistant", "{agent_scratchpad}"),
-        ])
-        
-        if 'gemini' in self.task_model.lower():
-            llm = ChatGoogleGenerativeAI(
-                model=self.task_model,
-                temperature=0,
-            )
-            agent = create_tool_calling_agent(
-                llm=llm,
-                tools=tools,
-                prompt=prompt
-            )
-
-        elif 'gpt' in self.task_model.lower():
-            llm = ChatOpenAI(
-                model_name=self.task_model, 
-                temperature=0 if not 'gpt-5' in self.task_model.lower() else 1
-            )
-            agent = create_openai_tools_agent(
-                llm=llm,
-                tools=tools,
-                prompt=prompt
-            )
-    
-        executor = AgentExecutor(
-            agent=agent,
-            tools=tools,
-            verbose=False,
-            max_iterations=1,
-            return_intermediate_steps=True,
-        )
-        return executor
-            
     
     @staticmethod
     def postprocessing(text: Union[str, dict]) -> Union[str, dict]:
@@ -1017,7 +981,7 @@ class AssignSchedule(Task):
         """
         reschedule_desc = "Rescheduling requested. This is the rescheduling of a patient who wishes to move their appointment earlier due to a previous patient's cancelled reservation" \
             if reschedule_flag else 'Not requested.'
-        user_prompt = self.sup_user_prompt_template.format(
+        user_prompt = self.supervisor_client.user_prompt_template.format(
             START_HOUR=self._START_HOUR,
             END_HOUR=self._END_HOUR,
             TIME_UNIT=self._TIME_UNIT,
@@ -1030,29 +994,12 @@ class AssignSchedule(Task):
             ERROR_CODE=error_code,
             REASON='\n'.join(SCHEDULING_ERROR_CAUSE[error_code])
         )
-
-        # Due to unstable gemini API
-        retry_count = 0
-        while 1:
-            try:
-                feedback = self.supervisor_client(
-                    user_prompt,
-                    system_prompt=self.sup_system_prompt, 
-                    using_multi_turn=True,
-                    verbose=False,
-                    **self.sup_reasoning_kwargs
-                )
-                break
-            except (ServerError, InternalServerError) as e:
-                if retry_count >= self.max_retries:
-                    log(f"\nMax retries reached. Last error: {e}", level='error')
-                    raise e
-                wait_time = exponential_backoff(retry_count)
-                log(f"[{retry_count + 1}/{self.max_retries}] {type(e).__name__}: {e}. Retrying in {wait_time:.1f} seconds...", level='warning')
-                time.sleep(wait_time)
-                retry_count += 1
-                continue
-
+        feedback = self.run_with_retry(
+            self.supervisor_client,
+            user_prompt,
+            using_multi_turn=True,
+            verbose=False,
+        )
         return feedback
     
 
@@ -1093,7 +1040,7 @@ class AssignSchedule(Task):
                 filtered_doctor_information = self.__filter_doctor_schedule(doctor_information, department, environment, True)
                 preference_desc = self.preference_phrase[patient_condition.get('preference')] if patient_condition.get('preference') != 'date' \
                     else self.preference_phrase[patient_condition.get('preference')].format(date=patient_condition.get('valid_from'))
-                user_prompt = self.task_user_prompt_template.format(
+                user_prompt = self.task_client.user_prompt_template.format(
                     START_HOUR=self._START_HOUR,
                     END_HOUR=self._END_HOUR,
                     TIME_UNIT=self._TIME_UNIT,
@@ -1107,30 +1054,14 @@ class AssignSchedule(Task):
                     PREV_ANSWER=prev_prediction,
                     FEEDBACK= feedback,
                 )
-                
-                # Due to unstable gemini API
-                retry_count = 0
-                while 1:
-                    try:
-                        prediction = self.task_client(
-                            user_prompt,
-                            system_prompt=self.task_system_prompt, 
-                            using_multi_turn=self.max_feedback_number > 0,
-                            verbose=False,
-                            **self.task_reasoning_kwargs
-                        )
-                        break
-                    except (ServerError, InternalServerError) as e:
-                        if retry_count >= self.max_retries:
-                            log(f"\nMax retries reached. Last error: {e}", level='error')
-                            raise e
-                        wait_time = exponential_backoff(retry_count)
-                        log(f"[{retry_count + 1}/{self.max_retries}] {type(e).__name__}: {e}. Retrying in {wait_time:.1f} seconds...", level='warning')
-                        time.sleep(wait_time)
-                        retry_count += 1
-                        continue
-                
-                prediction = AssignSchedule.postprocessing(prediction)    
+                prediction = self.run_with_retry(
+                    self.task_client,
+                    user_prompt,
+                    using_multi_turn=self.max_feedback_number > 0,
+                    verbose=False,
+                    max_retries=self.max_retries,
+                )
+                prediction = OutpatientFirstScheduling.postprocessing(prediction)    
                 status, status_code, prediction, doctor_information = self._sanity_check(
                     prediction, 
                     patient_condition,
@@ -1167,8 +1098,8 @@ class AssignSchedule(Task):
 
             # Append token data and reset agents
             self.save_token_data(
-                self.task_client.token_usages, 
-                supervisor_token=self.supervisor_client.token_usages if self.use_supervisor else None
+                self.task_client.client.token_usages, 
+                supervisor_token=self.supervisor_client.client.token_usages if self.use_supervisor else None
             )
             self.task_client.reset_history(verbose=False)
             if self.use_supervisor:
@@ -1197,7 +1128,7 @@ class AssignSchedule(Task):
         
         ############################# Tool calling-based Scheduling ############################
         else:
-            self.client = self.build_agent(self.rules, self.__filter_doctor_schedule(doctor_information, department, environment))
+            self.client = self.task_client.build_agent(self.rules, self.__filter_doctor_schedule(doctor_information, department, environment))
             prediction = scheduling_tool_calling(self.client, self.rules, patient_condition, doctor_information)
             
             status, status_code, prediction, doctor_information = self._sanity_check(
@@ -1235,8 +1166,8 @@ class AssignSchedule(Task):
             if test_data and department:
                 fhir_patient = DataConverter.data_to_patient(
                     {'metadata': deepcopy(self._metadata),
-                    'department': deepcopy(self._department_data),
-                    'patient': {test_data['patient']: {'department': department, **deepcopy(test_data)}}}
+                     'department': deepcopy(self._department_data),
+                     'patient': {test_data['patient']: {'department': department, **deepcopy(test_data)}}}
                 )[0]
             fhir_appointment = self._get_fhir_appointment(data={'metadata': deepcopy(self._metadata),
                                                                 'department': deepcopy(self._department_data),

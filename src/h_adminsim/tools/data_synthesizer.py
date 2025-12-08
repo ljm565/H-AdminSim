@@ -4,12 +4,12 @@ from tqdm import tqdm
 from typing import Optional, Tuple
 from decimal import Decimal, getcontext
 
-import registry
-from tasks import ScheduleAssigner
-from utils import Information, log, colorstr
-from utils.common_utils import *
-from utils.filesys_utils import json_load, txt_load, yaml_save, make_project_dir, json_save_fast
-from utils.random_utils import (
+import h_adminsim.registry
+from h_adminsim.task.schedule_assign import ScheduleAssigner
+from h_adminsim.utils import Information, log, colorstr
+from h_adminsim.utils.common_utils import *
+from h_adminsim.utils.filesys_utils import json_load, txt_load, yaml_save, make_project_dir, json_save_fast
+from h_adminsim.utils.random_utils import (
     generate_random_prob,
     generate_random_date,
     generate_random_code,

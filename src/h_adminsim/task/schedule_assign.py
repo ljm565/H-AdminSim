@@ -1,7 +1,7 @@
 import random
 from typing import Tuple, Optional
 
-from utils.common_utils import (
+from h_adminsim.utils.common_utils import (
     convert_segment_to_time,
     convert_time_to_segment, 
     group_consecutive_segments,
