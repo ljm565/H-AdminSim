@@ -7,10 +7,12 @@ from typing import Tuple
 from argparse import ArgumentParser
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
-from tasks import *
-from registry.environment import HospitalEnvironment
-from utils import log
-from utils.filesys_utils import json_load, json_save_fast, yaml_save, get_files
+from h_adminsim import AdminStaffAgent, SupervisorAgent
+from h_adminsim.task.fhir_manager import FHIRManager
+from h_adminsim.task.agent_task import *
+from h_adminsim.registry.environment import HospitalEnvironment
+from h_adminsim.utils import log
+from h_adminsim.utils.filesys_utils import json_load, json_save_fast, yaml_save, get_files
 
 
 
@@ -20,7 +22,7 @@ def env_setup(config, is_continue):
 
     # Delete Patient and Appointment resources when starting a simulation
     if config.integration_with_fhir and not is_continue:
-        fhir_manager = FHIRManager(config)
+        fhir_manager = FHIRManager(config.fhir_url)
         appointment_entries = fhir_manager.read_all('Appointment')
         patient_entries = fhir_manager.read_all('Patient')
         fhir_manager.delete_all(appointment_entries, verbose=False)
@@ -97,9 +99,45 @@ def main(args):
     # Initialize tasks
     queue = list()
     if 'intake' in args.type:
-        queue.append(OutpatientIntake(config))
+        use_vllm = False if any(m in config.supervisor_model.lower() for m in ['gpt', 'gemini']) else True
+        supervisor_agent = SupervisorAgent(
+            target_task='first_outpatient_intake',
+            model=config.supervisor_model,
+            use_vllm=use_vllm,
+            vllm_endpoint = config.vllm_url if use_vllm else None
+        )
+        queue.append(OutpatientFirstIntake(
+            patient_model=config.task_model,
+            admin_staff_model=config.task_model,
+            supervisor_agent=supervisor_agent if config.outpatient_intake.use_supervisor else None,
+            intake_max_inference=config.intake_max_inference,
+            admin_staff_last_task_user_prompt_path=config.outpatient_intake.staff_task_user_prompt,
+        ))
+        # queue.append(OutpatientIntake(config))
     if 'schedule' in args.type:
-        queue.append(AssignSchedule(config))
+        use_sup_vllm = False if any(m in config.supervisor_model.lower() for m in ['gpt', 'gemini']) else True
+        supervisor_agent = SupervisorAgent(
+            target_task='first_outpatient_scheduling',
+            model=config.supervisor_model,
+            use_vllm=use_sup_vllm,
+            vllm_endpoint = config.vllm_url if use_sup_vllm else None
+        )
+        use_admin_vllm = False if any(m in config.task_model.lower() for m in ['gpt', 'gemini']) else True
+        admin_staff_agent = AdminStaffAgent(
+            target_task='first_outpatient_scheduling',
+            model=config.task_model,
+            use_vllm=use_admin_vllm,
+            vllm_endpoint = config.vllm_url if use_admin_vllm else None
+        )
+        queue.append(OutpatientFirstScheduling(
+            scheduling_strategy=config.schedule_task.scheduling_strategy,
+            admin_staff_agent=admin_staff_agent,
+            supervisor_agent=supervisor_agent if config.schedule_task.use_supervisor else None,
+            schedule_cancellation_prob=config.schedule_cancellation_prob,
+            request_early_schedule_prob=config.request_early_schedule_prob,
+            max_feedback_number=config.schedule_task.max_feedback_number,
+            fhir_integration=config.integration_with_fhir
+        ))
 
     # Initialize agent test data
     is_file = os.path.isfile(config.agent_test_data)
@@ -115,7 +153,12 @@ def main(args):
         for i, agent_test_data in enumerate(all_agent_test_data):
             agent_results, done_patients, dialog_results = dict(), dict(), dict()
             shuffle_agent_test_data(agent_test_data)
-            environment = HospitalEnvironment(config, agent_test_data)
+            environment = HospitalEnvironment(
+                agent_test_data, 
+                config.fhir_url, 
+                config.fhir_max_connection_retries,
+                config.booking_days_before_simulation
+            )
             basename = os.path.splitext(os.path.basename(agent_test_data_files[i]))[0]
             save_path = os.path.join(args.output_dir, f'{basename}_result.json')
             d_save_path = os.path.join(args.output_dir, f'{basename}_dialog.json')

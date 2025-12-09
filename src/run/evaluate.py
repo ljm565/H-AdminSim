@@ -3,8 +3,8 @@ import sys
 from argparse import ArgumentParser
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
-from tools import Evaluator
-from utils import log
+from h_adminsim.tools import Evaluator
+from h_adminsim.utils import log
 
 
 
@@ -19,7 +19,7 @@ def main(args):
         evaluator.ipi_evaluation()
         log('')
 
-    if 'supervisor' in args.type:
+    if 'feedback' in args.type:
         evaluator.supervisor_evaluation()
         log('')
 
@@ -46,7 +46,7 @@ if __name__ == '__main__':
         type=str, 
         required=True, 
         nargs='+', 
-        choices=['task', 'supervisor', 'human', 'department', 'rounds', 'ipi'], 
+        choices=['task', 'feedback', 'human', 'department', 'rounds', 'ipi'], 
         help='Task types you want to evaluate (you can specify multiple)'
     )
     args = parser.parse_args()

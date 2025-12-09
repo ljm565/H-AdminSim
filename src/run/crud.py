@@ -6,10 +6,10 @@ from sconf import Config
 from argparse import ArgumentParser
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
-from tasks import FHIRManager
-from utils import log
-from utils.random_utils import random_uuid
-from utils.filesys_utils import json_load, get_files
+from h_adminsim.task.fhir_manager import FHIRManager
+from h_adminsim.utils import log
+from h_adminsim.utils.random_utils import random_uuid
+from h_adminsim.utils.filesys_utils import json_load, get_files
 
 
 def env_setup(config):
@@ -31,7 +31,7 @@ def main(args):
     env_setup(config)
 
     # Execute CRUD operation
-    fhir_manager = FHIRManager(config)
+    fhir_manager = FHIRManager(config.fhir_url)
     
     if args.mode == 'create':
         for path in config.create_data_path:

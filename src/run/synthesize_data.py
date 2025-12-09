@@ -6,8 +6,8 @@ from sconf import Config
 from argparse import ArgumentParser
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
-from tools import DataSynthesizer
-from utils import log
+from h_adminsim.tools import DataSynthesizer
+from h_adminsim.utils import log
 
 
 

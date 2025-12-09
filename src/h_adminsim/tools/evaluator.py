@@ -120,7 +120,7 @@ class Evaluator:
                 aggregated_results[task]['status'].append(value['status'])
                 aggregated_results[task]['trial'].append(value['trial'])
 
-        log('--------------Supervisor Evaluation--------------')
+        log('-----Supervisor (or feedback) Evaluation----')
         for task, value in aggregated_results.items():
             status = sum(value['status'], [])
             trial = sum(value['trial'], [])
@@ -141,7 +141,7 @@ class Evaluator:
                 correct_p = correct/supervisor_effect_cnt*100 if supervisor_effect_cnt > 0 else 0
                 error_p = error/supervisor_effect_cnt*100 if supervisor_effect_cnt > 0 else 0
                 tie_p = tie/supervisor_effect_cnt*100 if supervisor_effect_cnt > 0 else 0
-                log(f'{colorstr(task):<27} | length: {total_length}, supervisor effect: {supervisor_effect_cnt} ({(supervisor_effect_cnt/total_length)*100:.2f}%)')
+                log(f'{colorstr(task):<27} | length: {total_length}, effected: {supervisor_effect_cnt} ({(supervisor_effect_cnt/total_length)*100:.2f}%)')
                 log(f'    - {colorstr("green", "correct")}: {correct} ({correct_p:.2f}%), {colorstr("red", "worse")}: {error} ({error_p:.2f}%), {colorstr("yellow", "tie")}: {tie} ({tie_p:.2f}%)')
 
             elif task == 'schedule':
@@ -160,7 +160,7 @@ class Evaluator:
                 desc = ', '.join([f'{f}-feedback: {n}' for f, n in sorted(feedback_n.items())])
                 correct_p = correct/supervisor_effect_cnt*100 if supervisor_effect_cnt > 0 else 0
                 tie_p = tie/supervisor_effect_cnt*100 if supervisor_effect_cnt > 0 else 0
-                log(f'{colorstr(task):<27} | length: {total_length}, supervisor effect: {supervisor_effect_cnt} ({(supervisor_effect_cnt/total_length)*100:.2f}%)')
+                log(f'{colorstr(task):<27} | length: {total_length}, effected: {supervisor_effect_cnt} ({(supervisor_effect_cnt/total_length)*100:.2f}%)')
                 log(f'    - {colorstr("green", "correct")}: {correct} ({correct_p:.2f}%), {colorstr("yellow", "tie")}: {tie} ({tie_p:.2f}%)')
                 log(f'    - Feedback distribution: {desc}')
     
