@@ -88,18 +88,18 @@ class Simulator:
         Shuffle the agent test data by the schedule start time.
 
         Args:
-            agent_test_data (dict): An agent test data to simulate a hospital environmnet.
+            data (dict): An agent test data to simulate a hospital environmnet.
         """
         random.shuffle(data['agent_data'])        # In-place logic
 
 
     @staticmethod
-    def resume_results(agent_test_data: dict, results_path: str, d_results_path: str) -> Tuple[dict, dict, dict, set]:
+    def resume_results(agent_simulation_data: dict, results_path: str, d_results_path: str) -> Tuple[dict, dict, dict, set]:
         """
         Resume a previously saved simulation by aligning agent results.
 
         Args:
-            agent_test_data (dict): Static agent test data for a simulation.
+            agent_simulation_data (dict): Static agent test data for a simulation.
             results_path (str): Path to the JSON file containing the saved simulation results.
             d_results_path (str): Path to the JSON file containing the saved dialog results.
 
@@ -129,13 +129,13 @@ class Simulator:
         
         # Updated doctor schedules based on the resumed results
         if 'schedule' in agent_results:
-            fixed_schedule = agent_test_data['doctor']
+            fixed_schedule = agent_simulation_data['doctor']
             for status, pred in zip(agent_results['schedule']['status'], agent_results['schedule']['pred']):
                 if status and pred['status'] != 'cancelled':
                     fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].append(pred['schedule'])
                     fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].sort()
         
-        return agent_test_data, agent_results, dialog_results, done_patients
+        return agent_simulation_data, agent_results, dialog_results, done_patients
 
     
     def run(self,
@@ -184,16 +184,16 @@ class Simulator:
 
                 # Resume the results and the virtual hospital environment
                 if resume and os.path.exists(save_path):
-                    agent_test_data, agent_results, dialog_results, done_patients = Simulator.resume_results(agent_test_data, save_path, d_save_path)
+                    agent_simulation_data, agent_results, dialog_results, done_patients = Simulator.resume_results(agent_simulation_data, save_path, d_save_path)
                     environment.resume(agent_results)
 
                 # Data per patient
-                for j, (gt, test_data) in enumerate(agent_test_data['agent_data']):
+                for j, (gt, test_data) in enumerate(agent_simulation_data['agent_data']):
                     for task in self.task_queue:
                         if task.name in done_patients and gt['patient'] in done_patients[task.name]:
                             continue
 
-                        result = task((gt, test_data), agent_test_data, agent_results, environment, verbose)
+                        result = task((gt, test_data), agent_simulation_data, agent_results, environment, verbose)
                         dialogs = result.pop('dialog')
 
                         # Append a single result 

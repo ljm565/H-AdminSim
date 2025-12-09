@@ -124,6 +124,7 @@ class OutpatientFirstIntake(FirstVisitOutpatientTask):
         self.admin_staff_model = admin_staff_model
         self.use_supervisor = True if isinstance(supervisor_agent, SupervisorAgent) else False
         self.supervisor_client = supervisor_agent if self.use_supervisor else None
+        task_mechanism = 'Staff + Supervisor' if self.use_supervisor else 'Staff'
         self.max_inferences = intake_max_inference
         self.max_retries = max_retries
         self._init_last_task_prompt(admin_staff_last_task_user_prompt_path)
@@ -134,6 +135,7 @@ class OutpatientFirstIntake(FirstVisitOutpatientTask):
         }
         self.patient_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.patient_model.lower() else {}
         self.staff_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.admin_staff_model.lower() else {}
+        log(f'Patient intake tasks are conducted by {colorstr(task_mechanism)}')
     
 
     def _init_last_task_prompt(self, admin_staff_last_task_user_prompt_path: Optional[str] = None) -> str:
@@ -493,7 +495,6 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
             self.supervisor_client = supervisor_agent
             self.max_feedback_number = max_feedback_number
             feedback_mechanism = 'supervisor agent-based feedback' if self.use_supervisor else 'self-feedback'
-            log(f'Scheduling strategy: {colorstr(self.scheduling_strategy)}, Feedback mechanism: {colorstr(feedback_mechanism)}, Maximum feedback: {colorstr(self.max_feedback_number)} times')
         else:
             dotenv_path = find_dotenv(usecwd=True)
             load_dotenv(dotenv_path, override=True)
@@ -501,8 +502,10 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
             self.task_client = admin_staff_agent if self.scheduling_strategy == 'tool_calling' else None
             self.supervisor_client = None
             self.max_feedback_number = None
+            feedback_mechanism = None
             if isinstance(supervisor_agent, SupervisorAgent):
                 log('The use_supervisor setting is ignored when scheduling_strategy is not "llm".', 'warning')
+        log(f'Scheduling strategy: {colorstr(self.scheduling_strategy)}, Feedback mechanism: {colorstr(feedback_mechanism)}, Maximum feedback: {colorstr(self.max_feedback_number)} times')
 
         # Scheduling parameters
         self.schedule_cancellation_prob = schedule_cancellation_prob
