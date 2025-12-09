@@ -1,8 +1,6 @@
-import os
 import random
 import numpy as np
 from sconf import Config
-from pathlib import Path
 from importlib import resources
 from typing import Optional, Union
 
@@ -81,7 +79,30 @@ class DataGenerator:
     def build(self, 
               sanity_check: bool = True,
               convert_to_fhir: bool = False,
-              build_agent_data: bool = True):
+              build_agent_data: bool = True) -> Information:
+        """
+        Build the complete information bundle for the administrative simulation pipeline.
+
+        Args:
+            sanity_check (bool, optional): Whether to perform validation checks during synthetic data generation. Defaults to True.
+            convert_to_fhir (bool, optional): If True, converts synthesized data into FHIR-compliant resources and stores them 
+                                              in the configured output directory. Defaults to False.
+            build_agent_data (bool, optional): If True, generates additional derived data required for agent-based
+                                               simulations (e.g., patient profiles, department assignments, task inputs). Defaults to True.
+
+        Raises:
+            Exception: Propagates any exception encountered during:
+                - synthetic data synthesis
+                - FHIR conversion
+                - agent data generation
+
+        Returns:
+            Information:
+                A structured container holding:
+                    - `data`: the synthesized dataset
+                    - `fhir_data`: list of FHIR resources (or None if disabled)
+                    - `agent_data`: processed agent input data (or None if disabled)
+        """
         # Data generator
         try:
             data, hospital_obj = self.data_synthesizer.synthesize(sanity_check=sanity_check)

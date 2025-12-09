@@ -1,8 +1,8 @@
 import time
 import random
-from typing import Union
 from decimal import getcontext
 from datetime import timedelta
+from typing import Union, Optional
 
 from h_adminsim.task.fhir_manager import FHIRManager
 from h_adminsim.utils import log, colorstr
@@ -20,15 +20,20 @@ from h_adminsim.utils.common_utils import (
 
 
 class HospitalEnvironment:
-    def __init__(self, config, agent_test_data):
+    def __init__(self, 
+                 agent_test_data: dict,
+                 fhir_url: Optional[str] = None,
+                 fhir_max_connection_retries: int = 5,
+                 start_day_before: float = 3):
+        
         # FHIR manager
-        self.fhir_manager = FHIRManager(config)
+        self.fhir_manager = FHIRManager(fhir_url) if fhir_url else None
         
         # Basic
         getcontext().prec = 10
         self._epsilon = 1e-6
-        self.max_retries = config.fhir_max_connection_retries
-        self._days_before = config.booking_days_before_simulation
+        self.max_retries = fhir_max_connection_retries
+        self._days_before = start_day_before
         self.HOSPITAL_NAME = agent_test_data.get('metadata').get('hospital_name')
         self._START_DATE = agent_test_data.get('metadata').get('start_date')
         self._END_DATE = agent_test_data.get('metadata').get('end_date')

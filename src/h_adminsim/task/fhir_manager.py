@@ -5,8 +5,8 @@ from h_adminsim.utils import log
 
 
 class FHIRManager:
-    def __init__(self, config):
-        self.fhir_url = config.fhir_url
+    def __init__(self, fhir_url):
+        self.fhir_url = fhir_url
         
     
     def __logging(self, response, verbose=True):
