@@ -122,7 +122,7 @@ class OutpatientFirstIntake(FirstVisitOutpatientTask):
         self.name = 'intake'
         self.patient_model = patient_model
         self.admin_staff_model = admin_staff_model
-        self.use_supervisor = False if isinstance(supervisor_agent, SupervisorAgent) else True
+        self.use_supervisor = True if isinstance(supervisor_agent, SupervisorAgent) else False
         self.supervisor_client = supervisor_agent if self.use_supervisor else None
         self.max_inferences = intake_max_inference
         self.max_retries = max_retries
