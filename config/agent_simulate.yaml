@@ -2,12 +2,12 @@
 seed: 9999
 
 # LLM model
-supervisor_model: gpt-4o
-task_model: gpt-4o
+supervisor_model: gpt-5-nano
+task_model: gpt-5-nano
 vllm_url: http://0.0.0.0:8000     # Used only when using vllm.
 
 # Agent test data and converted FHIR data folder
-agent_test_data: synthetic_data/hospital_small/agent_data
+agent_test_data: hospital_data/primary/agent_data
 fhir_url: http://localhost:8080/fhir
 integration_with_fhir: False
 
@@ -21,15 +21,15 @@ intake_max_inference: 5
 # Prompt paths
 outpatient_intake:
     use_supervisor: False
-    staff_task_user_prompt: asset/prompts/intake_staff_task_user.txt
-    supervisor_system_prompt: asset/prompts/intake_supervisor_system.txt
-    supervisor_user_prompt: asset/prompts/intake_supervisor_user.txt
+    staff_task_user_prompt: assets/prompts/intake_staff_task_user.txt
+    supervisor_system_prompt: assets/prompts/intake_supervisor_system.txt
+    supervisor_user_prompt: assets/prompts/intake_supervisor_user.txt
 schedule_task:
     scheduling_strategy: llm   # ['llm', 'tool_calling', 'rule'], If you set 'tool_calling' or 'rule', use_supervisor will be ignored.
     use_supervisor: False
     max_feedback_number: 5
-    supervisor_system_prompt: asset/prompts/schedule_supervisor_system.txt
-    supervisor_user_prompt: asset/prompts/schedule_supervisor_user.txt
-    task_system_prompt: asset/prompts/schedule_task_system.txt
-    task_user_prompt: asset/prompts/schedule_task_user.txt
-    tool_calling_prompt: asset/prompts/schedule_tool_calling_system.txt
+    supervisor_system_prompt: assets/prompts/schedule_supervisor_system.txt
+    supervisor_user_prompt: assets/prompts/schedule_supervisor_user.txt
+    task_system_prompt: assets/prompts/schedule_task_system.txt
+    task_user_prompt: assets/prompts/schedule_task_user.txt
+    tool_calling_prompt: assets/prompts/schedule_tool_calling_system.txt

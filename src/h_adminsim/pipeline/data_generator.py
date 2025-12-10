@@ -58,7 +58,6 @@ class DataGenerator:
         # Case 2: config is a string path
         if isinstance(config, str):
             config_inst = Config(config)
-            config_inst.yaml_file = config
             return config_inst
 
         # Case 3: config is already a Config object
