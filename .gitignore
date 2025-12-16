@@ -26,6 +26,7 @@ src/plotting
 results/
 hospital_data/
 dist/
+legacy/
 
 # Data and configuration folders
 data/
