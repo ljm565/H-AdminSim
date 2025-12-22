@@ -27,6 +27,7 @@ results/
 hospital_data/
 dist/
 legacy/
+new/*
 
 # Data and configuration folders
 data/
