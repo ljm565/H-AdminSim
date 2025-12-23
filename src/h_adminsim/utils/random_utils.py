@@ -171,6 +171,7 @@ def generate_random_symptom(department: str,
         registry.SYMPTOM_MAP = json_load(symptom_file_path)
     
     if department in registry.SYMPTOM_MAP:
+        # Ensure that the disease can only be treated in a single medical specialty
         if ensure_unique_department:
             unique_diseases = [dis for dis in registry.SYMPTOM_MAP[department] if len(dis[list(dis.keys())[0]]['department']) == 1]
             if not len(unique_diseases):

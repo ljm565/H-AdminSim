@@ -160,7 +160,7 @@ simulator.run(
 
 &nbsp;
 
-## Core Components 📘
+## Core Components ⚙️
 ### Data synthesis
 ```python
 from h_adminsim.pipeline import DataGenerator

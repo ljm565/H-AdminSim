@@ -50,9 +50,9 @@ class AgentDataBuilder:
                 patient_values['gender'], patient_values['telecom'], patient_values['birthDate'], patient_values['identifier'], patient_values['address']
             preference, symptom_level = patient_values['preference'], patient_values['symptom_level']
             disease = generate_random_symptom(
-                department,
-                symptom_file_path, 
-                patient_values['preference'] == 'doctor'
+                department=department,
+                symptom_file_path=symptom_file_path, 
+                ensure_unique_department='doctor' in patient_values['preference']
             )
             gt_department = disease['department'] if isinstance(disease, dict) else [department]
             gt = {
@@ -64,7 +64,7 @@ class AgentDataBuilder:
                 'address': address,
                 'department': gt_department,
                 'attending_physician': doctor,
-                'valid_from': date if preference == 'date' else 'N/A',
+                'valid_from': date if 'date' in preference else 'N/A',
                 'preference': preference,
                 'symptom_level': symptom_level,
             }
@@ -78,7 +78,7 @@ class AgentDataBuilder:
                 'constraint': {
                     'preference': preference,
                     'attending_physician': doctor,
-                    'valid_from': date if preference == 'date' else 'N/A',
+                    'valid_from': date if 'date' in preference else 'N/A',
                     'symptom_level': symptom_level,
                     'symptom': disease,
                 }

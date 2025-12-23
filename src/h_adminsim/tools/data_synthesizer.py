@@ -203,6 +203,7 @@ class DataSynthesizer:
                             config.hospital_data.preference.type,
                             config.hospital_data.preference.probs
                         )
+                        preference_rank = DataSynthesizer.second_preference_generator(preference)
                         symptom_level = generate_random_code_with_prob(
                             config.hospital_data.symptom.type,
                             config.hospital_data.symptom.probs
@@ -213,7 +214,7 @@ class DataSynthesizer:
                             'attending_physician': doctor,
                             'date': date,
                             'schedule': appointment,
-                            'preference': preference,
+                            'preference': preference_rank,
                             'symptom_level': symptom_level,
                             'gender': generate_random_code('gender'),
                             'telecom': [{
@@ -336,3 +337,26 @@ class DataSynthesizer:
             names = [name for name in generate_random_names(n, first_name_file_path, last_name_file_path)]
         random.shuffle(names)
         return names
+
+
+    @staticmethod
+    def second_preference_generator(preference: str) -> list[str]:
+        """
+        Generate a list of preferences based on the initial preference.
+
+        Args:
+            preference (str): First priority of preference.
+
+        Returns:
+            list[str]: List of preferences including first and second priority.
+        """
+        preference_list = [preference]
+        
+        if preference == 'doctor':
+            second_preference = random.choice(['asap', 'date'])
+            preference_list.append(second_preference)
+        elif preference == 'date':
+            second_preference = random.choice(['asap'])
+            preference_list.append(second_preference)
+
+        return preference_list
