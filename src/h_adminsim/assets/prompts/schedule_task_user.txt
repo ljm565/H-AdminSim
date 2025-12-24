@@ -1,3 +1,5 @@
+# Task B: Appointment Scheduling
+
 Below is information about the hospital's operating hours, patient details, and doctor data including their schedules.
 Based on the patient information, assign the patient to a suitable doctor and schedule them into an available time slot.
 Respond in JSON format only, as shown in the example below.

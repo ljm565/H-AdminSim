@@ -1,0 +1,15 @@
+# Task A: Intent Classification
+
+Based on the patient’s scheduling preference below, choose the most appropriate option from the three candidates.
+You must answer using exactly one of the following keywords only: [Doctor, Date, ASAP]
+Do not provide any explanation or additional text.
+
+
+## Candidates Explanation
+* Doctor: The patient explicitly mentions a specific doctor they want to see. If the patient requests or names a particular doctor, always choose this option.
+* Date: The patient wants to schedule an appointment starting from a specific date or after a certain date, regardless of the doctor. If the patient specifies a date constraint, always choose this option.
+* ASAP: The patient wants the earliest available appointment in the department. The patient does not care about the doctor or the date.
+
+
+## Patient scheduling preference
+Patient: {preference}
