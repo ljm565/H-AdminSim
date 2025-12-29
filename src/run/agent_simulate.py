@@ -106,37 +106,36 @@ def main(args):
             use_vllm=use_vllm,
             vllm_endpoint = config.vllm_url if use_vllm else None
         )
+        use_vllm = False if any(m in config.task_model.lower() for m in ['gpt', 'gemini']) else True
         queue.append(OutpatientFirstIntake(
             patient_model=config.task_model,
             admin_staff_model=config.task_model,
             supervisor_agent=supervisor_agent if config.outpatient_intake.use_supervisor else None,
             intake_max_inference=config.intake_max_inference,
+            patient_vllm_endpoint=config.vllm_url if use_vllm else None,
+            admin_staff_vllm_endpoint=config.vllm_url if use_vllm else None
         ))
         # queue.append(OutpatientIntake(config))
     if 'schedule' in args.type:
-        use_sup_vllm = False if any(m in config.supervisor_model.lower() for m in ['gpt', 'gemini']) else True
+        use_vllm = False if any(m in config.supervisor_model.lower() for m in ['gpt', 'gemini']) else True
         supervisor_agent = SupervisorAgent(
             target_task='first_outpatient_scheduling',
             model=config.supervisor_model,
-            use_vllm=use_sup_vllm,
-            vllm_endpoint = config.vllm_url if use_sup_vllm else None
+            use_vllm=use_vllm,
+            vllm_endpoint = config.vllm_url if use_vllm else None
         )
-        use_admin_vllm = False if any(m in config.task_model.lower() for m in ['gpt', 'gemini']) else True
-        admin_staff_agent = AdminStaffAgent(
-            target_task='first_outpatient_scheduling',
-            model=config.task_model,
-            use_vllm=use_admin_vllm,
-            vllm_endpoint = config.vllm_url if use_admin_vllm else None
-        )
+        use_vllm = False if any(m in config.task_model.lower() for m in ['gpt', 'gemini']) else True
         queue.append(OutpatientFirstScheduling(
             patient_model=config.task_model,
+            admin_staff_model=config.task_model,
             scheduling_strategy=config.schedule_task.scheduling_strategy,
-            admin_staff_agent=admin_staff_agent,
             supervisor_agent=supervisor_agent if config.schedule_task.use_supervisor else None,
             schedule_cancellation_prob=config.schedule_cancellation_prob,
             request_early_schedule_prob=config.request_early_schedule_prob,
             max_feedback_number=config.schedule_task.max_feedback_number,
-            fhir_integration=config.integration_with_fhir
+            fhir_integration=config.integration_with_fhir,
+            patient_vllm_endpoint=config.vllm_url if use_vllm else None,
+            admin_staff_vllm_endpoint=config.vllm_url if use_vllm else None
         ))
 
     # Initialize agent test data

@@ -9,9 +9,9 @@ from decimal import Decimal, getcontext
 from openai import InternalServerError
 from typing import Tuple, Union, Optional
 from google.genai.errors import ServerError
-from patientsim.environment import OPSimulation
 from patientsim import PatientAgent
 from patientsim import AdminStaffAgent as IntakeAdminStaffAgent
+from patientsim.environment import OPSimulation as OPFVIntakeSimulation
 
 from h_adminsim import SupervisorAgent
 from h_adminsim import AdminStaffAgent as SchedulingAdminStaffAgent
@@ -107,6 +107,24 @@ class FirstVisitOutpatientTask:
             )[0]
             return gt_resource
         
+    
+    def _init_task_models(self, model: str, vllm_endpoint: Optional[str] = None) -> Tuple[str, str, bool]:
+        """
+        Initialize the model for the task.
+
+        Args:
+            model (str): The model name.
+            vllm_endpoint (Optional[str], optional): The VLLM endpoint URL. Defaults to None.
+        
+        Returns:
+            Tuple[str, str, bool]: The model name, VLLM endpoint URL, vllm usage flag.
+        """
+        if any(keyword in model.lower() for keyword in ['gemini', 'gpt']):
+            return model, None, False
+        else:
+            assert vllm_endpoint is not None, log('VLLM endpoint must be provided for non-Gemini/GPT models.', 'error')
+            return model, vllm_endpoint, True
+
 
 
 class OutpatientFirstIntake(FirstVisitOutpatientTask):
@@ -116,12 +134,16 @@ class OutpatientFirstIntake(FirstVisitOutpatientTask):
                  supervisor_agent: Optional[SupervisorAgent] = None,
                  intake_max_inference: int = 5,
                  max_retries: int = 8,
-                 admin_staff_last_task_user_prompt_path: Optional[str] = None):
+                 admin_staff_last_task_user_prompt_path: Optional[str] = None,
+                 patient_vllm_endpoint: Optional[str] = None,
+                 admin_staff_vllm_endpoint: Optional[str] = None):
         
         # Initialize variables
         self.name = 'intake'
-        self.patient_model = patient_model
-        self.admin_staff_model = admin_staff_model
+        self.patient_model, self.patient_vllm_endpoint, self.patient_use_vllm \
+            = self._init_task_models(patient_model, patient_vllm_endpoint)
+        self.admin_staff_model, self.admin_staff_vllm_endpoint, self.admin_staff_use_vllm \
+            = self._init_task_models(admin_staff_model, admin_staff_vllm_endpoint)
         self.use_supervisor = True if isinstance(supervisor_agent, SupervisorAgent) else False
         self.supervisor_client = supervisor_agent if self.use_supervisor else None
         task_mechanism = 'Staff + Supervisor' if self.use_supervisor else 'Staff'
@@ -380,6 +402,8 @@ class OutpatientFirstIntake(FirstVisitOutpatientTask):
             'outpatient',
             lang_proficiency_level='B',
             recall_level='no_history' if test_data['constraint']['symptom_level'] == 'simple' else 'high',
+            use_vllm=self.patient_use_vllm,
+            vllm_endpoint=self.patient_vllm_endpoint,
             department=department_candidates,
             name=name,
             birth_date=birth_date,
@@ -396,9 +420,11 @@ class OutpatientFirstIntake(FirstVisitOutpatientTask):
             self.admin_staff_model,
             departments,
             max_inferences=self.max_inferences,
+            use_vllm=self.admin_staff_use_vllm,
+            vllm_endpoint=self.admin_staff_vllm_endpoint,
             temperature=0 if not 'gpt-5' in self.admin_staff_model.lower() else 1
         )
-        environment = OPSimulation(patient_agent, admin_staff_agent, max_inferences=self.max_inferences)
+        environment = OPFVIntakeSimulation(patient_agent, admin_staff_agent, max_inferences=self.max_inferences)
         output = self.run_with_retry(
                 environment.simulate,
                 verbose=False,
@@ -469,29 +495,42 @@ class OutpatientFirstIntake(FirstVisitOutpatientTask):
 
 class OutpatientFirstScheduling(FirstVisitOutpatientTask):
     def __init__(self, 
+                 patient_model: str,
+                 admin_staff_model: str,
                  scheduling_strategy: str,
-                 admin_staff_agent: Optional[SchedulingAdminStaffAgent] = None,
                  supervisor_agent: Optional[SupervisorAgent] = None,
                  schedule_cancellation_prob: float = 0.05,
                  request_early_schedule_prob: float = 0.1,
                  max_feedback_number: int = 5,
+                 preference_rejection_prob: float = 0.3,
+                 preferene_rejection_prob_decay: float = 0.5,
                  fhir_integration: bool = False,
-                 max_retries: int = 8):
+                 max_retries: int = 8,
+                 patient_vllm_endpoint: Optional[str] = None,
+                 admin_staff_vllm_endpoint: Optional[str] = None):
         
         # Initialize variables
         getcontext().prec = 10
         self.name = 'schedule'
+        self.patient_model, self.patient_vllm_endpoint, self.patient_use_vllm \
+            = self._init_task_models(patient_model, patient_vllm_endpoint)
+        self.admin_staff_model, self.admin_staff_vllm_endpoint, self.admin_staff_use_vllm \
+            = self._init_task_models(admin_staff_model, admin_staff_vllm_endpoint)
         
         # Scheduling strategy and feedback mechanism
         self.scheduling_strategy = scheduling_strategy
         assert self.scheduling_strategy in ['llm', 'tool_calling', 'rule'], \
             log('Scheduling strategy must be either "llm", "tool_calling", or "rule".', 'error')
-        if self.scheduling_strategy in ['llm', 'tool_calling']:
-            assert isinstance(admin_staff_agent, SchedulingAdminStaffAgent), \
-                    log('Administrative agent must be required.', 'error')
+        
+        # Initialize scheduling methods
+        self.task_client = SchedulingAdminStaffAgent(
+            target_task='first_outpatient_scheduling',
+            model=self.admin_staff_model,
+            use_vllm=self.admin_staff_use_vllm,
+            vllm_endpoint=self.admin_staff_vllm_endpoint
+        )
         if self.scheduling_strategy == 'llm':
             self.use_supervisor = True if isinstance(supervisor_agent, SupervisorAgent) else False
-            self.task_client = admin_staff_agent
             self.supervisor_client = supervisor_agent
             self.max_feedback_number = max_feedback_number
             feedback_mechanism = 'supervisor agent-based feedback' if self.use_supervisor else 'self-feedback'
@@ -499,7 +538,6 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
             dotenv_path = find_dotenv(usecwd=True)
             load_dotenv(dotenv_path, override=True)
             self.use_supervisor = False
-            self.task_client = admin_staff_agent if self.scheduling_strategy == 'tool_calling' else None
             self.supervisor_client = None
             self.max_feedback_number = None
             feedback_mechanism = None
@@ -510,13 +548,22 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
         # Scheduling parameters
         self.schedule_cancellation_prob = schedule_cancellation_prob
         self.request_early_schedule_prob = request_early_schedule_prob
+        self.preference_rejection_prob = preference_rejection_prob
+        self.preferene_rejection_prob_decay = preferene_rejection_prob_decay
 
         # Others
         self.fhir_integration = fhir_integration
         self.max_retries = max_retries
+        self.patient_system_prompt_path = str(resources.files("h_adminsim.assets.prompts").joinpath('schedule_patient_system.txt'))
+        self.patient_rejected_system_prompt_path = str(resources.files("h_adminsim.assets.prompts").joinpath('schedule_patient_rejected_system.txt'))
         self.tool_calling_system_prompt = txt_load(str(resources.files("h_adminsim.assets.prompts").joinpath('schedule_tool_calling_system.txt'))) \
             if self.scheduling_strategy == 'tool_calling' else None
-        self.preference_phrase = {
+        self.preference_phrase_patient = {
+            'asap': 'You want the earliest available doctor in the department for the outpatient visit.',
+            'doctor': 'You have a preferred doctor for the outpatient visit.',
+            'date': 'You want the earliest available doctor in the department for the outpatient visit, starting from **{date}**.'
+        }
+        self.preference_phrase_staff = {
             'asap': 'The patient wants the earliest available doctor in the department for the outpatient visit.',
             'doctor': 'The patient has a preferred doctor for the outpatient visit.',
             'date': 'The patient wants the earliest available doctor in the department for the outpatient visit, starting from **{date}**.'
@@ -583,6 +630,41 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
             self.token_stats['supervisor_token']['output'].extend(supervisor_token['completion_tokens'])
             if 'reasoning_tokens' in supervisor_token:
                 self.token_stats['supervisor_token']['reasoning'].extend(supervisor_token['reasoning_tokens'])
+
+
+    def __init_patient_agent(self, 
+                             patient_condition: dict,
+                             patient_system_prompt_path: str,
+                             **kwargs) -> PatientAgent:
+        """
+        Initialize patient agent.
+
+        Args:
+            patient_condition (dict): The conditions including name, preference, etc.
+            patient_system_prompt_path (str): The system prompt path for the patient agent.
+
+        Returns:
+            PatientAgent: Initialized patient agent.
+        """
+        preference = patient_condition.get('preference')
+        preference_desc = self.preference_phrase_patient[preference] if preference != 'date' \
+                    else self.preference_phrase_patient[preference].format(date=patient_condition.get('valid_from'))
+        
+        patient_agent = PatientAgent(
+            self.patient_model,
+            'outpatient',
+            lang_proficiency_level='B',
+            system_prompt_path=patient_system_prompt_path,
+            log_verbose=False,
+            additional_patient_conditions={
+                'preference': preference,
+                'preference_desc': preference_desc,
+                'preferred_doctor': patient_condition['preferred_doctor'],
+                **kwargs
+            },
+            temperature=0 if not 'gpt-5' in self.patient_model.lower() else 1
+        )
+        return patient_agent
 
 
     def __extract_department(self, gt: dict, agent_results: dict, doctor_information: dict) -> Tuple[str, bool]:
@@ -1042,9 +1124,9 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
         if self.scheduling_strategy == 'llm':
             while 1:
                 filtered_doctor_information = self.__filter_doctor_schedule(doctor_information, department, environment, True)
-                preference_desc = self.preference_phrase[patient_condition.get('preference')] if patient_condition.get('preference') != 'date' \
-                    else self.preference_phrase[patient_condition.get('preference')].format(date=patient_condition.get('valid_from'))
-                user_prompt = self.task_client.user_prompt_template.format(
+                preference_desc = self.preference_phrase_staff[patient_condition.get('preference')] if patient_condition.get('preference') != 'date' \
+                    else self.preference_phrase_staff[patient_condition.get('preference')].format(date=patient_condition.get('valid_from'))
+                user_prompt = self.task_client.scheduling_user_prompt_template.format(
                     START_HOUR=self._START_HOUR,
                     END_HOUR=self._END_HOUR,
                     TIME_UNIT=self._TIME_UNIT,
@@ -1151,6 +1233,53 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
         return status, status_code, prediction, doctor_information, trial, feedback_msg
     
 
+    def get_intention(self, patient_condition: dict, 
+                      rejected_preference: Optional[str] = None,
+                      rejected_prediction: Optional[dict] = None) -> Tuple[bool, str, str]:
+        if rejected_preference:
+            rejected_preference_desc = self.preference_phrase_staff[rejected_preference] if rejected_preference != 'date' \
+                    else self.preference_phrase_staff[rejected_preference].format(date='a specific date')
+            self.patient_agent = self.__init_patient_agent(
+                patient_condition, 
+                self.patient_rejected_system_prompt_path,
+                rejected_preference=rejected_preference_desc
+            )
+            user_prompt = f"How about this scehdule: {rejected_prediction}"
+        else:
+            self.patient_agent = self.__init_patient_agent(
+                patient_condition, 
+                self.patient_system_prompt_path
+            )
+            user_prompt = 'How would you like to schedule the appointment?'
+        
+        role = f"{colorstr('blue', 'Staff')}"
+        log(f"{role:<25}: {user_prompt}")
+
+        # Patient response
+        response = self.run_with_retry(
+            self.patient_agent,
+            user_prompt,
+            using_multi_turn=False,
+            verbose=False,
+            max_retries=self.max_retries,
+        )
+        role = f"{colorstr('green', 'Patient')} ({patient_condition['preference']})"
+        log(f"{role:<25}: {response}")
+
+        # Intention prediction from response by the staff
+        prediction = self.task_client(
+            self.task_client.intention_user_prompt_template.format(preference=response),
+            False,
+            False
+        )
+        
+        # Evaluate the intention prediction
+        status = patient_condition['preference'].lower() == prediction.lower()
+        status_code = STATUS_CODES['correct'] if status else STATUS_CODES['intention']
+
+        return status, status_code, prediction.lower()
+    
+
     def update_env(self, status: bool, prediction: Union[dict, str], environment, department: Optional[str] = None, test_data: Optional[dict] = None):
         """
         Update the simulation environment with scheduling results and optionally synchronize FHIR resources.
@@ -1219,14 +1348,6 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
         doctor_information = environment.doctor_info_from_fhir() if self.fhir_integration else agent_test_data.get('doctor')
         department, sanity = self.__extract_department(gt, agent_results, doctor_information)
         self.rules = SchedulingRule(self._metadata, environment)
-
-        patient_condition = {
-            'patient': test_data.get('patient'), 
-            'department': department, 
-            'preference': test_data.get('constraint').get('preference'),
-            'preferred_doctor': test_data.get('constraint').get('attending_physician') if test_data.get('constraint').get('preference') == 'doctor' else "Doesn't matter",
-            'valid_from': test_data.get('constraint').get('valid_from')
-        }
         results = self.get_result_dict()
 
         # Append an example of exemplary answer
@@ -1248,14 +1369,53 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
             results['feedback'].append([])
             return results
         
-        # LLM call and compare the validity of the LLM output
-        status, status_code, prediction, doctor_information, trial, feedback_msg = self.scheduling(
-            patient_condition,
-            doctor_information,
-            environment,
-            verbose=verbose,
-        )
+        # Iterate over multiple preferences if exists
+        preferences = test_data.get('constraint').get('preference')
+        preference_reject_prob = 0.0 if len(preferences) <= 1 else self.preference_rejection_prob
+        for i, preference in enumerate(preferences):
+            preferred_doctor = test_data.get('constraint').get('attending_physician') if preference == 'doctor' else "Doesn't matter"
+            patient_condition = {
+                'patient': test_data.get('patient'), 
+                'department': department, 
+                'preference': preference,
+                'preferred_doctor': preferred_doctor,
+                'valid_from': test_data.get('constraint').get('valid_from')
+            }
+        
+            # Get patient's intention
+            status, status_code, prediction = self.get_intention(
+                patient_condition=patient_condition,
+                rejected_preference=None if i == 0 else preferences[i-1],
+                rejected_prediction=None if i == 0 else prediction,
+            )
+            if not status:
+                trial, feedback_msg = list(), list()
+                break
+
+            # Scheduling
+            status, status_code, prediction, doctor_information, trial, feedback_msg = self.scheduling(
+                patient_condition,
+                doctor_information,
+                environment,
+                verbose=verbose,
+            )
+            if not status:
+                break
+
+            # Preference rejection logic
+            ## Rejection case
+            if random.random() < preference_reject_prob and i != len(preferences) - 1:
+                preference_reject_prob *= self.preferene_rejection_prob_decay
+            ## Non-rejection case
+            else:
+                break
+
         if verbose:
+            if status:
+                role = f"{colorstr('blue', 'Staff')}"
+                log(f"{role:<25}: How about this scehdule: {prediction}")
+                role = f"{colorstr('green', 'Patient')} ({patient_condition['preference']})"
+                log(f"{role:<25}: Thank you.")
             log(f'Final Status: {status_code}\n\n\n')   
 
         # Update the simulation environment and the doctor information in the agent test data

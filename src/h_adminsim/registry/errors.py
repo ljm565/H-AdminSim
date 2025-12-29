@@ -16,6 +16,7 @@ STATUS_CODES = {
         'asap': 'not earliest schedule',
         'date': 'not valid date',
     },
+    'intention': 'incorrect intention',
     # 'workload': 'workload balancing',
     'preceding': 'preceding task failed',
     'correct': 'pass',
