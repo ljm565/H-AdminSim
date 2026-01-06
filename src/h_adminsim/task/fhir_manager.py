@@ -1,4 +1,6 @@
 import requests
+from urllib.parse import urlencode
+from typing import Optional
 
 from h_adminsim.utils import log
 
@@ -9,7 +11,17 @@ class FHIRManager:
         self.fhir_url = fhir_url
         
     
-    def __logging(self, response, verbose=True):
+    def __logging(self, response: requests.Response, verbose=True) -> Optional[requests.Response]:
+        """
+        Log the response status code and content.
+
+        Args:
+            response (requests.Response): The HTTP response object.
+            verbose (bool, optional): If True, log details. Defaults to True.
+
+        Returns:
+            Optional[requests.Response]: The response object if JSON parsing is successful, else None.
+        """
         if  200 <= response.status_code < 300:
             if verbose:
                 log(f'Status code: {response.status_code}', color=True)
@@ -28,7 +40,23 @@ class FHIRManager:
         return response
 
 
-    def create(self, resource_type: str, resource_data: dict, headers=None, verbose=True):
+    def create(self, 
+               resource_type: str, 
+               resource_data: dict, 
+               headers: Optional[dict] = None, 
+               verbose: bool = True) -> Optional[requests.Response]:
+        """
+        Create a FHIR resource of the specified type.
+
+        Args:
+            resource_type (str): FHIR resource type (e.g., "Patient", "PractitionerRole").
+            resource_data (dict): FHIR resource data as a dictionary.
+            headers (Optional[dict], optional): HTTP headers to use. Defaults to None.
+            verbose (bool, optional): If True, log details. Defaults to True.
+
+        Returns:
+            Optional[requests.Response]: The HTTP response object if JSON parsing is successful, else None.
+        """
         _id = resource_data.get('id')
         fhir_url = f'{self.fhir_url}/{resource_type}/{_id}'
         response = requests.put(
@@ -41,7 +69,23 @@ class FHIRManager:
         return self.__logging(response, verbose)
     
     
-    def read(self, resource_type: str, id: str, headers=None, verbose=True):
+    def read(self, 
+             resource_type: str, 
+             id: str, 
+             headers: Optional[dict] = None, 
+             verbose: bool = True) -> Optional[requests.Response]:
+        """
+        Read a FHIR resource of the specified type and ID.
+
+        Args:
+            resource_type (str): FHIR resource type (e.g., "Patient", "PractitionerRole").
+            id (str): The ID of the FHIR resource to read.
+            headers (Optional[dict], optional): HTTP headers to use. Defaults to None.
+            verbose (bool, optional): If True, log details. Defaults to True.
+
+        Returns:
+            Optional[requests.Response]: The HTTP response object if JSON parsing is successful, else None.
+        """
         fhir_url = f'{self.fhir_url}/{resource_type}/{id}'
         response = requests.get(
             fhir_url,
@@ -52,7 +96,25 @@ class FHIRManager:
         return self.__logging(response, verbose)
     
 
-    def update(self, resource_type: str, id: str, resource_data, headers=None, verbose=True):
+    def update(self, 
+               resource_type: str, 
+               id: str, 
+               resource_data: dict, 
+               headers: Optional[dict] = None,
+               verbose: bool = True) -> Optional[requests.Response]:
+        """
+        Update a FHIR resource of the specified type and ID.
+
+        Args:
+            resource_type (str): FHIR resource type (e.g., "Patient", "PractitionerRole").
+            id (str): The ID of the FHIR resource to update.
+            resource_data (dict): FHIR resource data as a dictionary.
+            headers (Optional[dict], optional): HTTP headers to use. Defaults to None.
+            verbose (bool, optional): If True, log details. Defaults to True.
+
+        Returns:
+            Optional[requests.Response]: _description_
+        """
         fhir_url = f'{self.fhir_url}/{resource_type}/{id}'
         response = requests.put(
             fhir_url,
@@ -74,28 +136,42 @@ class FHIRManager:
         return self.__logging(response, verbose)
 
 
-    def read_all(self, resource_type: str, headers=None, count=100, verbose=True):
+    def read_all(self,
+                 resource_type: str,
+                 headers: Optional[dict] = None,
+                 count: int = 100,
+                 verbose: bool = True,
+                 params: Optional[dict] = None) -> list[dict]:
         """
-        Read all resources of a given resource type using FHIR search.
+        Read all resources of a given resource type using FHIR search with optional filtering.
 
         Args:
-            resource_type (str): The type of the FHIR resource (e.g., "Patient").
+            resource_type (str): FHIR resource type (e.g., "PractitionerRole").
             headers (dict, optional): HTTP headers to use.
             count (int): Number of resources to fetch per page (default: 100).
-            verbose (bool): If True, log each deletion response. Defaults to True.
+            verbose (bool): If True, log each response. Defaults to True.
+            params (dict, optional): FHIR search parameters (e.g., {"specialty": "IMALL-2"}).
 
         Returns:
-            list: List of resource entries.
+            list[dict]: List of bundle entry dicts.
         """
         all_entries = []
-        url = f'{self.fhir_url}/{resource_type}?_count={count}'
         headers = {'Accept': 'application/fhir+json'} if headers is None else headers
+
+        # Build first page URL with params
+        q = {'_count': count}
+        if params:
+            q.update({k: v for k, v in params.items() if v is not None})
+        url = f"{self.fhir_url}/{resource_type}?{urlencode(q, doseq=True)}"
 
         while url:
             response = requests.get(url, headers=headers)
-            bundle = response.json()
             self.__logging(response, verbose)
-            
+            try:
+                bundle = response.json()
+            except Exception:
+                break
+
             if bundle.get('resourceType') != 'Bundle' or 'entry' not in bundle:
                 break
 
@@ -103,7 +179,7 @@ class FHIRManager:
 
             # Check for next link (pagination)
             next_link = next(
-                (link['url'] for link in bundle.get('link', []) if link['relation'] == 'next'),
+                (link.get('url') for link in bundle.get('link', []) if link.get('relation') == 'next'),
                 None
             )
             url = next_link  # Continue if next page exists, else break
@@ -111,7 +187,7 @@ class FHIRManager:
         return all_entries
     
 
-    def delete_all(self, entry: list[dict], verbose=True):
+    def delete_all(self, entry: list[dict], verbose: bool = True):
         """
         Delete all FHIR resources from a given list of resource entries.
 
