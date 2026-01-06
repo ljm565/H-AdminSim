@@ -1,6 +1,6 @@
 import requests
-from urllib.parse import urlencode
 from typing import Optional
+from urllib.parse import urlencode
 
 from h_adminsim.utils import log
 
