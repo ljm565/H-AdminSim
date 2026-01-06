@@ -154,13 +154,8 @@ class DataGenerator:
         Upload synthesized FHIR resources to the specified FHIR server.
 
         Args:
-            fhir_data_dir (str):
-                Directory containing FHIR resource JSON files (e.g., practitioner,
-                practitionerrole, schedule, slot).
-            fhir_url (Optional[str], optional):
-                Base URL of the FHIR server. If not provided, the instance's default
-                FHIR URL is used.
-
+            fhir_data_dir (str): Directory containing FHIR resource JSON files (e.g., practitioner, practitionerrole, schedule, slot).
+            fhir_url (Optional[str], optional): Base URL of the FHIR server. If not provided, the instance's default FHIR URL is used.
         """
         # Initialize FHIR URL and manager
         if not fhir_url:

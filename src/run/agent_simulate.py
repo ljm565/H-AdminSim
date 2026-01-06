@@ -7,9 +7,9 @@ from typing import Tuple
 from argparse import ArgumentParser
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
-from h_adminsim import AdminStaffAgent, SupervisorAgent
-from h_adminsim.task.fhir_manager import FHIRManager
+from h_adminsim import SupervisorAgent
 from h_adminsim.task.agent_task import *
+from h_adminsim.task.fhir_manager import FHIRManager
 from h_adminsim.environment.hospital import HospitalEnvironment
 from h_adminsim.utils import log
 from h_adminsim.utils.filesys_utils import json_load, json_save_fast, yaml_save, get_files
