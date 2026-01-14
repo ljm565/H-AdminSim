@@ -2,6 +2,7 @@ from copy import deepcopy
 from decimal import Decimal
 from typing import Tuple, Union
 from langchain.tools import tool
+from langchain.agents import AgentExecutor
 
 from h_adminsim.utils.fhir_utils import *
 from h_adminsim.utils.common_utils import (
@@ -13,6 +14,7 @@ from h_adminsim.utils.common_utils import (
     iso_to_date,
     iso_to_hour,
 )
+from h_adminsim.utils import log
 
 
 
@@ -178,12 +180,13 @@ class SchedulingRule:
         return candidate_schedules
     
 
-    def find_earliest_time(self, schedules: list[str], delimiter: str = ';;;') -> dict:
+    def find_earliest_time(self, schedules: list[str], current_time: str, delimiter: str = ';;;') -> dict:
         """
         Find the earliest schedule from the list of schedules.
 
         Args:
             schedules (list[str]): A list of schedules in the format "doctor;;;iso_time".
+            current_time (str): Current time of the simulation environment.
             delimiter (str, optional): The delimiter used to split doctor and iso_time. Defaults to ';;;'.
 
         Returns:
@@ -193,6 +196,10 @@ class SchedulingRule:
 
         for schedule in schedules:
             doctor, iso_time = schedule.split(delimiter)
+
+            # skip when the slot is earlier than the current time
+            if not compare_iso_time(iso_time, current_time):
+                continue
 
             if not len(earliest_doctor):
                 earliest_doctor.append(doctor) 
@@ -215,6 +222,7 @@ class SchedulingRule:
     def scheduling_rule(self,
                         patient_condition: dict, 
                         doctor_information: dict, 
+                        current_time: str,
                         reschedule_flag: bool = False, 
                         verbose: bool = False) -> Tuple[bool, str, Union[str, dict], dict, list[str]]:
         """
@@ -224,6 +232,7 @@ class SchedulingRule:
             patient_condition (dict): The conditions including name, preference, etc.
             doctor_information (dict): A dictionary containing information about the doctor(s) involved,
                                        including availability and other relevant details.
+            current_time (str): Current time of the simulation environment.        
             reschedule_flag (bool, optional): Whether this process is rescheduling or not. Defaults to False.
             verbose (bool, optional): Whether logging the each result or not. Defaults to False.
 
@@ -258,7 +267,7 @@ class SchedulingRule:
             elif len(schedule2):
                 schedule = list(schedule2)
             
-        schedule = self.find_earliest_time(schedule)
+        schedule = self.find_earliest_time(schedule, current_time)
         
         doctor = schedule['doctor'][0]
         duration = filtered_doctor_information['doctor'][doctor]['outpatient_duration']
@@ -277,6 +286,10 @@ def create_tools(rule: SchedulingRule, filtered_doctor_info: dict) -> list[tool]
         Args:
             preferred_doctor: Name of the preferred doctor
         """
+        log(f'[TOOL CALL] physician_filter_tool | preferred_doctor={preferred_doctor}', color=True)
+        prefix = 'Dr.'
+        if prefix not in preferred_doctor:
+            preferred_doctor = f'{prefix} {preferred_doctor}'
         result = rule.physician_filter(filtered_doctor_info, preferred_doctor)
         return list(result)
 
@@ -287,12 +300,14 @@ def create_tools(rule: SchedulingRule, filtered_doctor_info: dict) -> list[tool]
         Args:
             valid_date: Date in YYYY-MM-DD format
         """
+        log(f'[TOOL CALL] date_filter_tool | valid_date={valid_date}', color=True)
         result = rule.date_filter(filtered_doctor_info, valid_date)
         return list(result)
 
     @tool
     def no_filter_tool() -> list:
         """Return all available schedules without filtering."""
+        log(f'[TOOL CALL] no_filter_tool', color=True)
         result = rule.no_filter(filtered_doctor_info)
         return list(result)
 
@@ -300,53 +315,36 @@ def create_tools(rule: SchedulingRule, filtered_doctor_info: dict) -> list[tool]
 
 
 
-def scheduling_tool_calling(client, rule: SchedulingRule, patient_condition: dict, doctor_information: dict) -> dict:
+def scheduling_tool_calling(client: AgentExecutor, 
+                            rule: SchedulingRule, 
+                            known_condition: dict, 
+                            doctor_information: dict,
+                            current_time: str) -> dict:
     """
     Make an appointment using tool-calling agent.
 
     Args:
         client (AgentExecutor): The agent executor to handle tool calls.
         rule (SchedulingRule): The scheduling rule instance.
-        patient_condition (dict): The conditions including name, preference, etc.
+        known_condition (dict): Patient conditions known to the staff.
         doctor_information (dict): A dictionary containing information about the doctor(s) involved,
                                    including availability and other relevant details.
+        current_time (str): Current time of the simulation environment.
     
     Returns:
         dict: A dictionary containing the scheduled doctor and their corresponding schedule.
     """
-    schedule1, schedule2 = list(), list()
-    department = patient_condition['department']
-    preference = patient_condition['preference'] if isinstance(patient_condition['preference'], list) else [patient_condition['preference']]
-    preferred_doctor = patient_condition['preferred_doctor']
-    valid_date = patient_condition['valid_from']
-    filtered_doctor_information = rule.filter_doctor_schedule(doctor_information, department)
+    department = known_condition['department']
+    preference = known_condition['patient_intention']
 
-    basic_schedule = client.invoke({
-        'input': f"I don't have any preferences, just want the earliest time."
+    # Tool calling for candidate slots and find the earliest one
+    schedule = client.invoke({
+        'input': preference
     })['intermediate_steps'][0][1]
+    schedule = rule.find_earliest_time(schedule, current_time)
     
-    if 'doctor' in preference:
-        schedule1 = client.invoke({
-            'input': f"I need to schedule an appointment. Preferred physician: {preferred_doctor}"
-        })['intermediate_steps'][0][1]
-    
-    if 'date' in preference:
-        schedule2 = client.invoke({
-            'input': f"I need to schedule an appointment. Preferred date: From {valid_date}"
-        })['intermediate_steps'][0][1]
-    
-    if not (len(schedule1) or len(schedule2)):
-            schedule = basic_schedule
-    else:
-        if len(schedule1) and len(schedule2):
-            schedule = list(set(schedule1).intersection(set(schedule2)))
-        elif len(schedule1):
-            schedule = list(schedule1)
-        elif len(schedule2):
-            schedule = list(schedule2)
-    
-    schedule = rule.find_earliest_time(schedule)
-    
+    # Post-processing
+    filtered_doctor_information = rule.filter_doctor_schedule(doctor_information, department)
     doctor = schedule['doctor'][0]
     duration = filtered_doctor_information['doctor'][doctor]['outpatient_duration']
     date, st_hour = iso_to_date(schedule['schedule'][0]), iso_to_hour(schedule['schedule'][0])
