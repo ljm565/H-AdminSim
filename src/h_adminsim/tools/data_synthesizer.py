@@ -356,7 +356,10 @@ class DataSynthesizer:
             second_preference = random.choice(['asap', 'date'])
             preference_list.append(second_preference)
         elif preference == 'date':
-            second_preference = random.choice(['asap'])
+            second_preference = random.choice(['asap', 'doctor'])
+            preference_list.append(second_preference)
+        elif preference == 'asap':
+            second_preference = random.choice(['date', 'doctor'])
             preference_list.append(second_preference)
 
         return preference_list
