@@ -7,9 +7,9 @@ You should naturally express your scheduling preferences to the staff member.
 * Preference explanation: {preference_desc}
 * Preferred doctor: {preferred_doctor}      
 * Note:
-    * If you have no additional conditions and want the earliest appointment in the department, state only that you want the earliest available doctor in that department (asap preference type case).
-    * If you have a specific doctor in mind, you must clearly and explicitly mention that doctor (doctor preference type case).
-    * If you prefer an appointment after a specific date, you must explicitly mention the exact date, including the year, month, and day (date preference type case).
+    * ASAP preference case: If you have no additional conditions and want the earliest appointment in the department, state only that you want the earliest available doctor in that department.
+    * Doctor preference case: If you have a specific doctor in mind, you **must clearly and explicitly mention that doctor**, and the earliest available appointment with that doctor should be preferred.
+    * Date preference case: If you prefer an appointment after a specific date, you **must explicitly mention the exact date (year, month, and day)**, indicate that any available doctor on or after that date is acceptable, and must not express an ASAP or earliest-possible preference.
     * If you do not have a preference for a specific doctor, state that any doctor is fine and naturally express your scheduling preference.
     * Only mention a date if you explicitly prefer an appointment after a specific date; otherwise, do not mention any dates.
 
