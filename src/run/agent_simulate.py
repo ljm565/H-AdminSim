@@ -117,22 +117,13 @@ def main(args):
         ))
         # queue.append(OutpatientIntake(config))
     if 'schedule' in args.type:
-        use_vllm = False if any(m in config.supervisor_model.lower() for m in ['gpt', 'gemini']) else True
-        supervisor_agent = SupervisorAgent(
-            target_task='first_outpatient_scheduling',
-            model=config.supervisor_model,
-            use_vllm=use_vllm,
-            vllm_endpoint = config.vllm_url if use_vllm else None
-        )
         use_vllm = False if any(m in config.task_model.lower() for m in ['gpt', 'gemini']) else True
         queue.append(OutpatientFirstScheduling(
             patient_model=config.task_model,
             admin_staff_model=config.task_model,
             scheduling_strategy=config.schedule_task.scheduling_strategy,
-            supervisor_agent=supervisor_agent if config.schedule_task.use_supervisor else None,
             schedule_cancellation_prob=config.schedule_cancellation_prob,
             request_early_schedule_prob=config.request_early_schedule_prob,
-            max_feedback_number=config.schedule_task.max_feedback_number,
             fhir_integration=config.integration_with_fhir,
             patient_vllm_endpoint=config.vllm_url if use_vllm else None,
             admin_staff_vllm_endpoint=config.vllm_url if use_vllm else None
@@ -178,7 +169,7 @@ def main(args):
                     dialogs = result.pop('dialog')
 
                     # Append a single result 
-                    agent_results.setdefault(task.name, {'gt': [], 'pred': [], 'status': [], 'status_code': [], 'trial': [], 'feedback': []})
+                    agent_results.setdefault(task.name, {'gt': [], 'pred': [], 'status': [], 'status_code': [], 'trial': []})
                     for k in result:
                         agent_results[task.name][k] += result[k]
                     

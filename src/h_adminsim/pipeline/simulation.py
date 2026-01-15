@@ -197,7 +197,7 @@ class Simulator:
                         dialogs = result.pop('dialog')
 
                         # Append a single result 
-                        agent_results.setdefault(task.name, {'gt': [], 'pred': [], 'status': [], 'status_code': [], 'trial': [], 'feedback': []})
+                        agent_results.setdefault(task.name, {'gt': [], 'pred': [], 'status': [], 'status_code': [], 'trial': []})
                         for k in result:
                             agent_results[task.name][k] += result[k]
                         

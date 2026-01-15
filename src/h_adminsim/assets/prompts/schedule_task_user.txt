@@ -57,11 +57,3 @@ Example 2:
 ```json
 {{"schedule": {{"Dr. Willard Wittmann": {{"date": "2024-12-10", "start": 13, "end": 14.5}}}}}}
 ```
-
-
-## History of your incorrect responses and errors:
-{PREV_ANSWER}
-NOTE: You **must** never respond with the incorrect result(s) above again.
-
-## Feedback on your most recent incorrect answer in the history:
-{FEEDBACK}
