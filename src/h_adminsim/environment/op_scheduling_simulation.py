@@ -253,6 +253,8 @@ class OPScehdulingSimulation:
                  patient_kwargs: dict = {},
                  staff_kwargs: dict = {},
                  **kwargs):
+        # TODO: Docstring and token stats
+
         # Initialize agents
         self._init_agents(verbose=verbose)
         
@@ -262,7 +264,7 @@ class OPScehdulingSimulation:
 
         # Start conversation
         staff_greet = self.admin_staff_agent.staff_greet
-        dialog_history = [{"role": "Staff", "content": staff_greet}]
+        self.dialog_history = [{"role": "Staff", "content": staff_greet}]
         role = f"{colorstr('blue', 'Staff')}"
         log(f"{role:<25}: {staff_greet}")
 
@@ -279,12 +281,12 @@ class OPScehdulingSimulation:
             # Obtain response from patient
             patient_kwargs.update(kwargs)
             patient_response = self.patient_agent(
-                dialog_history[-1]["content"],
+                self.dialog_history[-1]["content"],
                 using_multi_turn=True,
                 verbose=False,
                 **patient_kwargs,
             )
-            dialog_history.append({"role": "Patient", "content": patient_response})
+            self.dialog_history.append({"role": "Patient", "content": patient_response})
             role = f"{colorstr('green', 'Patient')} ({gt_patient_condition['preference']})"
             log(f"{role:<25}: {patient_response}")
             
@@ -311,4 +313,5 @@ class OPScehdulingSimulation:
             else:
                 role = f"{colorstr('green', 'Patient')} ({gt_data[i]['preference']})"
                 log(f"{role:<25}: Thank you.")
+                log("Simulation completed.", color=True)
                 break
