@@ -796,7 +796,8 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
                         doctor_information: dict, 
                         environment: HospitalEnvironment, 
                         idx: Optional[int] = None, 
-                        verbose: bool = False) -> Optional[Tuple[int, int, bool, str, dict]]:
+                        verbose: bool = False,
+                        simulation_base: bool = True) -> Optional[Tuple[int, int, bool, str, dict]]:
         """
         Cancel a doctor's scheduled appointment.
 
@@ -806,6 +807,7 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
             environment (HospitalEnvironment): Hospital environment.
             idx (int, optional): Specific patient schedule index.
             verbose (bool, optional): Whether logging the each result or not. Defaults to False.
+            simulation_base (bool, optional): Whether to perform cancellation via simulation. Defaults to True.
 
         Returns:
             Optional[Tuple[int, int, bool, str, dict]]: 
@@ -815,7 +817,7 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
                 - A string describing the cancellation status.
                 - Updated doctor information with the cancelled schedule removed.
         """
-        if not idx:
+        if idx is None:
             candidate_idx = [i for i, schedule in enumerate(environment.patient_schedules) if schedule['status'] == 'scheduled']
             idx = random.choice(candidate_idx) if len(candidate_idx) else -1
 
@@ -825,23 +827,28 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
             schedule_list = doctor_information[doctor]['schedule'][date]
             
             # Initialize simulation environment
-            sim_environment = self._init_simulation(
-                system_prompt_path=self.cancel_patient_system_prompt_path,
-                environment=environment,
-                additional_patient_conditions={
-                    'patient_name': cancelled_schedule['patient'],
-                    'doctor_name': cancelled_schedule['attending_physician'],
-                    'date': date,
-                    'start_time': hour_to_hhmmss(time[0])
-                }
-            )
-            pred_index = sim_environment.canceling_simulate(
-                patient_schedules=environment.patient_schedules,
-                verbose=verbose,
-                max_inferences=self.max_inferences,
-            )
+            if simulation_base:
+                sim_environment = self._init_simulation(
+                    system_prompt_path=self.cancel_patient_system_prompt_path,
+                    environment=environment,
+                    additional_patient_conditions={
+                        'patient_name': cancelled_schedule['patient'],
+                        'doctor_name': cancelled_schedule['attending_physician'],
+                        'date': date,
+                        'start_time': hour_to_hhmmss(time[0])
+                    }
+                )
+                pred_index = self.run_with_retry(
+                    sim_environment.canceling_simulate,
+                    patient_schedules=environment.patient_schedules,
+                    verbose=verbose,
+                    max_inferences=self.max_inferences,
+                    max_retries=self.max_retries,
+                )
+            else:
+                pred_index = idx
 
-            if idx == pred_index:
+            if not simulation_base or (simulation_base and idx == pred_index):
                 # Remove from doctor_information
                 schedule_list.remove(time)
                 
@@ -858,7 +865,7 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
                 return idx, pred_index, True, STATUS_CODES['correct'], doctor_information
             
             else:
-                return idx, pred_index, True, STATUS_CODES['cancel'], doctor_information
+                return idx, pred_index, False, STATUS_CODES['cancel'], doctor_information
         
         return None
     

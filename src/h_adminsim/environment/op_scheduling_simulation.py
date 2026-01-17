@@ -82,7 +82,7 @@ class OPScehdulingSimulation:
         Args:
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
         """
-        self.patient_agent.client.reset_history(verbose=verbose)
+        self.patient_agent.reset_history(verbose=verbose)
         self.admin_staff_agent.reset_history(verbose=verbose)
 
 
