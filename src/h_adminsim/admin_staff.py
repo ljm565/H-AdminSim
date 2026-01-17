@@ -2,8 +2,8 @@ import os
 from importlib import resources
 from typing import Optional, Tuple
 from langchain_openai import ChatOpenAI
-from langchain.prompts.chat import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.agents import (
     AgentExecutor,
     create_openai_tools_agent, 
@@ -62,6 +62,7 @@ class AdminStaffAgent:
 
         self.random_seed = kwargs.get('random_seed', None)
         self.temperature = kwargs.get('temperature', 0.2)   # For various responses. If you want deterministic responses, set it to 0.
+        self.general_staff_greet = kwargs.get('general_staff_greet', "How can I help you?")
         self.staff_greet = kwargs.get('staff_greet', "How would you like to schedule the appointment?")
         self.staff_suggestion = kwargs.get('staff_suggestion', "How about this schedule: {schedule}")
         
@@ -84,7 +85,6 @@ class AdminStaffAgent:
                                                Defaults to None.
             use_vllm (bool): Whether to use vLLM client.
             vllm_endpoint (Optional[str], optional): Path to the vLLM server. Defaults to None.
-            reasoning_effort (str, optional): Reasoning effort level for the model. Defaults to 'low'.
 
         Raises:
             ValueError: If the specified model is not supported.
@@ -172,20 +172,25 @@ class AdminStaffAgent:
         self.client.reset_history(verbose=verbose)
 
 
-    def build_agent(self, rule: SchedulingRule, doctor_info: dict) -> AgentExecutor:
+    def build_agent(self, 
+                    rule: SchedulingRule, 
+                    doctor_info: Optional[dict] = None,
+                    patient_schedule_list: Optional[list[dict]] = None) -> AgentExecutor:
         """
         Build a LangChain agent with scheduling tools.
 
         Args:
             rule (SchedulingRule): An instance of SchedulingRule containing scheduling logic.
-            doctor_info (dict): A dictionary containing information about doctors.
+            doctor_info (Optional[dict], optional): A dictionary containing information about doctors. Defaults to None.
+            patient_schedule_list (Optional[list[dict]], optional): A list of the patient's scheduled appointments. Defaults to None.
 
         Returns:
             AgentExecutor: A LangChain agent executor with the scheduling tools.
         """
-        tools = create_tools(rule, doctor_info)
+        tools = create_tools(rule, doctor_info, patient_schedule_list)
         prompt = ChatPromptTemplate.from_messages([
             ("system", self.tool_calling_prompt),
+            MessagesPlaceholder("chat_history"),
             ("user", "{input}"),
             ("assistant", "{agent_scratchpad}"),
         ])

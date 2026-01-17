@@ -17,6 +17,7 @@ STATUS_CODES = {
         'date': 'not valid date',
     },
     'tool': 'wrong tool selection or wrong type of argument',
+    'cancel': 'fail to cancellation',
     # 'workload': 'workload balancing',
     'preceding': 'preceding task failed',
     'correct': 'pass',

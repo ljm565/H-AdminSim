@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Optional
 from langchain.tools import tool
 from langchain.agents import AgentExecutor
 
@@ -22,9 +23,10 @@ class SchedulingRule:
         self._START_HOUR = metadata.get('time').get('start_hour')
         self._END_HOUR = metadata.get('time').get('end_hour')
         self._TIME_UNIT = metadata.get('time').get('interval_hour')
+        self.current_time = environment.current_time
 
 
-    def physician_filter(self, filtered_doctor_information: dict, preferred_doctor: str) -> set:
+    def physician_filter(self, filtered_doctor_information: dict, preferred_doctor: str) -> list[str]:
         """
         Filter schedules by preferred doctor.
 
@@ -33,7 +35,7 @@ class SchedulingRule:
             preferred_doctor (str): The identifier of the preferred doctor.
 
         Returns:
-            set: A set of candidate schedules that match the preferred doctor.
+            list[str]: A set of candidate schedules that match the preferred doctor.
         """
         candidate_schedules = set()
         schedule_info = filtered_doctor_information['doctor'][preferred_doctor]
@@ -59,10 +61,10 @@ class SchedulingRule:
                         if compare_iso_time(free_max_st_iso, self._current_time):
                             candidate_schedules.add(f"{preferred_doctor};;;{free_max_st_iso}")
 
-        return candidate_schedules
+        return list(candidate_schedules)
     
 
-    def date_filter(self, filtered_doctor_information: dict, valid_date: str) -> set:
+    def date_filter(self, filtered_doctor_information: dict, valid_date: str) -> list[str]:
         """
         Filter schedules by valid date.
 
@@ -71,7 +73,7 @@ class SchedulingRule:
             valid_date (str): The valid date from which to consider schedules.
 
         Returns:
-            set: A set of candidate schedules that are on or after the valid date.
+            list[str]: A set of candidate schedules that are on or after the valid date.
         """
         candidate_schedules = set()
         schedule_infos = filtered_doctor_information['doctor']
@@ -100,10 +102,10 @@ class SchedulingRule:
                                 if compare_iso_time(free_max_st_iso, self._current_time):
                                     candidate_schedules.add(f"{doctor};;;{free_max_st_iso}")
 
-        return candidate_schedules
+        return list(candidate_schedules)
     
 
-    def no_filter(self, filtered_doctor_information: dict) -> set:
+    def no_filter(self, filtered_doctor_information: dict) -> list[str]:
         """
         Get all candidate schedules without any filtering.
 
@@ -111,7 +113,7 @@ class SchedulingRule:
             filtered_doctor_information (dict): Filtered doctor information after department filtering.
 
         Returns:
-            set: A set of all candidate schedules without any filtering.
+            list[str]: A set of all candidate schedules without any filtering.
         """
         candidate_schedules = set()
         schedule_infos = filtered_doctor_information['doctor']
@@ -139,16 +141,37 @@ class SchedulingRule:
                             if compare_iso_time(free_max_st_iso, self._current_time):
                                 candidate_schedules.add(f"{doctor};;;{free_max_st_iso}")
 
-        return candidate_schedules
+        return list(candidate_schedules)
     
 
-    def find_earliest_time(self, schedules: list[str], current_time: str, delimiter: str = ';;;') -> dict:
+    def cancel(self, patient_schedule_list: list[dict], patient_name: str, doctor_name: str, date: str) -> int:
+        """
+        Identify the index of the appointment to be cancelled from the patient's schedule list.
+
+        Args:
+            patient_schedule_list (list[dict]): A list of the patient's scheduled appointments. 
+                                                Each item contains appointment details such as doctor name, date, and time.
+            patient_name (str): Name of the patient requesting the cancellation.
+            doctor_name (str): Name of the doctor for the appointment to be cancelled.
+            date (str): Date of the appointment to be cancelled (YYYY-MM-DD).
+
+        Returns:
+            int: The index of the matching appointment(s) in the schedule list.
+        """
+        for idx, patient_schedule in enumerate(patient_schedule_list):
+            if patient_schedule['patient'].lower() == patient_name.lower() and \
+                patient_schedule['attending_physician'].lower() == doctor_name.lower() \
+                    and patient_schedule['date'] == date:
+                return idx
+        return -1
+
+
+    def find_earliest_time(self, schedules: list[str], delimiter: str = ';;;') -> dict:
         """
         Find the earliest schedule from the list of schedules.
 
         Args:
             schedules (list[str]): A list of schedules in the format "doctor;;;iso_time".
-            current_time (str): Current time of the simulation environment.
             delimiter (str, optional): The delimiter used to split doctor and iso_time. Defaults to ';;;'.
 
         Returns:
@@ -160,7 +183,7 @@ class SchedulingRule:
             doctor, iso_time = schedule.split(delimiter)
 
             # skip when the slot is earlier than the current time
-            if not compare_iso_time(iso_time, current_time):
+            if not compare_iso_time(iso_time, self.current_time):
                 continue
 
             if not len(earliest_doctor):
@@ -181,66 +204,103 @@ class SchedulingRule:
 
 
 
-def create_tools(rule: SchedulingRule, filtered_doctor_info: dict) -> list[tool]:
+def create_tools(rule: SchedulingRule, 
+                 filtered_doctor_info: dict,
+                 patient_schedule_list: Optional[list[dict]] = None) -> list[tool]:
     @tool
-    def physician_filter_tool(preferred_doctor: str) -> list:
-        """Return available schedules for preferred doctor.
+    def physician_filter_tool(preferred_doctor: str) -> str:
+        """
+        Return the earliest available schedule for a preferred doctor.
         
         Args:
             preferred_doctor: Name of the preferred doctor
+
+        Returns:
+            str: The earliest physician-filtered time slot.
         """
         log(f'[TOOL CALL] physician_filter_tool | preferred_doctor={preferred_doctor}', color=True)
         prefix = 'Dr.'
         if prefix not in preferred_doctor:
             preferred_doctor = f'{prefix} {preferred_doctor}'
-        result = rule.physician_filter(filtered_doctor_info, preferred_doctor)
-        return list(result)
+        schedules = rule.physician_filter(filtered_doctor_info, preferred_doctor)
+        schedule = rule.find_earliest_time(schedules)
+        return schedule
 
     @tool
-    def date_filter_tool(valid_date: str) -> list:
-        """Return schedules for a preferred date.
+    def date_filter_tool(valid_date: str) -> str:
+        """
+        Return the earliest available schedule after a specific date.
         
         Args:
-            valid_date: Date in YYYY-MM-DD format
+            valid_date: Date in YYYY-MM-DD format.
+        
+        Returns:
+            str: The earliest date-filtered time slot.
         """
         log(f'[TOOL CALL] date_filter_tool | valid_date={valid_date}', color=True)
-        result = rule.date_filter(filtered_doctor_info, valid_date)
-        return list(result)
+        schedules = rule.date_filter(filtered_doctor_info, valid_date)
+        schedule = rule.find_earliest_time(schedules)
+        return schedule
 
     @tool
-    def no_filter_tool() -> list:
-        """Return all available schedules without filtering."""
-        log(f'[TOOL CALL] no_filter_tool', color=True)
-        result = rule.no_filter(filtered_doctor_info)
-        return list(result)
+    def no_filter_tool() -> str:
+        """
+        Return the earliest available schedule without filtering.
 
-    return [physician_filter_tool, date_filter_tool, no_filter_tool]
+        Returns:
+            str: The earliest time slot.
+        """
+        log(f'[TOOL CALL] no_filter_tool', color=True)
+        schedules = rule.no_filter(filtered_doctor_info)
+        schedule = rule.find_earliest_time(schedules)
+        return schedule
+
+    @tool
+    def cancel_tool(patient_name: str, doctor_name: str, date: str) -> int:
+        """
+        Identify the index of the appointment to be cancelled from the patient's schedule list.
+
+        Args:
+            patient_name (str): Name of the patient requesting the cancellation.
+            doctor_name (str): Name of the doctor for the appointment to be cancelled.
+            date (str): Date of the appointment to be cancelled (YYYY-MM-DD).
+
+        Returns:
+            int: The index of the matching appointment(s) in the schedule list.
+        """
+        log(f'[TOOL CALL] cancel_tool', color=True)
+        index = rule.cancel(patient_schedule_list, patient_name, doctor_name, date)
+        return index
+    
+    return [physician_filter_tool, date_filter_tool, no_filter_tool, cancel_tool]
 
 
 
 def scheduling_tool_calling(client: AgentExecutor, 
-                            rule: SchedulingRule, 
-                            known_condition: dict, 
-                            current_time: str) -> dict:
+                            user_prompt: str,
+                            history: list = []) -> dict:
     """
     Make an appointment using tool-calling agent.
 
     Args:
         client (AgentExecutor): The agent executor to handle tool calls.
-        rule (SchedulingRule): The scheduling rule instance.
-        known_condition (dict): Patient conditions known to the staff.
-        current_time (str): Current time of the simulation environment.
+        user_prompt (str): User prompt used for tool calling.
+        history (list, optional): A list of LangChain HumanMessage and AIMessage objects. Defaults to [].
     
     Returns:
         dict: A dictionary containing the scheduled doctor and their corresponding schedule.
     """
-    # department = known_condition['department']
-    preference = known_condition['patient_intention']
+    inputs = {
+        "input": user_prompt,
+        "chat_history": history,
+    }
+    response = client.invoke(inputs)
+    steps = response.get("intermediate_steps") or []
 
-    # Tool calling for candidate slots and find the earliest one
-    schedule = client.invoke({
-        'input': preference
-    })['intermediate_steps'][0][1]
-    schedule = rule.find_earliest_time(schedule, current_time)
-    
-    return schedule
+    if len(steps) > 0:
+        tool_output = steps[0][1]
+        return {"type": "tool", "result": tool_output, "raw": response}
+
+    # No tool call happened
+    text = response.get("output") or ""
+    return {"type": "text", "result": text, "raw": response}

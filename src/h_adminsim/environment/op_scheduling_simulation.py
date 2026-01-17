@@ -6,6 +6,7 @@ from importlib import resources
 from patientsim import PatientAgent
 from decimal import Decimal, getcontext
 from typing import Tuple, Union, Optional
+from langchain_core.messages import HumanMessage, AIMessage
 
 from h_adminsim import AdminStaffAgent
 from h_adminsim.registry import PREFERENCE_PHRASE_PATIENT, PREFERENCE_PHRASE_STAFF
@@ -41,6 +42,8 @@ class OPScehdulingSimulation:
         self.fhir_integration = fhir_integration
         self.rejection_system_prompt_template = self._init_prompt(schedule_rejection_prompt_path)
         self.rules = SchedulingRule(metadata, self.environment)
+        self.end_phrase = "Thank you."
+        self._init_history()
 
     
     def _init_prompt(self, schedule_rejection_prompt_path: Optional[str] = None) -> str:
@@ -81,6 +84,36 @@ class OPScehdulingSimulation:
         """
         self.patient_agent.client.reset_history(verbose=verbose)
         self.admin_staff_agent.reset_history(verbose=verbose)
+
+
+    def _init_history(self):
+        """
+        Reset the dialogue histories.
+        """
+        self.dialog_history = {
+            'scheduling': [],
+            'cancel': [],
+            'reschedule': [],
+        }
+
+    
+    def _to_lc_history(self, key: str) -> list:
+        """
+        Convert the dialog history for the given key into LangChain message objects.
+
+        Args:
+            key (str): Key identifying which dialog history to convert.
+
+        Returns:
+            list: A list of LangChain HumanMessage and AIMessage objects.
+        """
+        msgs = []
+        for m in self.dialog_history[key]:
+            if m["role"] == "Patient":
+                msgs.append(HumanMessage(content=m["content"]))
+            elif m["role"] == "Staff":
+                msgs.append(AIMessage(content=m["content"]))
+        return msgs
 
     
     def postprocessing(self, 
@@ -203,9 +236,15 @@ class OPScehdulingSimulation:
                 department=department,
                 fhir_integration=self.fhir_integration,
             )
-            self.client = self.admin_staff_agent.build_agent(self.rules, filtered_doctor_information)
+            self.client = self.admin_staff_agent.build_agent(
+                rule=self.rules, 
+                doctor_info=filtered_doctor_information
+            )
             try:
-                prediction = scheduling_tool_calling(self.client, self.rules, known_condition, environment.current_time)
+                prediction = scheduling_tool_calling(
+                    client=self.client, 
+                    user_prompt=known_condition['patient_intention']
+                )['result']
                 prediction = self.postprocessing(
                     scheduling_strategy,
                     prediction,
@@ -221,6 +260,32 @@ class OPScehdulingSimulation:
             )
 
         return prediction
+    
+
+    def canceling(self, patient_intention: str) -> Union[int, str]:
+        """
+        Handle a multi-turn appointment cancellation request using a tool-calling agent.
+
+        Args:
+            patient_intention (str): The patient's utterance expressing a cancellation request.
+
+        Returns:
+            Union[int, str]: The cancellation result or a clarification message to the patient.
+        """
+        chat_history = self._to_lc_history('cancel')
+        prediction = scheduling_tool_calling(
+            client=self.client,
+            user_prompt=patient_intention,
+            history=chat_history,
+        )
+
+        if prediction['type'] == 'tool':
+            if prediction['result'] == -1:
+                return "Sorry, we couldn't find a matching appointment. Could you please check your appointment details again?"
+            else:
+                return prediction['result']
+ 
+        return prediction['result']
     
 
     def update_patient_system_prompt(self, 
@@ -256,15 +321,15 @@ class OPScehdulingSimulation:
             self.patient_agent.client.histories[0]['content'][0]['text'] = system_prompt
 
 
-    def simulate(self,
-                 strategy: str,
-                 gt_data: dict,
-                 staff_known_data: dict,
-                 doctor_information: dict,
-                 verbose: bool = False,
-                 patient_kwargs: dict = {},
-                 staff_kwargs: dict = {},
-                 **kwargs):
+    def scheduling_simulate(self,
+                            strategy: str,
+                            gt_data: dict,
+                            staff_known_data: dict,
+                            doctor_information: dict,
+                            verbose: bool = False,
+                            patient_kwargs: dict = {},
+                            staff_kwargs: dict = {},
+                            **kwargs):
         """
         Simulate a multi-turn outpatient scheduling dialogue between a patient agent and an administrative staff agent.
 
@@ -281,8 +346,6 @@ class OPScehdulingSimulation:
         Yields:
             dict: Scheduling proposal generated by the staff agent at each turn.
         """
-        # TODO: token stats
-
         # Initialize agents
         self._init_agents(verbose=verbose)
         
@@ -292,7 +355,7 @@ class OPScehdulingSimulation:
 
         # Start conversation
         staff_greet = self.admin_staff_agent.staff_greet
-        self.dialog_history = [{"role": "Staff", "content": staff_greet}]
+        self.dialog_history['scheduling'].append({"role": "Staff", "content": staff_greet})
         role = f"{colorstr('blue', 'Staff')}"
         log(f"{role:<25}: {staff_greet}")
 
@@ -309,29 +372,31 @@ class OPScehdulingSimulation:
             # Obtain response from patient
             patient_kwargs.update(kwargs)
             patient_response = self.patient_agent(
-                self.dialog_history[-1]["content"],
+                self.dialog_history['scheduling'][-1]["content"],
                 using_multi_turn=True,
                 verbose=False,
                 **patient_kwargs,
             )
-            self.dialog_history.append({"role": "Patient", "content": patient_response})
+            self.dialog_history['scheduling'].append({"role": "Patient", "content": patient_response})
             role = f"{colorstr('green', 'Patient')} ({gt_patient_condition['preference']})"
             log(f"{role:<25}: {patient_response}")
             
             # Scheduling from staff
             staff_kwargs.update(kwargs)
             staff_known_condition.update({'patient_intention': patient_response})
-            staff_response = self.scheduling(
+            pred_schedule = self.scheduling(
                 strategy,
                 staff_known_condition,
                 doctor_information,
                 self.environment,
                 **staff_kwargs
             )
+            staff_response = self.admin_staff_agent.staff_suggestion.format(schedule=pred_schedule)
+            self.dialog_history['scheduling'].append({"role": "Staff", "content": staff_response})
             role = f"{colorstr('blue', 'Staff')}"
-            log(f"{role:<25}: {self.admin_staff_agent.staff_suggestion.format(schedule=staff_response)}")
+            log(f"{role:<25}: {staff_response}")
             
-            yield staff_response
+            yield pred_schedule
 
             # Preference rejection logic
             ## Rejection case
@@ -339,7 +404,62 @@ class OPScehdulingSimulation:
                 preference_reject_prob *= self.preferene_rejection_prob_decay
             ## Non-rejection case
             else:
+                self.dialog_history['scheduling'].append({"role": "Patient", "content": self.end_phrase})
                 role = f"{colorstr('green', 'Patient')} ({gt_data[i]['preference']})"
-                log(f"{role:<25}: Thank you.")
+                log(f"{role:<25}: {self.end_phrase}")
                 log("Simulation completed.", color=True)
                 break
+
+    
+    def canceling_simulate(self, 
+                           patient_schedules: list[dict],
+                           verbose: bool,
+                           max_inferences: int = 5) -> int:
+        # Initialize agents
+        self._init_agents(verbose=verbose)
+        self.client = self.admin_staff_agent.build_agent(
+            rule=self.rules, 
+            patient_schedule_list=patient_schedules
+        )
+
+        # Start conversation
+        staff_greet = self.admin_staff_agent.general_staff_greet
+        self.dialog_history['cancel'].append({"role": "Staff", "content": staff_greet})
+        role = f"{colorstr('blue', 'Staff')}"
+        log(f"{role:<25}: {staff_greet}")
+
+        for _ in range(max_inferences):
+            # Obtain response from patient
+            patient_response = self.patient_agent(
+                self.dialog_history['cancel'][-1]["content"],
+                using_multi_turn=True,
+                verbose=False,
+            )
+            self.dialog_history['cancel'].append({"role": "Patient", "content": patient_response})
+            role = f"{colorstr('green', 'Patient')} ({('cancel')})"
+            log(f"{role:<25}: {patient_response}")
+
+            # Canceling from staff
+            staff_response = self.canceling(
+                patient_intention=patient_response,
+            )
+            if isinstance(staff_response, str):
+                break_flag = False
+            else:
+                break_flag = True
+                cancelled_schedule_index = staff_response
+                cancelled_schedule = {k: v for k, v in patient_schedules[staff_response].items() \
+                                      if k in ['patient', 'attending_physician', 'department', 'date', 'schedule']}
+                staff_response = f"I will cancel this schedule: {cancelled_schedule}"
+            
+            self.dialog_history['cancel'].append({"role": "Staff", "content": staff_response})
+            role = f"{colorstr('blue', 'Staff')}"
+            log(f"{role:<25}: {staff_response}")
+
+            if break_flag:
+                self.dialog_history['cancel'].append({"role": "Patient", "content": self.end_phrase})
+                role = f"{colorstr('blue', 'Patient')}"
+                log(f"{role:<25}: {self.end_phrase}")
+                return cancelled_schedule_index
+    
+        return -1

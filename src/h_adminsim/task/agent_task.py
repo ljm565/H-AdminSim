@@ -16,22 +16,14 @@ from patientsim.environment import OPSimulation as OPFVIntakeSimulation
 
 from h_adminsim import SupervisorAgent
 from h_adminsim import AdminStaffAgent as SchedulingAdminStaffAgent
-from h_adminsim.environment import OPScehdulingSimulation as OPFVScheduleSimulation
 from h_adminsim.environment.hospital import HospitalEnvironment
+from h_adminsim.environment import OPScehdulingSimulation as OPFVScheduleSimulation
 from h_adminsim.tools import DataConverter
 from h_adminsim.registry import STATUS_CODES, PREFERENCE_PHRASE_PATIENT
 from h_adminsim.utils import colorstr, log
 from h_adminsim.utils.fhir_utils import *
+from h_adminsim.utils.common_utils import *
 from h_adminsim.utils.filesys_utils import json_load
-from h_adminsim.utils.common_utils import (
-    group_consecutive_segments,
-    personal_id_to_birth_date,
-    convert_segment_to_time,
-    convert_time_to_segment,
-    exponential_backoff,
-    compare_iso_time,
-    get_iso_time,
-)
 
 
 
@@ -507,6 +499,7 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
                  preference_rejection_prob: float = 0.3,
                  preferene_rejection_prob_decay: float = 0.5,
                  fhir_integration: bool = False,
+                 scheduling_max_inference: int = 5,
                  max_retries: int = 8,
                  patient_vllm_endpoint: Optional[str] = None,
                  admin_staff_vllm_endpoint: Optional[str] = None):
@@ -533,7 +526,7 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
             model=self.admin_staff_model,
             use_vllm=self.admin_staff_use_vllm,
             vllm_endpoint=self.admin_staff_vllm_endpoint,
-            temperature=0 if not 'gpt-5' in self.patient_model.lower() else 1
+            temperature=0 if not 'gpt-5' in self.admin_staff_model.lower() else 1
         )
         log(f'Scheduling strategy: {colorstr(self.scheduling_strategy)}')
 
@@ -546,46 +539,48 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
         # Others
         self.fhir_integration = fhir_integration
         self.max_retries = max_retries
-        self.patient_system_prompt_path = str(resources.files("h_adminsim.assets.prompts").joinpath('schedule_patient_system.txt'))
+        self.max_inferences = scheduling_max_inference
+        self.schedule_patient_system_prompt_path = str(resources.files("h_adminsim.assets.prompts").joinpath('schedule_patient_system.txt'))
+        self.cancel_patient_system_prompt_path = str(resources.files("h_adminsim.assets.prompts").joinpath('cancel_patient_system.txt'))
         self.patient_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.patient_model.lower() else {}
         self.staff_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.admin_staff_model.lower() else {}
 
     
-    # @staticmethod
-    # def postprocessing(text: Union[str, dict]) -> Union[str, dict]:
-    #     """
-    #     Attempts to parse the given text as JSON. If parsing succeeds, returns a dictionary;
-    #     otherwise, returns the original string.
+    def _init_simulation(self,
+                         system_prompt_path: str,
+                         environment: HospitalEnvironment,
+                         additional_patient_conditions: dict = {}) -> OPFVScheduleSimulation:
+        """
+        Initialize an outpatient first-visit intake and scheduling simulation.
 
-    #     Args:
-    #         text (Union[str, dict]): The text output to post-process, potentially a JSON-formatted string. 
+        Args:
+            system_prompt_path (str): Path to the system prompt used to initialize the patient agent.
+            environment (HospitalEnvironment): Hospital environment configuration for the simulation.
+            additional_patient_conditions (dict, optional): Additional patient-specific conditions for simulation control.
 
-    #     Returns:
-    #         Union[str, dict]: A dictionary if the text is valid JSON, otherwise the original string.
-    #     """
-    #     try:
-    #         if isinstance(text, str):
-    #             match = re.search(r'```json\s*(\{.*?\})\s*```', text, re.DOTALL)
-    #             if match:
-    #                 json_str = match.group(1)
-    #                 text_dict = json.loads(json_str)
-    #             else:
-    #                 try:
-    #                     text_dict = json.loads(text)
-    #                 except:
-    #                     return text
-    #         else:
-    #             text_dict = text
-            
-    #         assert len(text_dict) == 1 and all(k in text_dict for k in ['schedule'])   # Basic sanity check
-    #         key = list(text_dict['schedule'].keys())[0]
-    #         text_dict['schedule'][key]['start'] = float(text_dict['schedule'][key]['start'])
-    #         text_dict['schedule'][key]['end'] = float(text_dict['schedule'][key]['end'])
-    #         text_dict['schedule'][key]['date'] = str(text_dict['schedule'][key]['date'])
-    #         return text_dict
-        
-    #     except:
-    #         return str(text)
+        Returns:
+            OPFVIntakeSimulation: Configured outpatient intake and scheduling simulation instance.
+        """
+        patient_agent = PatientAgent(
+            self.patient_model,
+            'outpatient',
+            use_vllm=self.patient_use_vllm,
+            vllm_endpoint=self.patient_vllm_endpoint,
+            system_prompt_path=system_prompt_path,
+            log_verbose=False,
+            additional_patient_conditions=additional_patient_conditions,
+            temperature=0 if not 'gpt-5' in self.patient_model.lower() else 1
+        )
+        sim_environment = OPFVScheduleSimulation(
+            patient_agent=patient_agent, 
+            admin_staff_agent=self.admin_staff_agent, 
+            metadata=self._metadata,
+            environment=environment,
+            preference_rejection_prob=self.preference_rejection_prob,
+            preferene_rejection_prob_decay=self.preferene_rejection_prob_decay,
+            fhir_integration=self.fhir_integration,
+        )
+        return sim_environment
 
 
     def get_intake_information(self, gt: dict, agent_results: dict, doctor_information: dict) -> Tuple[dict, str, bool]:
@@ -801,7 +796,7 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
                         doctor_information: dict, 
                         environment: HospitalEnvironment, 
                         idx: Optional[int] = None, 
-                        verbose: bool = False) -> dict:
+                        verbose: bool = False) -> Optional[Tuple[int, int, bool, str, dict]]:
         """
         Cancel a doctor's scheduled appointment.
 
@@ -813,7 +808,12 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
             verbose (bool, optional): Whether logging the each result or not. Defaults to False.
 
         Returns:
-            dict: The updated doctor information with the cancelled schedule removed.
+            Optional[Tuple[int, int, bool, str, dict]]: 
+                - Ground-truth index of the cancelled schedule among all schedules.
+                - Predicted index of the cancelled schedule. If the cancellation fails, this value is -1.
+                - A boolean indicating whether the cancellation was successful.
+                - A string describing the cancellation status.
+                - Updated doctor information with the cancelled schedule removed.
         """
         if not idx:
             candidate_idx = [i for i, schedule in enumerate(environment.patient_schedules) if schedule['status'] == 'scheduled']
@@ -823,17 +823,44 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
             cancelled_schedule = environment.patient_schedules[idx]
             doctor, date, time = cancelled_schedule['attending_physician'], cancelled_schedule['date'], cancelled_schedule['schedule']
             schedule_list = doctor_information[doctor]['schedule'][date]
-            schedule_list.remove(time)
+            
+            # Initialize simulation environment
+            sim_environment = self._init_simulation(
+                system_prompt_path=self.cancel_patient_system_prompt_path,
+                environment=environment,
+                additional_patient_conditions={
+                    'patient_name': cancelled_schedule['patient'],
+                    'doctor_name': cancelled_schedule['attending_physician'],
+                    'date': date,
+                    'start_time': hour_to_hhmmss(time[0])
+                }
+            )
+            pred_index = sim_environment.canceling_simulate(
+                patient_schedules=environment.patient_schedules,
+                verbose=verbose,
+                max_inferences=self.max_inferences,
+            )
 
-            if self.fhir_integration:
-                fhir_appointment = self._get_fhir_appointment(data={'metadata': deepcopy(self._metadata),
-                                                                    'department': deepcopy(self._department_data),
-                                                                    'information': deepcopy(cancelled_schedule)})
-                environment.delete_fhir({'Appointment': fhir_appointment})
+            if idx == pred_index:
+                # Remove from doctor_information
+                schedule_list.remove(time)
+                
+                # Remove from FHIR
+                if self.fhir_integration:
+                    fhir_appointment = self._get_fhir_appointment(data={'metadata': deepcopy(self._metadata),
+                                                                        'department': deepcopy(self._department_data),
+                                                                        'information': deepcopy(cancelled_schedule)})
+                    environment.delete_fhir({'Appointment': fhir_appointment})
 
-            environment.schedule_cancel_event(idx, verbose)
-
-        return doctor_information
+                # Remove from environment patient_schedules
+                environment.schedule_cancel_event(idx, verbose)
+                
+                return idx, pred_index, True, STATUS_CODES['correct'], doctor_information
+            
+            else:
+                return idx, pred_index, True, STATUS_CODES['cancel'], doctor_information
+        
+        return None
     
 
     def move_up_schedule(self,
@@ -1224,7 +1251,6 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
         self._DAY = self._metadata.get('days')
         doctor_information = environment.get_general_doctor_info_from_fhir() if self.fhir_integration else agent_test_data.get('doctor')
         patient_info, department, sanity = self.get_intake_information(gt, agent_results, doctor_information)
-        # self.rules = SchedulingRule(self._metadata, environment)
         results = self.get_result_dict()
 
         # Make scheduling GT list
@@ -1253,36 +1279,23 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
             results['status_code'].append(STATUS_CODES['preceding'])
             return results
         
-        # Initialize the patient agent using the first preference data
+        # Initialize the simulation environment using the first preference data
         preference = gt_data[0].get('preference')
         preference_desc = PREFERENCE_PHRASE_PATIENT[preference] if preference != 'date' \
                     else PREFERENCE_PHRASE_PATIENT[preference].format(date=gt_data[0].get('valid_from'))
-        self.patient_agent = PatientAgent(
-            self.patient_model,
-            'outpatient',
-            use_vllm=self.patient_use_vllm,
-            vllm_endpoint=self.patient_vllm_endpoint,
-            system_prompt_path=self.patient_system_prompt_path,
-            log_verbose=False,
+        sim_environment = self._init_simulation(
+            system_prompt_path=self.schedule_patient_system_prompt_path,
+            environment=environment,
             additional_patient_conditions={
                 'preference': preference,
                 'preference_desc': preference_desc,
                 'preferred_doctor': gt_data[0]['preferred_doctor'],
-            },
-            temperature=0 if not 'gpt-5' in self.patient_model.lower() else 1
+            }
         )
-
+    
         # Simulate the scheduling task
-        sim_environment = OPFVScheduleSimulation(
-            patient_agent=self.patient_agent, 
-            admin_staff_agent=self.admin_staff_agent, 
-            metadata=self._metadata,
-            environment=environment,
-            preference_rejection_prob=self.preference_rejection_prob,
-            preferene_rejection_prob_decay=self.preferene_rejection_prob_decay,
-            fhir_integration=self.fhir_integration,
-        )
-        for i, prediction in enumerate(sim_environment.simulate(
+        # TODO: using retry function
+        for i, prediction in enumerate(sim_environment.scheduling_simulate(
             strategy=self.scheduling_strategy,
             gt_data=gt_data,
             staff_known_data=staff_known_data,
@@ -1321,12 +1334,13 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
         if verbose:
             log(f'Pred  : {prediction}')
             log(f'Status: {status_code}')
-            log(f'Final Status: {status_code}\n\n\n')   
+            log(f'Final Status: {status_code}\n\n\n')
 
         # Update the simulation environment and the doctor information in the agent test data
         if status:
             doctor_information[prediction['attending_physician']]['schedule'][prediction['date']].append(prediction['schedule'])
             doctor_information[prediction['attending_physician']]['schedule'][prediction['date']].sort()
+        
         self.update_env(
             status=status,
             prediction=prediction,
@@ -1344,11 +1358,24 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
         # Other events
         ## Schedule cancellation
         if random.random() < self.schedule_cancellation_prob:
-            agent_test_data['doctor'] = self.schedule_cancel(
+            output = self.schedule_cancel(
                 doctor_information=doctor_information,
                 environment=environment,
                 verbose=verbose,
             )
+            if output is not None:
+                gt_idx, pred_idx, status, status_code, doctor_information = output
+                agent_test_data['doctor'] = doctor_information
+
+                results['gt'].append(gt_idx)
+                results['pred'].append(pred_idx)
+                results['status'].append(status)
+                results['status_code'].append(status_code)
+
+                if verbose:
+                    log(f'Pred  : {pred_idx}')
+                    log(f'Status: {status_code}')
+                    log(f'Final Status: {status_code}\n\n\n')
         
         ## Try to move up the existing patient schedule
         if random.random() < self.request_early_schedule_prob:
@@ -1365,5 +1392,7 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
         results['status'].extend(statuses)
         results['status_code'].extend(status_codes)
         results['gt'].extend(deepcopy(predictions))     # To syncronize the number of each result
+
+        # TODO: token stats
 
         return results
