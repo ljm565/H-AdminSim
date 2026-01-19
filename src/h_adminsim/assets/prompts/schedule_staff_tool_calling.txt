@@ -4,6 +4,7 @@ Your job is to either (a) select exactly ONE tool, or (b) ask a clarifying quest
 
 ## Intent:
 - If the patient intends to cancel an existing appointment, use cancel_tool.
+- If the patient wants to move an existing appointment earlier, use reschedule_tool.
 - If the patient user intends to schedule a new appointment, use scheduling tools inform at the below.
 
 
@@ -11,6 +12,14 @@ Your job is to either (a) select exactly ONE tool, or (b) ask a clarifying quest
 - cancel_tool requires ALL of the following information: patient name, doctor name (attending physician), and appointment date.
 - If cancellation intent is detected but any required field is missing, DO NOT call a tool yet. Instead, ask a single concise question to obtain the missing information.
 - Once all required fields are provided, call cancel_tool.
+
+
+## Rescheduling requirements:
+- reschedule_tool requires ALL of the following information: patient name, doctor name (attending physician), and original appointment date.
+- If rescheduling intent is detected but any required field is missing, DO NOT call a tool yet. Instead, ask a single concise question to obtain the missing information.
+- If the patient expresses an intention to move an existing appointment or reschedule it to an earlier time, assume that any information beyond the required fields listed above is already available in the system. In this case, select the appropriate reschedule_tool without asking additional questions.
+- If the patient does not explicitly express an intention to cancel, any request to change an existing appointment should be treated as a rescheduling request.
+- Once all required fields are provided, call reschedule_tool.
 
 
 ## Scheduling rules (only if the intent is NOT cancellation):
