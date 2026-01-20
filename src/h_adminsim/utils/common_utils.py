@@ -589,6 +589,7 @@ def calculate_age(birthdate_str: str) -> int:
     return age
 
 
+
 def sort_schedule(data: Union[dict, list]) -> Union[dict, list]:
     """
     Recursively sort schedule data for deterministic ordering.
@@ -603,6 +604,7 @@ def sort_schedule(data: Union[dict, list]) -> Union[dict, list]:
     if isinstance(data, list):
         return sorted(data)
     return {k: sorted(v) for k, v in dict(sorted(data.items())).items()}
+
 
 
 def personal_id_to_birth_date(personal_id: str,
@@ -643,3 +645,14 @@ def personal_id_to_birth_date(personal_id: str,
         return f"{random.choice(['19', '20'])}{yy}-{mm}-{dd}"
 
     return candidates[0].strftime("%Y-%m-%d")
+
+
+
+def init_result_dict() -> dict:
+    """
+    Initialize result dictionary.
+
+    Returns:
+        dict: Initialized result dictionary.
+    """
+    return {'gt': [], 'pred': [], 'status': [], 'status_code': [], 'trial': [], 'dialog': []}

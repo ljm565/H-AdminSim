@@ -453,6 +453,50 @@ class DataConverter:
             
         return appointments
     
+    
+    @staticmethod
+    def get_fhir_appointment(gt_resource_path: Optional[str] = None,
+                             data: Optional[dict] = None) -> dict:
+        """
+        Load a FHIR Appointment resource from a file path if available, or generate it dynamically from the provided data.
+
+        Args:
+            gt_resource_path (Optional[str], optional):  
+                Path to the ground-truth FHIR Appointment resource file.  
+                If the file exists, it will be loaded and returned.  
+                If not, a resource will be generated from the `data` argument.
+            data (Optional[dict], optional):  
+                Dictionary containing the metadata and patient information  
+                needed to generate the Appointment resource.  
+                Expected to include 'metadata' and 'information' keys.
+
+        Returns:
+            dict: A FHIR Appointment resource in dictionary form.
+        """
+        try:
+            return json_load(gt_resource_path)
+        except:
+            metadata, info, department = data.get('metadata'), data.get('information'), data.get('department')
+            schedule = info.get('schedule')
+            if 'time' in schedule:
+                schedule = schedule.get('time')
+            
+            gt_resource = DataConverter.data_to_appointment(
+                {
+                    'metadata': metadata,
+                    'department': department,
+                    'patient': {
+                        info.get('patient'): {
+                            'department': info.get('department'),
+                            'attending_physician': info.get('attending_physician'),
+                            'date': info.get('date'),
+                            'schedule': schedule
+                        }
+                    }
+                }
+            )[0]
+            return gt_resource
+    
 
     def __call__(self, output_dir: Optional[str] = None, sanity_check: bool = False) -> list[Information]:
         """

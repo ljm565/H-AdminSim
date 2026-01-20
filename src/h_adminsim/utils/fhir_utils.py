@@ -1,5 +1,4 @@
 import re
-from typing import Union
 
 from h_adminsim.utils.common_utils import (
     iso_to_hour,
