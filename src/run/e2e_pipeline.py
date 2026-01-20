@@ -88,7 +88,6 @@ def main(args):
         scheduling_task = OutpatientFirstScheduling(
             patient_model=s_config.task_model,
             admin_staff_model=s_config.task_model,
-            scheduling_strategy=s_config.schedule_task.scheduling_strategy,
             schedule_cancellation_prob=s_config.schedule_cancellation_prob,
             request_early_schedule_prob=s_config.request_early_schedule_prob,
             fhir_integration=s_config.integration_with_fhir,

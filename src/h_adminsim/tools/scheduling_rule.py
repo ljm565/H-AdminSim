@@ -1,29 +1,40 @@
+from copy import deepcopy
 from decimal import Decimal
 from typing import Optional
 from langchain.tools import tool
 from langchain.agents import AgentExecutor
 
+from .data_converter import DataConverter
+from h_adminsim.registry import STATUS_CODES
+from h_adminsim.utils import log
 from h_adminsim.utils.fhir_utils import *
 from h_adminsim.utils.common_utils import (
     group_consecutive_segments,
     convert_segment_to_time,
     convert_time_to_segment,
+    init_result_dict,
     compare_iso_time,
     get_iso_time,
 )
-from h_adminsim.utils import log
 
 
 
 class SchedulingRule:
-    def __init__(self, metadata, environment):
+    def __init__(self, 
+                 metadata: dict, 
+                 department_data: dict, 
+                 environment, 
+                 fhir_intergration: bool = False):
         self.environment = environment
         self._current_time = self.environment.current_time
         self._utc_offset = self.environment._utc_offset
-        self._START_HOUR = metadata.get('time').get('start_hour')
-        self._END_HOUR = metadata.get('time').get('end_hour')
-        self._TIME_UNIT = metadata.get('time').get('interval_hour')
+        self._metadata = metadata
+        self._department_data = department_data
+        self._START_HOUR = self._metadata.get('time').get('start_hour')
+        self._END_HOUR = self._metadata.get('time').get('end_hour')
+        self._TIME_UNIT = self._metadata.get('time').get('interval_hour')
         self.current_time = environment.current_time
+        self.fhir_integration = fhir_intergration
 
 
     def physician_filter(self, filtered_doctor_information: dict, preferred_doctor: str) -> list[str]:
@@ -202,12 +213,46 @@ class SchedulingRule:
                 earliest_time = [iso_time]
         
         return {'doctor': earliest_doctor, 'schedule': earliest_time}
+    
 
+    def cancel_schedule(self,
+                        idx: int,
+                        doctor_info: dict,
+                        cancelled_schedule: dict) -> dict:
+        """
+        Cancel the schedule both in doctor_info and FHIR system.
+
+        Args:
+            idx (int): The index of the appointment to be cancelled.
+            doctor_info (dict): The doctor information containing schedules.
+            cancelled_schedule (dict): The schedule details to be cancelled.
+
+        Returns:
+            dict: Updated doctor information after cancellation.
+        """
+        doctor, date, time = cancelled_schedule['attending_physician'], cancelled_schedule['date'], cancelled_schedule['schedule']
+        schedule_list = doctor_info[doctor]['schedule'][date]
+
+        # Remove from doctor_information
+        schedule_list.remove(time)  # In-place logic
+
+        # Remove from FHIR
+        if self.fhir_integration:
+            fhir_appointment = DataConverter.get_fhir_appointment(data={'metadata': deepcopy(self._metadata),
+                                                                        'department': deepcopy(self._department_data),
+                                                                        'information': deepcopy(cancelled_schedule)})
+            self.environment.delete_fhir({'Appointment': fhir_appointment})
+        
+        # Remove from environment patient_schedules
+        self.environment.schedule_cancel_event(idx, True)
+
+        return doctor_info
 
 
 def create_tools(rule: SchedulingRule, 
-                 filtered_doctor_info: dict,
-                 patient_schedule_list: Optional[list[dict]] = None) -> list[tool]:
+                 doctor_info: dict,
+                 patient_schedule_list: Optional[list[dict]] = None,
+                 gt_idx: Optional[int] = None) -> list[tool]:
     @tool
     def physician_filter_tool(preferred_doctor: str) -> str:
         """
@@ -223,7 +268,7 @@ def create_tools(rule: SchedulingRule,
         prefix = 'Dr.'
         if prefix not in preferred_doctor:
             preferred_doctor = f'{prefix} {preferred_doctor}'
-        schedules = rule.physician_filter(filtered_doctor_info, preferred_doctor)
+        schedules = rule.physician_filter(doctor_info, preferred_doctor)
         schedule = rule.find_earliest_time(schedules)
         return schedule
 
@@ -239,7 +284,7 @@ def create_tools(rule: SchedulingRule,
             str: The earliest date-filtered time slot.
         """
         log(f'[TOOL CALL] date_filter_tool | valid_date={valid_date}', color=True)
-        schedules = rule.date_filter(filtered_doctor_info, valid_date)
+        schedules = rule.date_filter(doctor_info, valid_date)
         schedule = rule.find_earliest_time(schedules)
         return schedule
 
@@ -252,12 +297,12 @@ def create_tools(rule: SchedulingRule,
             str: The earliest time slot.
         """
         log(f'[TOOL CALL] no_filter_tool', color=True)
-        schedules = rule.no_filter(filtered_doctor_info)
+        schedules = rule.no_filter(doctor_info)
         schedule = rule.find_earliest_time(schedules)
         return schedule
 
     @tool
-    def cancel_tool(patient_name: str, doctor_name: str, date: str) -> int:
+    def cancel_tool(patient_name: str, doctor_name: str, date: str) -> dict:
         """
         Identify the index of the appointment to be cancelled from the patient's schedule list.
 
@@ -267,17 +312,39 @@ def create_tools(rule: SchedulingRule,
             date (str): Date of the appointment to be cancelled (YYYY-MM-DD).
 
         Returns:
-            int: The index of the matching appointment(s) in the schedule list.
+            dict: A dictionary containing the cancelled_schedule, result_dict, and updated_doctor_info.
         """
         log(f'[TOOL CALL] cancel_tool | patient_name={patient_name}, doctor_name={doctor_name}, date={date}', color=True)
+        result_dict, updated_doctor_info, cancelled_schedule = init_result_dict(), None, None
         prefix = 'Dr.'
         if prefix not in doctor_name:
             doctor_name = f'{prefix} {doctor_name}'
         index = rule.find_idx(patient_schedule_list, patient_name, doctor_name, date)
-        return index
+
+        # Update result_dict
+        if gt_idx is None:
+            result_dict['gt'].append({'cancel': None})
+            result_dict['pred'].append({'cancel': index})
+            result_dict['status'].append(None)
+            result_dict['status_code'].append(None)
+        else:
+            status = True if index == gt_idx else False
+            status_code = STATUS_CODES['correct'] if index == gt_idx else STATUS_CODES['cancel']['identify']
+            result_dict['gt'].append({'cancel': gt_idx})
+            result_dict['pred'].append({'cancel': index})
+            result_dict['status'].append(status)
+            result_dict['status_code'].append(status_code)
+
+        # Update the schedule only when the cancellation is correct or there is no gt_idx
+        if gt_idx is None or status:
+            cancelled_schedule = patient_schedule_list[index]
+            updated_doctor_info = rule.cancel_schedule(index, doctor_info, cancelled_schedule)
+                
+        return {'cancelled_schedule': cancelled_schedule, 'result_dict': result_dict, 'updated_doctor_info': updated_doctor_info}
+    
 
     @tool
-    def reschedule_tool(patient_name: str, doctor_name: str, date: str) -> int:
+    def reschedule_tool(patient_name: str, doctor_name: str, date: str) -> dict:
         """
         Identify the index of the appointment to be rescheduled from the patient's schedule list.
 
@@ -287,14 +354,33 @@ def create_tools(rule: SchedulingRule,
             date (str): Date of the original appointment to be rescheduled (YYYY-MM-DD).
 
         Returns:
-            int: The index of the matching appointment(s) in the schedule list.
+            dict: A dictionary containing the original_schedule and result_dict.
         """
         log(f'[TOOL CALL] reschedule_tool | patient_name={patient_name}, doctor_name={doctor_name}, date={date}', color=True)
+        result_dict, original_schedule = init_result_dict(), None
         prefix = 'Dr.'
         if prefix not in doctor_name:
             doctor_name = f'{prefix} {doctor_name}'
         index = rule.find_idx(patient_schedule_list, patient_name, doctor_name, date)
-        return index
+        
+        # Update result_dict
+        if gt_idx is None:
+            result_dict['gt'].append({'reschedule': None})
+            result_dict['pred'].append({'reschedule': index})
+            result_dict['status'].append(None)
+            result_dict['status_code'].append(None)
+        else:
+            status = True if index == gt_idx else False
+            status_code = STATUS_CODES['correct'] if index == gt_idx else STATUS_CODES['reschedule']['identify']
+            result_dict['gt'].append({'reschedule': gt_idx})
+            result_dict['pred'].append({'reschedule': index})
+            result_dict['status'].append(status)
+            result_dict['status_code'].append(status_code)
+
+        if gt_idx is None or status:
+            original_schedule = patient_schedule_list[index]
+
+        return {'original_schedule': original_schedule, 'result_dict': result_dict}
     
     return [physician_filter_tool, date_filter_tool, no_filter_tool, cancel_tool, reschedule_tool]
 

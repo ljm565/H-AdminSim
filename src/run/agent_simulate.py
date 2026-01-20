@@ -121,7 +121,6 @@ def main(args):
         queue.append(OutpatientFirstScheduling(
             patient_model=config.task_model,
             admin_staff_model=config.task_model,
-            scheduling_strategy=config.schedule_task.scheduling_strategy,
             schedule_cancellation_prob=config.schedule_cancellation_prob,
             request_early_schedule_prob=config.request_early_schedule_prob,
             fhir_integration=config.integration_with_fhir,

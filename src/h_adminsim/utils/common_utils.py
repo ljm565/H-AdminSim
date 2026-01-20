@@ -1,8 +1,11 @@
+import time
 import pytz
 import random
+from openai import InternalServerError
 from decimal import Decimal, getcontext
 from datetime import datetime, timedelta
 from typing import Optional, Union, Tuple
+from google.genai.errors import ServerError
 
 from h_adminsim import registry
 from h_adminsim.registry import Hospital
@@ -656,3 +659,40 @@ def init_result_dict() -> dict:
         dict: Initialized result dictionary.
     """
     return {'gt': [], 'pred': [], 'status': [], 'status_code': [], 'trial': [], 'dialog': []}
+
+
+
+def preprocess_dialog(dialog: dict) -> str:
+    """
+    Preprocess dialog data into a formatted string.
+
+    Args:
+        dialog (dict): Dialog data containing 'role' and 'content'.
+
+    Returns:
+        str: Pre-processed dialog string.
+    """
+    return '\n'.join([f"{turn['role']}: {' '.join(turn['content'].split())}" for turn in dialog])
+
+
+
+def run_with_retry(func, *args, max_retries=8, **kwargs):
+    retry_count = 0
+
+    while 1:
+        try:
+            return func(*args, **kwargs)
+
+        except (ServerError, InternalServerError) as e:
+            if retry_count >= max_retries:
+                log(f"\nMax retries reached. Last error: {e}", level='error')
+                raise e
+
+            wait_time = exponential_backoff(retry_count)
+            log(
+                f"[{retry_count + 1}/{max_retries}] {type(e).__name__}: {e}. "
+                f"Retrying in {wait_time:.1f} seconds...",
+                level='warning',
+            )
+            time.sleep(wait_time)
+            retry_count += 1

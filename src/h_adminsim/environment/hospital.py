@@ -321,9 +321,10 @@ class HospitalEnvironment:
                     self.pop_waiting_list(turn, verbose)
                     break
             self.patient_schedules[idx]['status'] = 'cancelled'
+            self.patient_schedules[idx]['last_updated_time'] = self.current_time
             self.booking_num[self.patient_schedules[idx]['attending_physician']] -= 1
             if verbose:
-                log(f'{colorstr("CANCELLED")}: {self.patient_schedules[idx]} schedule is cancelled.')
+                log(f'{colorstr("[CANCELLED]")}: {self.patient_schedules[idx]} schedule is cancelled.')
     
 
     def add_waiting_list(self, idx: int, verbose: bool = False):
@@ -340,7 +341,7 @@ class HospitalEnvironment:
                 requested_schedule['waiting_order'] = len(self.waiting_list)
                 self.waiting_list.append((idx, requested_schedule))
                 if verbose:
-                    log(f'{colorstr("WAITING LIST")}: {requested_schedule} schedule is appended to the waiting list.')
+                    log(f'{colorstr("[WAITING LIST ADDED]")}: {requested_schedule} schedule is appended to the waiting list.')
 
     
     def pop_waiting_list(self, idx: Union[list[int], int], verbose: bool = False):
@@ -360,7 +361,7 @@ class HospitalEnvironment:
                 schedule = self.waiting_list.pop(_id)
                 schedule[1]['waiting_order'] = -1
                 if verbose:
-                    log(f'{colorstr("WAITING LIST")}: {schedule[1]} schedule is popped from the waiting list.')
+                    log(f'{colorstr("[WAITING LIST POPPED]")}: {schedule[1]} schedule is popped from the waiting list.')
         
             for i, (_, schedule) in enumerate(self.waiting_list):
                 schedule['waiting_order'] = i

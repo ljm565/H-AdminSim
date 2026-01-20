@@ -174,20 +174,22 @@ class AdminStaffAgent:
 
     def build_agent(self, 
                     rule: SchedulingRule, 
-                    doctor_info: Optional[dict] = None,
-                    patient_schedule_list: Optional[list[dict]] = None) -> AgentExecutor:
+                    doctor_info: dict,
+                    patient_schedule_list: Optional[list[dict]] = None,
+                    gt_idx: Optional[int] = None) -> AgentExecutor:
         """
         Build a LangChain agent with scheduling tools.
 
         Args:
             rule (SchedulingRule): An instance of SchedulingRule containing scheduling logic.
-            doctor_info (Optional[dict], optional): A dictionary containing information about doctors. Defaults to None.
+            doctor_info (dict): A dictionary containing information about doctors. Defaults to None.
             patient_schedule_list (Optional[list[dict]], optional): A list of the patient's scheduled appointments. Defaults to None.
+            gt_idx (Optional[int], optional): Ground-truth index of the appointment to be canceled or rescheduled. Defaults to None.
 
         Returns:
             AgentExecutor: A LangChain agent executor with the scheduling tools.
         """
-        tools = create_tools(rule, doctor_info, patient_schedule_list)
+        tools = create_tools(rule, doctor_info, patient_schedule_list, gt_idx)
         prompt = ChatPromptTemplate.from_messages([
             ("system", self.tool_calling_prompt),
             MessagesPlaceholder("chat_history"),

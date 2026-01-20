@@ -5,7 +5,6 @@ STATUS_CODES = {
     'department & patient': 'incorrect department and patient information',
     'simulation': 'incomplete simulation',
     'schedule': 'invalid schedule',
-    'moving up schedule': 'fail to move up the schedule',
     'duration': 'wrong duration',
     'conflict': {
         'physician': 'physician conflict', 
@@ -17,7 +16,15 @@ STATUS_CODES = {
         'date': 'not valid date',
     },
     'tool': 'wrong tool selection or wrong type of argument',
-    'cancel': 'fail to cancellation',
+    'cancel': {
+        'identify': 'fail to identify requested schedule',
+        'type': 'Unexpected tool calling result'
+    },
+    'reschedule': {
+        'identify': 'fail to reschedule',
+        'schedule': '{status_code}',
+        'type': 'Unexpected tool calling result'
+    },
     'waiting list': 'fail to add to waiting list',
     # 'workload': 'workload balancing',
     'preceding': 'preceding task failed',

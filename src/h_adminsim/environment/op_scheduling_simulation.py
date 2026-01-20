@@ -13,7 +13,7 @@ from h_adminsim.registry import PREFERENCE_PHRASE_PATIENT, PREFERENCE_PHRASE_STA
 from h_adminsim.environment.hospital import HospitalEnvironment
 from h_adminsim.utils import log, colorstr
 from h_adminsim.tools import SchedulingRule, scheduling_tool_calling
-from h_adminsim.utils.common_utils import iso_to_hour, iso_to_date, compare_iso_time, get_iso_time
+from h_adminsim.utils.common_utils import *
 
 
 
@@ -22,6 +22,7 @@ class OPScehdulingSimulation:
                  patient_agent: PatientAgent,
                  admin_staff_agent: AdminStaffAgent,
                  metadata: dict,
+                 department_data: dict,
                  environment: HospitalEnvironment,
                  preference_rejection_prob: float = 0.3,
                  preferene_rejection_prob_decay: float = 0.5,
@@ -41,7 +42,7 @@ class OPScehdulingSimulation:
         self.preferene_rejection_prob_decay = preferene_rejection_prob_decay
         self.fhir_integration = fhir_integration
         self.rejection_system_prompt_template = self._init_prompt(schedule_rejection_prompt_path)
-        self.rules = SchedulingRule(metadata, self.environment)
+        self.rules = SchedulingRule(metadata, department_data, self.environment, self.fhir_integration)
         self.end_phrase = "Thank you."
         self._init_history()
 
@@ -97,6 +98,17 @@ class OPScehdulingSimulation:
         }
 
     
+    def _update_result_dict(self, data: dict):
+        """
+        Update the result dictionary with the provided data.
+
+        Args:
+            data (dict): A dictionary containing the data to update the result dictionary with.
+        """
+        for k in data.keys():
+            self.result_dict[k] = data[k]
+
+    
     def _to_lc_history(self, key: str) -> list:
         """
         Convert the dialog history for the given key into LangChain message objects.
@@ -114,7 +126,16 @@ class OPScehdulingSimulation:
             elif m["role"] == "Staff":
                 msgs.append(AIMessage(content=m["content"]))
         return msgs
+    
 
+    def update_from_kwargs(self, **kwargs):
+        """
+        Update simulation parameters from keyword arguments.
+        """
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+    
     
     def postprocessing(self, 
                        strategy: str, 
@@ -280,7 +301,7 @@ class OPScehdulingSimulation:
         return prediction
     
 
-    def canceling(self, patient_intention: str) -> Union[int, str]:
+    def canceling(self, patient_intention: str) -> Union[dict, str]:
         """
         Handle a multi-turn appointment cancellation request using a tool-calling agent.
 
@@ -288,7 +309,7 @@ class OPScehdulingSimulation:
             patient_intention (str): The patient's utterance expressing a cancellation request.
 
         Returns:
-            Union[int, str]: The cancellation result or a clarification message to the patient.
+            Union[dict, str]: The cancellation result or a clarification message to the patient.
         """
         chat_history = self._to_lc_history('cancel')
         prediction = scheduling_tool_calling(
@@ -299,10 +320,10 @@ class OPScehdulingSimulation:
 
         if prediction['type'] == 'tool':
             # Schedule not found case: -> return: str
-            if prediction['result'] == -1:
+            if prediction['result']['result_dict']['pred'][0]['cancel'] == -1:
                 return "Sorry, we couldn't find a matching appointment. Could you please check your appointment details again?"
             
-            # Successful cancellation case -> return: int
+            # Successful cancellation case -> return: dict
             else:
                 return prediction['result']
 
@@ -310,7 +331,7 @@ class OPScehdulingSimulation:
         return prediction['result']
     
 
-    def rescheduling(self, patient_intention: str) -> Union[int, str]:
+    def rescheduling(self, patient_intention: str) -> Union[dict, str]:
         """
         Handle a multi-turn appointment rescheduling request using a tool-calling agent.
 
@@ -318,7 +339,7 @@ class OPScehdulingSimulation:
             patient_intention (str): The patient's utterance expressing a rescheduling request.
 
         Returns:
-            Union[int, str]: The rescheduling result or a clarification message to the patient.
+            Union[dict, str]: The rescheduling result or a clarification message to the patient.
         """
         chat_history = self._to_lc_history('reschedule')
         prediction = scheduling_tool_calling(
@@ -329,10 +350,10 @@ class OPScehdulingSimulation:
 
         if prediction['type'] == 'tool':
             # Schedule not found case: -> return: str
-            if prediction['result'] == -1:
+            if prediction['result']['result_dict']['pred'][0]['reschedule'] == -1:
                 return "Sorry, we couldn't find a matching appointment. Could you please check your appointment details again?"
         
-            # Successful rescheduling case 
+            # Successful rescheduling case -> return: dict
             else:
                 return prediction['result']
                     
@@ -363,7 +384,8 @@ class OPScehdulingSimulation:
         Yields:
             dict: Scheduling proposal generated by the staff agent at each turn.
         """
-        # Initialize agents
+        # Initialize agents and result dictionary
+        self.result_dict = init_result_dict()
         self._init_agents(verbose=verbose)
         
         # Sanity check for the simulation
@@ -411,6 +433,9 @@ class OPScehdulingSimulation:
             role = f"{colorstr('blue', 'Staff')}"
             log(f"{role:<25}: {staff_response}")
             
+            # Save point
+            self.result_dict['dialog'] = preprocess_dialog(self.dialog_history['scheduling'])
+            
             yield pred_schedule
 
             # Preference rejection logic
@@ -423,37 +448,49 @@ class OPScehdulingSimulation:
                 role = f"{colorstr('green', 'Patient')} ({gt_data[i]['preference']})"
                 log(f"{role:<25}: {self.end_phrase}")
                 log("Simulation completed.", color=True)
+
+                # Save the final dialog history
+                self.result_dict['dialog'] = preprocess_dialog(self.dialog_history['scheduling'])
                 break
 
     
     def canceling_simulate(self, 
+                           gt_idx: Optional[int] = None,
+                           doctor_information: Optional[dict] = None,
                            patient_schedules: Optional[list[dict]] = None,
                            verbose: bool = True,
                            max_inferences: int = 5,
                            patient_kwargs: dict = {},
-                           **kwargs) -> int:
+                           staff_kwargs: dict = {},
+                           **kwargs) -> Tuple[dict, dict]:
         """
         Simulate a multi-turn conversation for appointment cancellation.
 
         Args:
+            gt_idx (Optional[int], optional): Ground-truth index of the appointment to be canceled. Defaults to None.
+            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s).
             patient_schedules (Optional[list[dict]], optional): List of patient appointment schedules. Defaults to None.
             verbose (bool, optional): Whether to print conversation logs. Defaults to True.
             max_inferences (int, optional): Maximum number of dialogue turns.
             patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent.
-            **kwargs: Additional keyword arguments passed to the patient agent.
-
-        Returns:
-            int: Index of the cancelled schedule, or -1 if cancellation fails.
+            staff_kwargs (dict, optional): Additional keyword arguments passed to the staff agent.
+            **kwargs: Additional keyword arguments passed to the patient and staff agent.
 
         Raises:
             TypeError: If the return type from the canceling method is unexpected.
+
+        Returns:
+            Tuple[dict, dict]: Updated doctor information and a result dictionary after cancellation.
         """
-        # Initialize agents
+        # Initialize agents and result dictionary
+        self.result_dict = init_result_dict()
         self._init_agents(verbose=verbose)
         patient_schedules = self.environment.patient_schedules if patient_schedules is None else patient_schedules
         self.client = self.admin_staff_agent.build_agent(
             rule=self.rules, 
-            patient_schedule_list=patient_schedules
+            doctor_info=doctor_information,
+            patient_schedule_list=patient_schedules,
+            gt_idx=gt_idx,
         )
 
         # Start conversation
@@ -479,46 +516,69 @@ class OPScehdulingSimulation:
             staff_response = self.canceling(
                 patient_intention=patient_response,
             )
+            # Clarification message instead of tool calling
             if isinstance(staff_response, str):
-                break_flag = False
-            elif isinstance(staff_response, int):
-                break_flag = True
-                cancelled_schedule_index = staff_response
-                cancelled_schedule = {k: v for k, v in patient_schedules[staff_response].items() \
-                                      if k in ['patient', 'attending_physician', 'department', 'date', 'schedule']}
-                staff_response = f"I will cancel this schedule: {cancelled_schedule}"
-            else:
-                raise TypeError(colorstr("red", "Error: Unexpected return type from canceling method."))
+                self.dialog_history['cancel'].append({"role": "Staff", "content": staff_response})
+                role = f"{colorstr('blue', 'Staff')}"
+                log(f"{role:<25}: {staff_response}")
             
-            self.dialog_history['cancel'].append({"role": "Staff", "content": staff_response})
-            role = f"{colorstr('blue', 'Staff')}"
-            log(f"{role:<25}: {staff_response}")
+            # Tool calling result
+            elif isinstance(staff_response, dict):
+                self._update_result_dict(staff_response['result_dict'])
+                if self.result_dict['status'][0] is not False:  # No GT and correct case
+                    cancelled_schedule = {k: v for k, v in staff_response['cancelled_schedule'].items() \
+                                          if k in ['patient', 'attending_physician', 'department', 'date', 'schedule']}
+                    
+                    # Final response of staff
+                    staff_response = f"I've cancelled this schedule: {cancelled_schedule}"
+                    self.dialog_history['cancel'].append({"role": "Staff", "content": staff_response})
+                    role = f"{colorstr('blue', 'Staff')}"
+                    log(f"{role:<25}: {staff_response}")
 
-            if break_flag:
-                self.dialog_history['cancel'].append({"role": "Patient", "content": self.end_phrase})
-                role = f"{colorstr('blue', 'Patient')}"
-                log(f"{role:<25}: {self.end_phrase}")
-                log("Simulation completed.", color=True)
-                return cancelled_schedule_index
-    
-        return -1
+                    # Final response of patient
+                    self.dialog_history['cancel'].append({"role": "Patient", "content": self.end_phrase})
+                    role = f"{colorstr('green', 'Patient')} (cancel)"
+                    log(f"{role:<25}: {self.end_phrase}")
+
+                    break
+                
+                else:
+                    self.result_dict['dialog'].append(preprocess_dialog(self.dialog_history['cancel']))
+                    raise ValueError(colorstr("red", "Error: Cancellation failed despite successful tool call."))
+            
+            # Unexpected return type
+            else:
+                self.result_dict['dialog'].append(preprocess_dialog(self.dialog_history['cancel']))
+                raise TypeError(colorstr("red", "Error: Unexpected return type from canceling method."))
+        
+        # End of conversation
+        self.result_dict['dialog'].append(preprocess_dialog(self.dialog_history['cancel']))
+        log("Simulation completed.", color=True)
+
+        return doctor_information, self.result_dict
 
 
     def rescheduling_simulate(self, 
+                              gt_idx: Optional[int] = None,
+                              doctor_information: Optional[dict] = None,
                               patient_schedules: Optional[list[dict]] = None,
                               verbose: bool = True,
                               max_inferences: int = 5,
                               patient_kwargs: dict = {},
-                              **kwargs) -> int:
+                              staff_kwargs: dict = {},
+                              **kwargs):
         """
         Simulate a multi-turn conversation for appointment rescheduling.
 
         Args:
+            gt_idx (Optional[int], optional): Ground-truth index of the appointment to be canceled. Defaults to None.
+            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s).
             patient_schedules (Optional[list[dict]], optional): List of patient appointment schedules. Defaults to None.
             verbose (bool, optional): Whether to print conversation logs. Defaults to True.
             max_inferences (int, optional): Maximum number of dialogue turns.
             patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent.
-            **kwargs: Additional keyword arguments passed to the patient agent.
+            staff_kwargs (dict, optional): Additional keyword arguments passed to the staff agent.
+            **kwargs: Additional keyword arguments passed to the patient and staff agents.
 
         Returns:
             int: Index of the rescheduled appointment, or -1 if rescheduling fails.
@@ -526,12 +586,16 @@ class OPScehdulingSimulation:
         Raises:
             TypeError: If the return type from the rescheduling method is unexpected.
         """
-        # Initialize agents
+        # Initialize agents and result dictionary
+        self._branch = False
+        self.result_dict = init_result_dict()
         self._init_agents(verbose=verbose)
         patient_schedules = self.environment.patient_schedules if patient_schedules is None else patient_schedules
         self.client = self.admin_staff_agent.build_agent(
             rule=self.rules, 
-            patient_schedule_list=patient_schedules
+            doctor_info=doctor_information,
+            patient_schedule_list=patient_schedules,
+            gt_idx=gt_idx,
         )
 
         # Start conversation
@@ -557,27 +621,91 @@ class OPScehdulingSimulation:
             staff_response = self.rescheduling(
                 patient_intention=patient_response,
             )
+            # Clarification message instead of tool calling
             if isinstance(staff_response, str):
-                break_flag = False
-            elif isinstance(staff_response, int):
-                break_flag = True
-                rescheule_requested_index = staff_response
-                reschedule_requested_schedule = {k: v for k, v in patient_schedules[staff_response].items() \
-                                      if k in ['patient', 'attending_physician', 'department', 'date', 'schedule']}
-                staff_response = f"I will add this schedule to the waiting list: {reschedule_requested_schedule}"
-            else:
-                raise TypeError(colorstr("red", "Error: Unexpected return type from canceling method."))
-            
-            self.dialog_history['reschedule'].append({"role": "Staff", "content": staff_response})
-            role = f"{colorstr('blue', 'Staff')}"
-            log(f"{role:<25}: {staff_response}")
+                self.dialog_history['reschedule'].append({"role": "Staff", "content": staff_response})
+                role = f"{colorstr('blue', 'Staff')}"
+                log(f"{role:<25}: {staff_response}")
 
-            if break_flag:
-                self.dialog_history['reschedule'].append({"role": "Patient", "content": self.end_phrase})
-                role = f"{colorstr('blue', 'Patient')}"
-                log(f"{role:<25}: {self.end_phrase}")
-                log("Simulation completed.", color=True)
-                return rescheule_requested_index
-        
-        return -1
+            # Tool calling result
+            elif isinstance(staff_response, dict):
+                self._update_result_dict(staff_response['result_dict'])
+                if self.result_dict['status'][0] is not False:  # No GT and correct case
+                    original_schedule = staff_response['original_schedule']
+                    staff_kwargs.update(kwargs)
+                    new_schedule = self.scheduling(
+                        known_condition=original_schedule,
+                        doctor_information=doctor_information,
+                        reschedule_flag=True,
+                        **staff_kwargs
+                    )
+
+                    # Save point
+                    self.result_dict['dialog'] = [preprocess_dialog(self.dialog_history['reschedule'])]
+                    yield {'type': 'simulation', 'original': original_schedule, 'prediction': new_schedule}
+
+                    if self._branch:
+                        pred_idx = self.result_dict['pred'][0]['reschedule']
+                        pred_doctor_name = list(new_schedule['schedule'].keys())[0]
+                        old_iso_time = get_iso_time(original_schedule['schedule'][0], original_schedule['date'])
+                        new_iso_time = get_iso_time(new_schedule['schedule'][pred_doctor_name]['start'], new_schedule['schedule'][pred_doctor_name]['date'])
+                        
+                        if compare_iso_time(old_iso_time, new_iso_time):
+                            self._updated_doctor_information = self.rules.cancel_schedule(pred_idx, doctor_information, original_schedule)
+                            prediction = {
+                                'patient': original_schedule['patient'],
+                                'attending_physician': pred_doctor_name,
+                                'department': original_schedule['department'],
+                                'date': new_schedule['schedule'][pred_doctor_name]['date'],
+                                'schedule': [
+                                    new_schedule['schedule'][pred_doctor_name]['start'], 
+                                    new_schedule['schedule'][pred_doctor_name]['end']
+                                ],
+                                'patient_intention': original_schedule['patient_intention'],
+                                'preference': original_schedule.get('preference'),
+                                'preferred_doctor': original_schedule.get('preferred_doctor'),
+                                'valid_from': original_schedule.get('valid_from'),
+                                'last_updated_time': self.environment.current_time
+                            }
+
+                            tmp_original_schedule = {k: v for k, v in original_schedule.items() \
+                                                     if k in ['patient', 'attending_physician', 'department', 'date', 'schedule']}
+                            tmp_prediction_schedule = {k: v for k, v in prediction.items() \
+                                                       if k in ['patient', 'attending_physician', 'department', 'date', 'schedule']}
+                            
+                            staff_response = f"I've moved your original schedule: {tmp_original_schedule} to the new one: {tmp_prediction_schedule}"
+                            
+                        else:
+                            tmp_original_schedule = {k: v for k, v in original_schedule.items() \
+                                                     if k in ['patient', 'attending_physician', 'department', 'date', 'schedule']}
+                            staff_response = f"There are no available times. I've added this schedule to the waiting list: {tmp_original_schedule}"
+                            self.environment.add_waiting_list(pred_idx, verbose)
+                            self._branch = False
+
+                        #  Final response of staff
+                        self.dialog_history['reschedule'].append({"role": "Staff", "content": staff_response})
+                        role = f"{colorstr('blue', 'Staff')}"
+                        log(f"{role:<25}: {staff_response}")
+
+                        # Final response of patient
+                        self.dialog_history['reschedule'].append({"role": "Patient", "content": self.end_phrase})
+                        role = f"{colorstr('green', 'Patient')} (move)"
+                        log(f"{role:<25}: {self.end_phrase}")
+                    
+                    break
+                
+                else:
+                    self.result_dict['dialog'].append(preprocess_dialog(self.dialog_history['reschedule']))
+                    raise ValueError(colorstr("red", "Error: Rescheduling failed despite successful tool call."))
+            
+            else:
+                self.result_dict['dialog'].append(preprocess_dialog(self.dialog_history['reschedule']))
+                raise TypeError(colorstr("red", "Error: Unexpected return type from rescheduling method."))
+            
+        # End of conversation
+        self.result_dict['dialog'] = ['\n'.join([f"{turn['role']}: {' '.join(turn['content'].split())}" for turn in self.dialog_history['reschedule']])]
+        log("Simulation completed.", color=True)
+
+        if self._branch:
+            yield {'type': 'update', 'original': original_schedule, 'prediction': prediction}
     
