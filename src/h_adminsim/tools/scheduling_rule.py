@@ -116,7 +116,7 @@ class SchedulingRule:
         return list(candidate_schedules)
     
 
-    def no_filter(self, filtered_doctor_information: dict) -> list[str]:
+    def get_all(self, filtered_doctor_information: dict) -> list[str]:
         """
         Get all candidate schedules without any filtering.
 
@@ -289,15 +289,15 @@ def create_tools(rule: SchedulingRule,
         return schedule
 
     @tool
-    def no_filter_tool() -> str:
+    def get_all_time_tool() -> str:
         """
-        Return the earliest available schedule without filtering.
+        Return the earliest available schedule among the all available time slots.
 
         Returns:
             str: The earliest time slot.
         """
-        log(f'[TOOL CALL] no_filter_tool', color=True)
-        schedules = rule.no_filter(doctor_info)
+        log(f'[TOOL CALL] get_all_time_tool', color=True)
+        schedules = rule.get_all(doctor_info)
         schedule = rule.find_earliest_time(schedules)
         return schedule
 
@@ -382,7 +382,7 @@ def create_tools(rule: SchedulingRule,
 
         return {'original_schedule': original_schedule, 'result_dict': result_dict}
     
-    return [physician_filter_tool, date_filter_tool, no_filter_tool, cancel_tool, reschedule_tool]
+    return [physician_filter_tool, date_filter_tool, get_all_time_tool, cancel_tool, reschedule_tool]
 
 
 

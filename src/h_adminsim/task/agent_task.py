@@ -874,9 +874,11 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
                                 environment
                             )
 
+                            # When schedule sanity check is passed
                             if status:
                                 sim_environment.update_from_kwargs(**{"_branch": True})
                             
+                            # When schedule sanity check is failed
                             else:
                                 result_dict = {
                                     'gt': [{'reschedule': idx}],
@@ -887,6 +889,7 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
                                 }
                                 break
                         
+                        # When succesfully rescheduled in the available time
                         else:
                             prediction, original = event['prediction'], event['original']
                             doctor_information[prediction['attending_physician']]['schedule'][prediction['date']].append(prediction['schedule'])
@@ -904,6 +907,27 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
                                 'dialog': sim_environment.result_dict['dialog']
                             }
                             log(f'{colorstr("[RESCHEDULED]")}: {original} is rescheduled to {prediction}')
+
+                    if not len(result_dict['gt']):
+                        # Successfully adding to the waiting list
+                        if len(sim_environment.result_dict['gt']):
+                            result_dict = {
+                                'gt': sim_environment.result_dict['gt'],
+                                'pred': sim_environment.result_dict['pred'],
+                                'status': sim_environment.result_dict['status'],
+                                'status_code': sim_environment.result_dict['status_code'],
+                                'dialog': sim_environment.result_dict['dialog']
+                            }
+
+                        # Not determined case during the simulation
+                        else:
+                            result_dict = {
+                                'gt': [{'reschedule': idx}],
+                                'pred': [None],
+                                'status': [False],
+                                'status_code': [STATUS_CODES['reschedule']['identify']],
+                                'dialog': sim_environment.result_dict['dialog']
+                            }
                 
                 # Requested schedule indentification error
                 except ValueError:
