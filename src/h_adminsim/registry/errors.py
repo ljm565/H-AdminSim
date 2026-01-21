@@ -17,13 +17,13 @@ STATUS_CODES = {
     },
     'tool': 'wrong tool selection or wrong type of argument',
     'cancel': {
-        'identify': 'fail to identify requested schedule',
-        'type': 'Unexpected tool calling result'
+        'identify': 'cancel: fail to identify requested schedule',
+        'type': 'cancel: unexpected tool calling result'
     },
     'reschedule': {
-        'identify': 'fail to reschedule',
-        'schedule': '{status_code}',
-        'type': 'Unexpected tool calling result'
+        'identify': 'reschedule: fail to identify requested schedule',
+        'schedule': 'reschedule: {status_code}',
+        'type': 'reschedule: unexpected tool calling result'
     },
     'waiting list': 'fail to add to waiting list',
     # 'workload': 'workload balancing',

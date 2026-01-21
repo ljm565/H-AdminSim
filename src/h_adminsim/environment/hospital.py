@@ -287,12 +287,16 @@ class HospitalEnvironment:
             agent_results (dict): Previously saved results from the agent's simulation.
         """
         if 'schedule' in agent_results:
-            for status, pred in zip(agent_results['schedule']['status'], agent_results['schedule']['pred']):
-                if status:
-                    self.patient_schedules.append(pred)
-                    if not pred['status'] == 'cancelled':
+            statuses = [x for y in agent_results['schedule']['status'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
+            preds = [x for y in agent_results['schedule']['pred'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
+            for status, pred in zip(statuses, preds):
+                if isinstance(status, bool) and status:
+                    if 'patient' in pred:
+                        self.patient_schedules.append(pred)
+                        self.current_time = pred['last_updated_time']
+                    
+                    if 'status' in pred and not pred['status'] == 'cancelled':
                         self.booking_num[pred['attending_physician']] += 1
-                    self.current_time = pred['last_updated_time']
             
             self.waiting_list = sorted([(i, s) for i, s in enumerate(self.patient_schedules) if s['waiting_order'] >= 0], key=lambda x: x[1]['waiting_order'])
             

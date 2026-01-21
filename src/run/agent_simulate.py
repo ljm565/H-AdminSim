@@ -74,14 +74,16 @@ def resume_results(agent_test_data: dict, results_path: str, d_results_path: str
             for done in result['gt']:
                 try:
                     done_patients[task_name].add(done['patient'])
-                except KeyError:
+                except (KeyError, TypeError):
                     continue
     
     # Updated doctor schedules based on the resumed results
     if 'schedule' in agent_results:
         fixed_schedule = agent_test_data['doctor']
-        for status, pred in zip(agent_results['schedule']['status'], agent_results['schedule']['pred']):
-            if status and pred['status'] != 'cancelled':
+        statuses = [x for y in agent_results['schedule']['status'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
+        preds = [x for y in agent_results['schedule']['pred'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
+        for status, pred in zip(statuses, preds):
+            if status and 'status' in pred and pred['status'] != 'cancelled':
                 fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].append(pred['schedule'])
                 fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].sort()
     
@@ -168,17 +170,19 @@ def main(args):
                     dialogs = result.pop('dialog')
 
                     # Append a single result 
-                    agent_results.setdefault(task.name, {'gt': [], 'pred': [], 'status': [], 'status_code': [], 'trial': []})
+                    agent_results.setdefault(task.name, {'gt': [], 'pred': [], 'status': [], 'status_code': [], 'trial': [], 'dialog': []})
                     for k in result:
                         agent_results[task.name][k] += result[k]
                     
                     if task.name == 'intake':
                         dialog_results[gt['patient']] = dialogs[0]
-            
+                    else:
+                        agent_results[task.name]['dialog'] += dialogs
+
             # Logging the results
             for task_name, result in agent_results.items():
-                correctness = result['status']
-                status_code = result['status_code']
+                correctness = [x for y in result['status'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
+                status_code = [x for y in result['status_code'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
                 accuracy = sum(correctness) / len(correctness)
                 log(f'{basename} - {task_name} task results..', color=True)
                 log(f'   - accuracy: {accuracy:.3f}, length: {len(correctness)}, status_code: {status_code}')
