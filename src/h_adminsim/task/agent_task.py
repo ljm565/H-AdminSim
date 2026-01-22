@@ -961,7 +961,7 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
                     doctor_information=doctor_information,
                     reschedule_flag=True,
                     **self.staff_reasoning_kwargs,
-                )
+                )['result']
 
                 status, status_code = self._sanity_check(
                     prediction, 

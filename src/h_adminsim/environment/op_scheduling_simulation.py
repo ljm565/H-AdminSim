@@ -281,10 +281,10 @@ class OPScehdulingSimulation:
             
             ## Error
             else:
-                raise NotImplementedError(colorstr('red', 'Only supported `tool` and `text` types of result.'))
+                raise TypeError(colorstr("red", "Error: Unexpected return type from canceling method."))
 
         # If tool calling fails, fallback to LLM-based scheduling
-        except:
+        except ToolCallingError:
             log('Failed to select an appropriate tool. Falling back to reasoning-based scheduling.', level='warning')
             reschedule_desc = "Rescheduling requested. This is the rescheduling of a patient who wishes to move their appointment earlier due to a previous patient's cancelled reservation" \
                 if reschedule_flag else 'Not requested.'
@@ -436,7 +436,7 @@ class OPScehdulingSimulation:
 
         # Error
         else:
-            raise TypeError(colorstr('red', 'Only supported `tool` and `text` types of result.'))
+            raise TypeError(colorstr("red", "Error: Unexpected return type from canceling method."))
     
 
     def scheduling_simulate(self,
