@@ -26,7 +26,7 @@ class GPTClient:
         self.__first_turn = True
 
 
-    def _init_environment(self, api_key: Optional[str] = None) -> None:
+    def _init_environment(self, api_key: Optional[str] = None):
         """
         Initialize OpenAI client.
 
@@ -41,7 +41,7 @@ class GPTClient:
         self.client = OpenAI(api_key=api_key)
 
     
-    def reset_history(self, verbose: bool = True) -> None:
+    def reset_history(self, verbose: bool = True):
         """
         Reset the conversation history.
 

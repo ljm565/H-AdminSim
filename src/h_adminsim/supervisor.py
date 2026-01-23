@@ -17,7 +17,7 @@ class SupervisorAgent:
                  system_prompt_path: Optional[str] = None,
                  user_prompt_path: Optional[str] = None,
                  reasoning_effort: str = 'low',
-                 **kwargs) -> None:
+                 **kwargs):
         
         # Initialize environment
         self.target_task = target_task
@@ -42,7 +42,7 @@ class SupervisorAgent:
         log(f"Supervisor agent for {self.target_task} initialized successfully", color=True)
     
 
-    def _init_env(self, **kwargs) -> None:
+    def _init_env(self, **kwargs):
         """
         Initialize the environment with default settings.
         """
@@ -105,7 +105,7 @@ class SupervisorAgent:
                                                         If not provided, the default user prompt will be used. Defaults to None.
         Raises:
             FileNotFoundError: If the specified system prompt file does not exist.
-            
+
         Returns:
             Tuple[str, str]: The system prompt and user prompt templates.
         """
@@ -144,7 +144,7 @@ class SupervisorAgent:
         return system_prompt, user_prompt_template
     
 
-    def reset_history(self, verbose: bool = True) -> None:
+    def reset_history(self, verbose: bool = True):
         """
         Reset the conversation history.
 

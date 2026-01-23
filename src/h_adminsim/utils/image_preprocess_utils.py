@@ -119,7 +119,7 @@ def autopct_format(values: list[int], threshold: float = 5.0):
 
 
 
-def draw_fail_donut_subplots(fail_data_dict: dict, save_path: str) -> None:
+def draw_fail_donut_subplots(fail_data_dict: dict, save_path: str):
     """
     Draws donut-style pie chart subplots showing the failure type distribution for each task.
 

@@ -39,7 +39,7 @@ def json_load(path: str) -> Any:
 
 
 
-def json_save(path: str, data: dict) -> None:
+def json_save(path: str, data: dict):
     """
     Save json file.
 
@@ -52,7 +52,7 @@ def json_save(path: str, data: dict) -> None:
 
 
 
-def json_save_fast(path: str, data: dict) -> None:
+def json_save_fast(path: str, data: dict):
     """
     Save json file more faster.
 
@@ -65,7 +65,7 @@ def json_save_fast(path: str, data: dict) -> None:
 
 
 
-def yaml_save(file: str='data.yaml', data: Any = None) -> None:
+def yaml_save(file: str='data.yaml', data: Any = None):
     """
     Save data to an YAML file.
 

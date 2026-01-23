@@ -43,7 +43,7 @@ class DataGenerator:
 
         Raises:
             TypeError: If `config` is not None, str, or Config.
-            
+
         Returns:
             Config: A fully initialized Config object.
         """
@@ -70,7 +70,7 @@ class DataGenerator:
         )
 
 
-    def __env_setup(self, config: Config) -> None:
+    def __env_setup(self, config: Config):
         """
         Initialize environment-level random seeds using the given configuration.
 
@@ -149,7 +149,7 @@ class DataGenerator:
 
     def upload_to_fhir(self,
                        fhir_data_dir: str,
-                       fhir_url: Optional[str] = None) -> None:
+                       fhir_url: Optional[str] = None):
         """
         Upload synthesized FHIR resources to the specified FHIR server.
 

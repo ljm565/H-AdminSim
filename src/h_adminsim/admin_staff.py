@@ -28,7 +28,7 @@ class AdminStaffAgent:
                  scheduling_user_prompt_path: Optional[str] = None,
                  tool_calling_prompt_path: Optional[str] = None,
                  sc_tool_calling_prompt_path: Optional[str] = None,
-                 **kwargs) -> None:
+                 **kwargs):
         
         # Initialize environment
         self.target_task = target_task
@@ -55,7 +55,7 @@ class AdminStaffAgent:
         log("Administrative staff agent initialized successfully", color=True)
     
 
-    def _init_env(self, **kwargs) -> None:
+    def _init_env(self, **kwargs):
         """
         Initialize the environment with default settings.
         """
@@ -118,7 +118,7 @@ class AdminStaffAgent:
                                                                 If not provided, the default tool calling prompt will be used. Defaults to None.
         Raises:
             FileNotFoundError: If the specified system prompt file does not exist.
-            
+
         Returns:
             Tuple[str, str, str, str]: The system prompt, user prompt templates, tool calling prompt, and the only scheduling tool calling prompt.
         """
@@ -179,7 +179,7 @@ class AdminStaffAgent:
         return system_prompt, scheduling_user_prompt_template, tool_calling_prompt, sc_tool_calling_prompt
     
 
-    def reset_history(self, verbose: bool = True) -> None:
+    def reset_history(self, verbose: bool = True):
         """
         Reset the conversation history.
 

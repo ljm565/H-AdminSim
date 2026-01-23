@@ -29,7 +29,7 @@ class Simulator:
         self.task_queue, self.task_list = self._init_task(intake_task, scheduling_task)
 
 
-    def __env_setup(self, random_seed: int) -> None:
+    def __env_setup(self, random_seed: int):
         """
         Initialize environment-level random seeds.
 

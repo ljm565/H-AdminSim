@@ -30,7 +30,7 @@ class VLLMClient:
         )
 
 
-    def __sanity_check(self) -> None:
+    def __sanity_check(self):
         response = requests.get(f'{self.vllm_endpoint}/v1/models')
         if response.status_code != 200:
             raise ValueError(colorstr("red", f"Failed to retrieve models: {response.text}"))
@@ -43,7 +43,7 @@ class VLLMClient:
             raise ValueError(colorstr("red", f"Model '{self.model}' not found in available models: {', '.join(available_model_ids)}"))
 
     
-    def reset_history(self, verbose: bool = True) -> None:
+    def reset_history(self, verbose: bool = True):
         """
         Reset the conversation history.
 

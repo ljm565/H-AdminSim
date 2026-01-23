@@ -28,7 +28,7 @@ class GeminiClient:
         self.token_usages = dict()
 
 
-    def _init_environment(self, api_key: Optional[str] = None) -> None:
+    def _init_environment(self, api_key: Optional[str] = None):
         """
         Initialize Goolge GCP Gemini client.
 
@@ -43,7 +43,7 @@ class GeminiClient:
         self.client = genai.Client(api_key=api_key)
 
 
-    def reset_history(self, verbose: bool = True) -> None:
+    def reset_history(self, verbose: bool = True):
         """
         Reset the conversation history.
 

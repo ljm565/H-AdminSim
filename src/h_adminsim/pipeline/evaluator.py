@@ -8,7 +8,7 @@ class Evaluator(BaseEvaluator):
         super().__init__(path)
         
     
-    def evaluate(self, tasks: list[str]) -> None:
+    def evaluate(self, tasks: list[str]):
         """
         Evaluate the performance of an agent.
 
