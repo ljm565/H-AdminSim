@@ -27,6 +27,7 @@ STATUS_CODES = {
     },
     'waiting list': 'fail to add to waiting list',
     'preceding': 'preceding task failed',
+    'unexpected': "unexpected error: {e}",
     'correct': 'pass',
 }
 
@@ -76,6 +77,14 @@ class ToolCallingError(Exception):
 
 class ScheduleNotFoundError(Exception):
     error_code = "SCHEDULE_NOT_FOUND_ERROR"
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+
+class SchedulingError(Exception):
+    error_code = "SCHEDULING_ERROR"
 
     def __init__(self, message: str):
         super().__init__(message)
