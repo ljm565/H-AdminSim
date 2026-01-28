@@ -171,9 +171,10 @@ class SchedulingRule:
             int: The index of the appointment that matches the patient's request.
         """
         for idx, patient_schedule in enumerate(patient_schedule_list):
-            if patient_schedule['patient'].lower() == patient_name.lower() and \
-                patient_schedule['attending_physician'].lower() == doctor_name.lower() \
-                    and patient_schedule['date'] == date:
+            if patient_schedule['status'] == 'scheduled' and \
+                patient_schedule['patient'].lower() == patient_name.lower() and \
+                    patient_schedule['attending_physician'].lower() == doctor_name.lower() \
+                        and patient_schedule['date'] == date:
                 return idx
         return -1
 
