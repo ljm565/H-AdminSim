@@ -19,9 +19,9 @@ class Evaluator(BaseEvaluator):
             self.task_evaluation()
             log('')
 
-        if 'feedback' in tasks:
-            self.supervisor_evaluation()
-            log('')
+        # if 'feedback' in tasks:
+        #     self.supervisor_evaluation()
+        #     log('')
 
         if 'rounds' in tasks:
             self.calculate_avg_rounds()

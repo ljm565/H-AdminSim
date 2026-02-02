@@ -46,7 +46,7 @@ if __name__ == '__main__':
         type=str, 
         required=True, 
         nargs='+', 
-        choices=['task', 'feedback', 'human', 'department', 'rounds', 'ipi'], 
+        choices=['task', 'human', 'department', 'rounds'], 
         help='Task types you want to evaluate (you can specify multiple)'
     )
     args = parser.parse_args()

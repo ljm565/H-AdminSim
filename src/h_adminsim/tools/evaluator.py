@@ -54,16 +54,29 @@ class Evaluator:
             status = [x for y in sum(value['status'], []) for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
             status_code = [x for y in sum(value['status_code'], []) for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
             accuracy = sum(status) / len(status) * 100
-            failed_cases = [c for s, c in zip(status, status_code) if not s]
+            failed_cases = [c for s, c in zip(status, status_code) if not s and 'unexpected' not in c]
             error_rate = (len(failed_cases) / len(status)) * 100
             log(f'{colorstr(task):<27} | accuracy: {colorstr("green", f"{accuracy:.2f}%")}, length: {sum(status)} / {len(status)}')
             log(f'{colorstr(task):<27} | Error   : {colorstr("red", f"{error_rate:.2f}%")}, length: {len(failed_cases)} / {len(status)}')
 
             if failed_cases:
                 fail_summary = Counter(failed_cases)
+                reschedule_fail_summary = Counter()
+
+                for k, v in list(fail_summary.items()):
+                    if k.startswith("reschedule:") and 'identify' not in k and 'unexpected' not in k:
+                        norm_key = k.replace("reschedule:", "").strip()
+                        fail_summary[norm_key] += v
+                        reschedule_fail_summary[norm_key] += v
+                        fail_summary.pop(k)
+
                 for fail_type, count in fail_summary.items():
                     percent = (count / len(failed_cases)) * 100
-                    log(f'    - Fail type {colorstr("red", fail_type):<30}: {count} cases ({percent:.2f}%)')
+                    reschedule_n = reschedule_fail_summary[fail_type] if fail_type in reschedule_fail_summary else 0
+                    if reschedule_n:
+                        log(f'    - Fail type {colorstr("red", fail_type):<30}: {count} (reschedule: {reschedule_n}) cases ({percent:.2f}%)')
+                    else:
+                        log(f'    - Fail type {colorstr("red", fail_type):<30}: {count} cases ({percent:.2f}%)')
                 fail_data_dict[task] = failed_cases
 
         draw_fail_donut_subplots(fail_data_dict, os.path.join(self.path, 'fails.png'))
