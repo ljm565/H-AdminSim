@@ -44,7 +44,6 @@ We extend the previously emergency department-focused [PatientSim](https://githu
 * **Medical referral status**: Dialogue flow adapts based on whether the patient has a referral
 * **Tasks**: Department recommendation, information extraction, structured data construction
 
-&nbsp;
 
 #### 2.2. Appointment Scheduling Simulation
 We simulate realistic scheduling interactions between administrative staff and patients, reflecting diverse scheduling behaviors and hospital-level constraints.
@@ -53,7 +52,6 @@ We simulate realistic scheduling interactions between administrative staff and p
 * **Random requests**: `cancellation`, `rescheduling`
 * **Tasks**: New appointment scheduling, rescheduling, schdule cancellation
 
-&nbsp;
 
 #### 2.3. FHIR Integration
 We provide optional support for integrating with FHIR, allowing the simulator to operate flexibly across heterogeneous hospital environments as long as FHIR-compatible data is available. For instructions on running a FHIR server, please refer to the [FHIR Server Execution](https://github.com/ljm565/fhir_server) repository.
@@ -359,11 +357,11 @@ scheduling_task = OutpatientFirstScheduling(
 
 &nbsp;
 
-#### 3. Simulation
+### 3. Simulation
 ```python
 from h_adminsim.pipeline import Simulator
 
-# 3. Simulation
+# 3. Simulator initialization
 # 3.1. Default usage
 simulator = Simulator(
     intake_task=intake_task,
@@ -375,8 +373,9 @@ simulator = Simulator(
     random_seed=9999,
 )
 ##############################################################
+
 # 3.2. FHIR integration 
-# (If enabled, both intake and scheduling agents must be initialized with fhir_integration=True)
+# (If enabled, scheduling task must be initialized with `fhir_integration=True`)
 simulator = Simulator(
     intake_task=intake_task,
     scheduling_task=scheduling_task,
