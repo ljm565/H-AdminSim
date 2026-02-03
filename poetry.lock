@@ -4113,8 +4113,8 @@ files = [
 
 [package.dependencies]
 numpy = [
-    {version = ">=1.23.5", markers = "python_version >= \"3.11\" and python_version < \"3.12\""},
     {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
+    {version = ">=1.23.5", markers = "python_version >= \"3.11\" and python_version < \"3.12\""},
 ]
 
 [[package]]
@@ -4328,8 +4328,8 @@ files = [
 
 [package.dependencies]
 numpy = [
-    {version = ">=1.23.2", markers = "python_version == \"3.11\""},
     {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
+    {version = ">=1.23.2", markers = "python_version == \"3.11\""},
 ]
 python-dateutil = ">=2.8.2"
 pytz = ">=2020.1"
@@ -4376,13 +4376,13 @@ playground = ["rich"]
 
 [[package]]
 name = "patientsim"
-version = "0.2.1"
+version = "1.0.0"
 description = "A Python package for simulating patient interactions."
 optional = false
 python-versions = "<3.13,>=3.11"
 files = [
-    {file = "patientsim-0.2.1-py3-none-any.whl", hash = "sha256:11620d1ead478b2a29160c9aac55139626459b3c606783777a589eab364baed4"},
-    {file = "patientsim-0.2.1.tar.gz", hash = "sha256:0635ee9c3833f3722f01d0e197738d7dac251c1aca44cde122089c87074b96f7"},
+    {file = "patientsim-1.0.0-py3-none-any.whl", hash = "sha256:eca38a10e83b0994ff0ea3a5991c25b7c243306a918f1f82124e8250e46ebb2c"},
+    {file = "patientsim-1.0.0.tar.gz", hash = "sha256:16330afb0d9448d45215296cadf191a95e95c1872589a9e368389c84c2f86260"},
 ]
 
 [package.dependencies]
@@ -8434,4 +8434,4 @@ cffi = ["cffi (>=1.17,<2.0)", "cffi (>=2.0.0b)"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.11,<3.13"
-content-hash = "f637418335f583bc4699bc18e758a28b0aa2d6aae742e466ab32d063a936910a"
+content-hash = "6ddeeb80141d227f29d151c58669aa4a3868e33dfbc50d4cafabc0680559e6d7"
