@@ -157,7 +157,7 @@ simulator.run(
 
 &nbsp;
 
-## Core Components ⚙️
+## Components Details ⚙️
 ### 1. Data synthesis
 ```python
 from h_adminsim.pipeline import DataGenerator
@@ -298,107 +298,61 @@ from h_adminsim import AdminStaffAgent, SupervisorAgent
 from h_adminsim.task.agent_task import OutpatientFirstScheduling
 
 # 2. Appointment Scheduling
-# 2.1. Default usage (self-feedback)
-admin_staff_agent = AdminStaffAgent(
-    target_task='first_outpatient_scheduling',
-    model='gpt-5-mini',
-)
+# 2.1. Default usage (Tool-calling with reasoning fallbacks)
 scheduling_task = OutpatientFirstScheduling(
     patient_model='gpt-5-nano',
-    scheduling_strategy='llm',
-    admin_staff_agent=admin_staff_agent,
-    supervisor_agent=None,
-    schedule_cancellation_prob=0.05,
-    request_early_schedule_prob=0.1,
-    max_feedback_number=5,  # Default: up to 5 feedback
+    admin_staff_model='gemini-2.5-flash',
+    schedule_cancellation_prob=0.05,    # Cancellation event
+    request_early_schedule_prob=0.1,    # Rescheduling event
+    preference_rejection_prob = 0.3,        # Prob. of rejecting the first-priority scheduling preference
+    preference_rejection_prob_decay = 0.5,  # Decay factor for the preference rejection prob.
+    scheduling_max_inference=5,
+    scheduling_strategy='tool_calling',
     fhir_integration=False,
 )
 ##############################################################
 
-# 2.2. Supervisor agent-based feedback
-supervisor_agent = SupervisorAgent(
-    target_task='first_outpatient_scheduling',
-    model='gpt-5-nano',
-    api_key=${YOUR_API_KEY},  # You may set the API key here instead of using a .env file
-)
-admin_staff_agent = AdminStaffAgent(
-    target_task='first_outpatient_scheduling',
-    model='gpt-5-mini',
-    api_key=${YOUR_API_KEY},  # You may set the API key here instead of using a .env file
-)
+# 2.2. LLM reasoning-based scheduling without tool-calling
 scheduling_task = OutpatientFirstScheduling(
     patient_model='gpt-5-nano',
-    scheduling_strategy='llm',
-    admin_staff_agent=admin_staff_agent,
-    supervisor_agent=supervisor_agent,
-    schedule_cancellation_prob=0.05,
-    request_early_schedule_prob=0.1,
-    max_feedback_number=5,
+    admin_staff_model='gpt-5-mini',
+    schedule_cancellation_prob=0.05,    # Cancellation event
+    request_early_schedule_prob=0.1,    # Rescheduling event
+    preference_rejection_prob = 0.3,        # Prob. of rejecting the first-priority scheduling preference
+    preference_rejection_prob_decay = 0.5,  # Decay factor for the preference rejection prob.
+    scheduling_max_inference=5,
+    scheduling_strategy='reasoning',
     fhir_integration=False,
 )
 ##############################################################
 
 # 2.3. HIS upload via FHIR
-admin_staff_agent = AdminStaffAgent(
-    target_task='first_outpatient_scheduling',
-    model='gpt-5-mini',
-)
 scheduling_task = OutpatientFirstScheduling(
     patient_model='gpt-5-nano',
-    scheduling_strategy='llm',
-    admin_staff_agent=admin_staff_agent,
-    supervisor_agent=None,
-    schedule_cancellation_prob=0.05,
-    request_early_schedule_prob=0.1,
-    max_feedback_number=5,
+    admin_staff_model='gemini-2.5-flash',
+    schedule_cancellation_prob=0.05,    # Cancellation event
+    request_early_schedule_prob=0.1,    # Rescheduling event
+    preference_rejection_prob = 0.3,        # Prob. of rejecting the first-priority scheduling preference
+    preference_rejection_prob_decay = 0.5,  # Decay factor for the preference rejection prob.
+    scheduling_max_inference=5,
+    scheduling_strategy='tool_calling',
     fhir_integration=True,
 )
 ##############################################################
 
-# 2.4. Advanced usage 1: vLLM
-supervisor_agent = SupervisorAgent(
-    target_task='first_outpatient_scheduling',
-    model='meta-llama/Llama-3.3-70B-Instruct',
-    use_vllm=True,              # Use a vLLM-hosted model as the supervisor
-    vllm_endpoint='http://0.0.0.0:8000',  # vLLM server endpoint
-)
-admin_staff_agent = AdminStaffAgent(
-    target_task='first_outpatient_scheduling',
-    model='meta-llama/Llama-3.3-70B-Instruct',
-    use_vllm=True,              # Use a vLLM-hosted model as the supervisor
-    vllm_endpoint='http://0.0.0.0:8000',  # vLLM server endpoint
-)
+# 2.4. Advanced usage: vLLM
 scheduling_task = OutpatientFirstScheduling(
-    patient_model='gpt-5-nano',
-    scheduling_strategy='llm',
-    admin_staff_agent=admin_staff_agent,
-    supervisor_agent=supervisor_agent,
-    schedule_cancellation_prob=0.05,
-    request_early_schedule_prob=0.1,
-    max_feedback_number=5,
-    fhir_integration=True,
-)
-##############################################################
-
-# 2.4. Advanced usage 2: scheduling strategy
-admin_staff_agent = AdminStaffAgent(
-    target_task='first_outpatient_scheduling',
-    model='gpt-5-mini',
-)
-
-# scheduling_strategy options:
-# - "llm": LLM-only scheduling
-# - "tool_calling": tool-based scheduling via LLM tool calls
-# - "rule": rule-based / heuristic scheduling baseline
-scheduling_task = OutpatientFirstScheduling(
-    patient_model='gpt-5-nano',
-    scheduling_strategy='tool_calling',      
-    admin_staff_agent=admin_staff_agent,
-    supervisor_agent=None,
-    schedule_cancellation_prob=0.05,
-    request_early_schedule_prob=0.1,
-    max_feedback_number=5,
+    patient_model='meta-llama/Llama-3.3-70B-Instruct',
+    admin_staff_model='gpt-5-mini',
+    schedule_cancellation_prob=0.05,    # Cancellation event
+    request_early_schedule_prob=0.1,    # Rescheduling event
+    preference_rejection_prob = 0.3,        # Prob. of rejecting the first-priority scheduling preference
+    preference_rejection_prob_decay = 0.5,  # Decay factor for the preference rejection prob.
+    scheduling_max_inference=5,
+    scheduling_strategy='tool-calling',    # Currently, we do not support tool-calling from vLLM
     fhir_integration=False,
+    patient_vllm_endpoint='http://0.0.0.0:8000',
+    
 )
 ##############################################################
 ```
