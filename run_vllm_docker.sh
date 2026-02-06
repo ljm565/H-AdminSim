@@ -43,7 +43,7 @@ echo "[INFO] Starting vLLM server using Docker..."
 
 docker run --gpus "\"$GPU_DEVICES\"" --rm -d \
            --name $CONTAINER_NAME \
-           -p $HOST_PORT:8000 \
+           -p $HOST_PORT:$HOST_PORT \
            --ipc=host \
            -v $LOCAL_HF_MODEL_DIR:/root/.cache/huggingface/hub/ \
            --env HUGGING_FACE_HUB_TOKEN=$HF_TOKEN \
