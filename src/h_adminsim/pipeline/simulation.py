@@ -21,23 +21,32 @@ class Simulator:
                  random_seed: int = 9999):
         
         # Initialize
-        self.__env_setup(random_seed)
         self.simulation_start_day_before = simulation_start_day_before
         self.fhir_integration = fhir_integration
         self.fhir_url = fhir_url if self.fhir_integration else None
         self.fhir_max_connection_retries = fhir_max_connection_retries
         self.task_queue, self.task_list = self._init_task(intake_task, scheduling_task)
+        self.random_seed = random_seed
 
 
-    def __env_setup(self, random_seed: int):
+    def __env_setup(self, random_seed: int, resume: bool):
         """
         Initialize environment-level random seeds.
 
         Args:
             random_seed (int): Random seed.
+            resume (bool): Whether resumed simulation or not.
         """
         random.seed(random_seed)
         np.random.seed(random_seed)
+
+        if self.fhir_integration and not resume:
+            fhir_manager = FHIRManager(self.fhir_url)
+            appointment_entries = fhir_manager.read_all('Appointment')
+            patient_entries = fhir_manager.read_all('Patient')
+            fhir_manager.delete_all(appointment_entries, verbose=False)
+            fhir_manager.delete_all(patient_entries, verbose=False)
+
 
 
     def _init_task(self, 
@@ -69,18 +78,6 @@ class Simulator:
         
         return task_queue, task_list
     
-
-    def clean_fhir(self):
-        """
-        Clear the FHIR data.
-        """
-        if self.fhir_integration:
-            fhir_manager = FHIRManager(self.fhir_url)
-            appointment_entries = fhir_manager.read_all('Appointment')
-            patient_entries = fhir_manager.read_all('Patient')
-            fhir_manager.delete_all(appointment_entries, verbose=False)
-            fhir_manager.delete_all(patient_entries, verbose=False)
-
     
     @staticmethod
     def shuffle_data(data: dict):
@@ -157,20 +154,19 @@ class Simulator:
         Raises:
             Exception: Propagates any errors encountered during simulation or result saving.
         """
-        # Clear FHIR data
-        if not resume:
-            self.clean_fhir()
+        # Initialize environment
+        self.__env_setup(self.random_seed, resume)
         
         # Load agent simulation data
         is_file = os.path.isfile(simulation_data_path)
         agent_simulation_data_files = [simulation_data_path] if is_file else get_files(simulation_data_path, ext='json')
-        all_agent_simulation_data = [json_load(path) for path in agent_simulation_data_files]   # one agent simulation data per hospital
 
         try:
             os.makedirs(output_dir, exist_ok=True)
 
             # Data per hospital
-            for i, agent_simulation_data in enumerate(all_agent_simulation_data):
+            for path in agent_simulation_data_files:
+                agent_simulation_data = json_load(path)
                 agent_results, done_patients, dialog_results = dict(), dict(), dict()
                 Simulator.shuffle_data(agent_simulation_data)
                 environment = HospitalEnvironment(
@@ -179,7 +175,7 @@ class Simulator:
                     self.fhir_max_connection_retries,
                     self.simulation_start_day_before
                 )
-                basename = os.path.splitext(os.path.basename(agent_simulation_data_files[i]))[0]
+                basename = os.path.splitext(os.path.basename(path))[0]
                 save_path = os.path.join(output_dir, f'{basename}_result.json')
                 d_save_path = os.path.join(output_dir, f'{basename}_dialog.json')
                 log(f'{basename} simulation started..', color=True)

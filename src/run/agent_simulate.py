@@ -5,28 +5,15 @@ import numpy as np
 from sconf import Config
 from typing import Tuple
 from argparse import ArgumentParser
+from concurrent.futures import ProcessPoolExecutor, as_completed
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
 from h_adminsim import SupervisorAgent
 from h_adminsim.task.agent_task import *
-from h_adminsim.task.fhir_manager import FHIRManager
-from h_adminsim.environment.hospital import HospitalEnvironment
-from h_adminsim.utils import log
+from h_adminsim.pipeline import Simulator
 from h_adminsim.utils.filesys_utils import json_load, json_save_fast, yaml_save, get_files
 
 
-
-def env_setup(config, is_continue):
-    random.seed(config.seed)
-    np.random.seed(config.seed)
-
-    # Delete Patient and Appointment resources when starting a simulation
-    if config.integration_with_fhir and not is_continue:
-        fhir_manager = FHIRManager(config.fhir_url)
-        appointment_entries = fhir_manager.read_all('Appointment')
-        patient_entries = fhir_manager.read_all('Patient')
-        fhir_manager.delete_all(appointment_entries, verbose=False)
-        fhir_manager.delete_all(patient_entries, verbose=False)
 
 
 def load_config(config_path):
@@ -34,72 +21,9 @@ def load_config(config_path):
     return config
 
 
-def shuffle_agent_test_data(agent_test_data: dict):
-    """
-    Shuffle the agent test data by the schedule start time.
-
-    Args:
-        agent_test_data (dict): An agent test data to simulate a hospital environmnet.
-    """
-    random.shuffle(agent_test_data['agent_data'])        # In-place logic
-
-
-def resume_results(agent_test_data: dict, results_path: str, d_results_path: str) -> Tuple[dict, dict, dict, set]:
-    """
-    Resume a previously saved simulation by aligning agent results.
-
-    Args:
-        agent_test_data (dict): Static agent test data for a simulation.
-        results_path (str): Path to the JSON file containing the saved simulation results.
-        d_results_path (str): Path to the JSON file containing the saved dialog results.
-
-    Returns:
-        Tuple[dict, int]:
-            - dict: Schedule updated static agent test data.
-            - dict: Previously saved agent results.
-            - dict: Previously saved dialog results.
-            - set: A dictionary containing patients that have already been processed for each task.
-    """
-    # Load previous results
-    agent_results = json_load(results_path)
-    dialog_results = json_load(d_results_path) if os.path.exists(d_results_path) else dict()
-
-    # Get patients that have already been processed for each task
-    done_patients = dict()
-    for task_name, result in agent_results.items():
-        if task_name == 'intake':
-            done_patients[task_name] = {done['patient']['name'] for done in result['gt']}
-        elif task_name == 'schedule':
-            done_patients[task_name] = set()
-            for done in result['gt']:
-                try:
-                    done_patients[task_name].add(done['patient'])
-                except (KeyError, TypeError):
-                    continue
-    
-    # Updated doctor schedules based on the resumed results
-    if 'schedule' in agent_results:
-        fixed_schedule = agent_test_data['doctor']
-        statuses = [x for y in agent_results['schedule']['status'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
-        preds = [x for y in agent_results['schedule']['pred'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
-        for status, pred in zip(statuses, preds):
-            if status and 'status' in pred and pred['status'] != 'cancelled':
-                fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].append(pred['schedule'])
-                fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].sort()
-    
-    return agent_test_data, agent_results, dialog_results, done_patients
-
-
-def main(args):
-    # Init config
-    config = load_config(args.config)
-    config.yaml_file = args.config
-    
-    # Init environment
-    env_setup(config, args.resume)
-
+def simulate(config, args, single_file=None):
     # Initialize tasks
-    queue = list()
+    intake_task, scheduling_task = None, None
     if 'intake' in args.type:
         use_vllm = False if any(m in config.supervisor_model.lower() for m in ['gpt', 'gemini']) else True
         supervisor_agent = SupervisorAgent(
@@ -109,18 +33,17 @@ def main(args):
             vllm_endpoint = config.vllm_url if use_vllm else None
         )
         use_vllm = False if any(m in config.task_model.lower() for m in ['gpt', 'gemini']) else True
-        queue.append(OutpatientFirstIntake(
+        intake_task = OutpatientFirstIntake(
             patient_model=config.task_model,
             admin_staff_model=config.task_model,
             supervisor_agent=supervisor_agent if config.outpatient_intake.use_supervisor else None,
             intake_max_inference=config.outpatient_intake.intake_max_inference,
             patient_vllm_endpoint=config.vllm_url if use_vllm else None,
             admin_staff_vllm_endpoint=config.vllm_url if use_vllm else None
-        ))
-        # queue.append(OutpatientIntake(config))
+        )
     if 'schedule' in args.type:
         use_vllm = False if any(m in config.task_model.lower() for m in ['gpt', 'gemini']) else True
-        queue.append(OutpatientFirstScheduling(
+        scheduling_task = OutpatientFirstScheduling(
             patient_model=config.task_model,
             admin_staff_model=config.task_model,
             schedule_cancellation_prob=config.schedule_cancellation_prob,
@@ -129,79 +52,59 @@ def main(args):
             scheduling_strategy=config.schedule_task.scheduling_strategy,
             patient_vllm_endpoint=config.vllm_url if use_vllm else None,
             admin_staff_vllm_endpoint=config.vllm_url if use_vllm else None
-        ))
+        )
 
-    # Initialize agent test data
-    is_file = os.path.isfile(config.agent_test_data)
-    agent_test_data_files = [config.agent_test_data] if is_file else get_files(config.agent_test_data, ext='json')
-    all_agent_test_data = [json_load(path) for path in agent_test_data_files]   # one agent test data per hospital
+    # Run simulations
+    simulator = Simulator(
+        intake_task=intake_task,
+        scheduling_task=scheduling_task,
+        simulation_start_day_before=config.booking_days_before_simulation,
+        fhir_integration=config.integration_with_fhir,
+        fhir_url=config.fhir_url,
+        fhir_max_connection_retries=config.fhir_max_connection_retries,
+        random_seed=config.seed,
+    )
 
-    # Execute agent tasks
-    try:
-        os.makedirs(args.output_dir, exist_ok=True)
-        yaml_save(os.path.join(args.output_dir, 'args.yaml'), config)
-        
-        # Data per hospital
-        for i, agent_test_data in enumerate(all_agent_test_data):
-            agent_results, done_patients, dialog_results = dict(), dict(), dict()
-            shuffle_agent_test_data(agent_test_data)
-            environment = HospitalEnvironment(
-                agent_test_data, 
-                config.fhir_url, 
-                config.fhir_max_connection_retries,
-                config.booking_days_before_simulation
-            )
-            basename = os.path.splitext(os.path.basename(agent_test_data_files[i]))[0]
-            save_path = os.path.join(args.output_dir, f'{basename}_result.json')
-            d_save_path = os.path.join(args.output_dir, f'{basename}_dialog.json')
-            log(f'{basename} simulation started..', color=True)
-            
-            # Resume the results and the virtual hospital environment
-            if args.resume and os.path.exists(save_path):
-                agent_test_data, agent_results, dialog_results, done_patients = resume_results(agent_test_data, save_path, d_save_path)
-                environment.resume(agent_results)
+    simulator.run(
+        simulation_data_path=config.agent_test_data if single_file is None else single_file,
+        output_dir=args.output_dir,
+        resume=args.resume,
+        verbose=args.verbose,
+    )
 
-            # Data per patient
-            for j, (gt, test_data) in enumerate(agent_test_data['agent_data']):
-                for task in queue:
-                    if task.name in done_patients and gt['patient'] in done_patients[task.name]:
-                        continue
 
-                    result = task((gt, test_data), agent_test_data, agent_results, environment, args.verbose)
-                    dialogs = result.pop('dialog')
-
-                    # Append a single result 
-                    agent_results.setdefault(task.name, {'gt': [], 'pred': [], 'status': [], 'status_code': [], 'trial': [], 'dialog': []})
-                    for k in result:
-                        agent_results[task.name][k] += result[k]
-                    
-                    if task.name == 'intake':
-                        dialog_results[gt['patient']] = dialogs[0]
-                    else:
-                        agent_results[task.name]['dialog'] += dialogs
-
-            # Logging the results
-            for task_name, result in agent_results.items():
-                correctness = [x for y in result['status'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
-                status_code = [x for y in result['status_code'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
-                accuracy = sum(correctness) / len(correctness)
-                log(f'{basename} - {task_name} task results..', color=True)
-                log(f'   - accuracy: {accuracy:.3f}, length: {len(correctness)}, status_code: {status_code}')
-            
-            json_save_fast(save_path, agent_results)
-            if 'intake' in args.type:
-                json_save_fast(d_save_path, dialog_results)
-            
-        log(f"Agent completed the tasks successfully", color=True)
+def main(args):
+    # Init config
+    config = load_config(args.config)
+    config.yaml_file = args.config
+    os.makedirs(args.output_dir, exist_ok=True)
+    yaml_save(os.path.join(args.output_dir, 'args.yaml'), config)
     
-    except Exception as e:
-        if len(agent_results):
-            json_save_fast(save_path, agent_results)
-            if 'intake' in args.type:
-                json_save_fast(d_save_path, dialog_results)
-        log("Error occured while execute the tasks.", level='error')
-        raise e
-    
+    # Multi-processing
+    simulation_data_files = get_files(config.agent_test_data, ext='json')
+    num_workers = min(getattr(args, "num_workers", os.cpu_count() or 1), len(simulation_data_files))
+    if num_workers <= 1:
+        try:
+            simulate(config, args)
+        except:
+            raise
+    else:
+        try:
+            with ProcessPoolExecutor(max_workers=num_workers) as ex:
+                futures = [
+                    ex.submit(
+                        simulate, 
+                        config,
+                        args,
+                        path
+                    ) for path in simulation_data_files
+                ]
+
+                for fut in as_completed(futures):
+                    fut.result()
+        except:
+            raise
+
 
 
 if __name__ == '__main__':
@@ -211,6 +114,7 @@ if __name__ == '__main__':
     parser.add_argument('-o', '--output_dir', type=str, required=True, help='Path to save agent test results')
     parser.add_argument('--resume', action='store_true', required=False, help='Continue the stopped processing')
     parser.add_argument('--verbose', action='store_true', required=False, help='Whether logging the each result or not')
+    parser.add_argument('--num_workers', type=int, required=False, default=1, help='Whether execute the code with multi-processing or not')
     args = parser.parse_args()
 
     main(args)
