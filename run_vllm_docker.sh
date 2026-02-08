@@ -12,10 +12,11 @@ set +a
 # --------------------
 # Configuration
 # --------------------
-MODEL_NAME="meta-llama/Llama-3.3-70B-Instruct"                   # HuggingFace model name or local path to the model
+MODEL_NAME="meta-llama/Llama-3.3-70B-Instruct"                  # HuggingFace model name or local path to the model
+TOOL_CALL_PARSER="llama3_json"                                  # Tool-calling parser
 NUM_GPUS=2                                                      # Number of GPUs to use
 GPU_DEVICES="device=0,1"                                        # List of GPU device IDs to assign to Docker
-GPU_MEMORY_UTILIZATION=0.95                                      # Maximum GPU memory utilization ratio (between 0 and 1)
+GPU_MEMORY_UTILIZATION=0.95                                     # Maximum GPU memory utilization ratio (between 0 and 1)
 MAX_LEN=16000                                                   # Maximum token length
 HOST="0.0.0.0"                                                  # Host IP to bind the vLLM server (0.0.0.0 binds all interfaces)
 HOST_PORT=8000                                                  # Port on the host machine to expose
@@ -28,6 +29,8 @@ LOCAL_HF_MODEL_DIR="/home/data_storage/huggingface"             # Diretory which
 # Docker command
 # --------------------
 CMD="--model $MODEL_NAME \
+     --tool-call-parser $TOOL_CALL_PARSER \
+     --enable-auto-tool-choice \
      --tensor-parallel-size $NUM_GPUS \
      --gpu-memory-utilization $GPU_MEMORY_UTILIZATION \
      --max-model-len $MAX_LEN \

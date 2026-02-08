@@ -216,7 +216,7 @@ class AdminStaffAgent:
             ("user", "{input}"),
             ("assistant", "{agent_scratchpad}"),
         ])
-        
+        # Gemini series
         if 'gemini' in self.model.lower():
             llm = ChatGoogleGenerativeAI(
                 model=self.model,
@@ -227,7 +227,7 @@ class AdminStaffAgent:
                 tools=tools,
                 prompt=prompt
             )
-
+        # GPT series
         elif 'gpt' in self.model.lower():
             llm = ChatOpenAI(
                 model_name=self.model, 
@@ -238,9 +238,18 @@ class AdminStaffAgent:
                 tools=tools,
                 prompt=prompt
             )
-
+        # vLLM open sources
         else:
-            log('Currently, we have supported only Gemini and GPT API-based models.', 'error')
+            llm = ChatOpenAI(
+                model=self.model,
+                temperature=0,
+                base_url=f"{self.client.vllm_endpoint}/v1",
+            )
+            agent = create_openai_tools_agent(
+                llm=llm,
+                tools=tools,
+                prompt=prompt
+            )
     
         executor = AgentExecutor(
             agent=agent,

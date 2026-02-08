@@ -102,6 +102,7 @@ def main(args):
     simulation_data_files = get_files(config.agent_test_data, ext='json')
     num_workers = min(getattr(args, "num_workers", os.cpu_count() or 1), len(simulation_data_files))
     if num_workers <= 1:
+        bridge_patientsim()
         try:
             args.logging_dir = None
             simulate(config, args)
@@ -110,7 +111,8 @@ def main(args):
     else:
         try:
             if args.logging_dir is None:
-                args.logging_dir = os.makedirs(os.path.join(args.output_dir, 'logs'), exist_ok=True)
+                args.logging_dir = os.path.join(args.output_dir, 'logs')
+                os.makedirs(args.logging_dir, exist_ok=True)
             
             with ProcessPoolExecutor(max_workers=num_workers) as ex:
                 futures = [
