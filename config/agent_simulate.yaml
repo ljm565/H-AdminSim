@@ -6,7 +6,7 @@ supervisor_model: gpt-5-nano
 task_model: gpt-5-nano
 vllm_url: http://0.0.0.0:8000     # Used only when using vllm.
 
-# Agent test data and converted FHIR data folder
+# Simulation environment
 agent_test_data: hospital_data/primary/agent_data
 fhir_url: http://localhost:8080/fhir
 integration_with_fhir: False
@@ -22,4 +22,4 @@ outpatient_intake:
     use_supervisor: False
     intake_max_inference: 5
 schedule_task:
-    scheduling_strategy: tool_calling   # ['llm', 'tool_calling', 'rule'], If you set 'tool_calling' or 'rule', use_supervisor will be ignored.
+    scheduling_strategy: tool_calling   # ['llm', 'tool_calling']
