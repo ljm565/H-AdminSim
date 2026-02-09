@@ -4376,13 +4376,13 @@ playground = ["rich"]
 
 [[package]]
 name = "patientsim"
-version = "1.0.0"
+version = "1.0.2"
 description = "A Python package for simulating patient interactions."
 optional = false
 python-versions = "<3.13,>=3.11"
 files = [
-    {file = "patientsim-1.0.0-py3-none-any.whl", hash = "sha256:eca38a10e83b0994ff0ea3a5991c25b7c243306a918f1f82124e8250e46ebb2c"},
-    {file = "patientsim-1.0.0.tar.gz", hash = "sha256:16330afb0d9448d45215296cadf191a95e95c1872589a9e368389c84c2f86260"},
+    {file = "patientsim-1.0.2-py3-none-any.whl", hash = "sha256:4f3b45a54b6e68dd7bad1618b2f5fa5ad5ff08fae7c6768ed220faac3d2a5128"},
+    {file = "patientsim-1.0.2.tar.gz", hash = "sha256:8d62b9c3bf75c71c3d0d3e677bbdcfe330e39ff6760c05f5d1ba2d4b2df35e72"},
 ]
 
 [package.dependencies]
@@ -8434,4 +8434,4 @@ cffi = ["cffi (>=1.17,<2.0)", "cffi (>=2.0.0b)"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.11,<3.13"
-content-hash = "6ddeeb80141d227f29d151c58669aa4a3868e33dfbc50d4cafabc0680559e6d7"
+content-hash = "08b45eb1774c623e1ff1f469bc394858bdf3586102b8a295d904b89cba5b97de"
