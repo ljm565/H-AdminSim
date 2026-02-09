@@ -61,9 +61,8 @@ We provide optional support for integrating with FHIR, allowing the simulator to
 
 ---
 ## Recent updates 📣
+* *February 2026 (v1.0.2)*: Update dependencies for stable simulation.
 * *February 2026 (v1.0.1)*: H-AdminSim now supports concurrent simulation and open-source tool calling.
-  * Added concurrent simulation to improve task execution speed.
-  * Added tool-calling support for open-source LLMs via vLLM.
 * *February 2026 (v1.0.0)*: H-AdminSim package has been released.
 * *December 2025 (v0.7.2)*: Rule-based and tool calling-based scheduling logics have been supported.
 * *November 2025 (v0.7.1)*: Self-corrective feedback logic has been supported.
