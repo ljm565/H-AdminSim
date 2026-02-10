@@ -61,6 +61,7 @@ We provide optional support for integrating with FHIR, allowing the simulator to
 
 ---
 ## Recent updates 📣
+* *February 2026 (v1.0.3)*: Update error exception codes for observable traceback.
 * *February 2026 (v1.0.2)*: Update dependencies for stable simulation.
 * *February 2026 (v1.0.1)*: H-AdminSim now supports concurrent simulation and open-source tool calling.
 * *February 2026 (v1.0.0)*: H-AdminSim package has been released.
@@ -68,9 +69,9 @@ We provide optional support for integrating with FHIR, allowing the simulator to
 * *November 2025 (v0.7.1)*: Self-corrective feedback logic has been supported.
 * *October 2025 (v0.7.0)*: Simulation has been improved reflecting feedbacks from experts.
 * *September 2025 (v0.6.0)*: Simulation has been improved reflecting feedbacks from experts.
-* *August 2025 (v0.5.2)*: We has supported vLLM inference of the Hugging Face models.
+<!-- * *August 2025 (v0.5.2)*: We has supported vLLM inference of the Hugging Face models.
 * *August 2025 (v0.5.1)*: Now you can easily set the virtual environment using Poetry.
-* *August 2025 (v0.5.0)*: We integrated the FHIR server to retrieve hospital information during hospital administration office agent simulation.
+* *August 2025 (v0.5.0)*: We integrated the FHIR server to retrieve hospital information during hospital administration office agent simulation. -->
 <!-- * *July 2025 (v0.4.2)*: We have supported LangChain's JsonOutputParser funtion as well as naive LLM API methods.
 * *July 2025 (v0.4.1)*: Add functionality to schedule appointments based on the hospital's current time (the time the patient contacted for booking).
 * *July 2025 (v0.4.0)*: Added a hospital simulation environment to enable rescheduling based on patient priority, flexibility, and other constraints.
