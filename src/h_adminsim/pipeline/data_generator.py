@@ -112,9 +112,9 @@ class DataGenerator:
         try:
             data, hospital_obj = self.data_synthesizer.synthesize(sanity_check=sanity_check)
             log(f"Data synthesis completed successfully", color=True)
-        except Exception as e:
+        except Exception:
             log("Data synthesis failed.", level="error")
-            raise e
+            raise
         
         # FHIR conversion
         all_resource_list = None
@@ -123,9 +123,9 @@ class DataGenerator:
             try:
                 all_resource_list = converter(self.save_dir / 'fhir_data', sanity_check)
                 log(f"Data FHIR conversion completed successfully", color=True)
-            except Exception as e:
+            except Exception:
                 log("Data FHIR conversion failed.", level='error')
-                raise e
+                raise
             
         # Build data for agent simulation
         agent_data_list = None
@@ -134,9 +134,9 @@ class DataGenerator:
             try:
                 agent_data_list = builder(self.save_dir / 'agent_data')
                 log(f"Agent data generation completed successfully", color=True)
-            except Exception as e:
+            except Exception:
                 log("Agent data generation failed.", level='error')
-                raise e
+                raise
         
         output = Information(
             data=data,

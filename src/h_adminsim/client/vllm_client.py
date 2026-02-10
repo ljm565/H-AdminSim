@@ -156,5 +156,5 @@ class VLLMClient:
 
             return assistant_msg.content
         
-        except Exception as e:
-            raise e
+        except Exception:
+            raise

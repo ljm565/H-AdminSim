@@ -72,7 +72,7 @@ class DataSynthesizer:
         
         except Exception as e:
             log(f"Data synthesizing failed: {e}", level='error')
-            raise e
+            raise
 
 
     @staticmethod

@@ -155,45 +155,5 @@ class GPTClient:
 
             return assistant_msg.content
         
-        except Exception as e:
-            raise e
-
-
-
-# class GPTLangChainClient(GPTClient):
-#     def __init__(self, model: str):
-#         super(GPTLangChainClient, self).__init__(model)
-#         self.client_lc = ChatOpenAI(
-#             model=self.model,
-#             api_key=self.client.api_key
-#         )
-
-    
-#     def __call__(self,
-#                  user_prompt: str,
-#                  system_prompt: Optional[str] = None,
-#                  image_path: Optional[str] = None,
-#                  image_size: Optional[Tuple[int]] = None,
-#                  using_multi_turn: bool = False,
-#                  **kwargs) -> str:
-#         try:
-#             # To ensure empty history
-#             self.reset_history()
-
-#             # Prompts
-#             parser = JsonOutputParser(pydantic_object=ScheduleModel)
-#             prompt = ChatPromptTemplate.from_messages(
-#                 [
-#                     ('system', system_prompt),
-#                     ('human', user_prompt)
-#                 ]
-#             ).partial(format_instructions=parser.get_format_instructions())
-#             chain = prompt | self.client_lc | parser
-            
-#             # Model response
-#             response = chain.invoke(kwargs)
-
-#             return response
-        
-#         except Exception as e:
-#             raise e
+        except Exception:
+            raise

@@ -218,10 +218,10 @@ class Simulator:
             
             log(f"Agent completed the tasks successfully", color=True)
         
-        except Exception as e:
+        except Exception:
             if len(agent_results):
                 json_save_fast(save_path, agent_results)
                 if 'intake' in self.task_list:
                     json_save_fast(d_save_path, dialog_results)
             log("Error occured while execute the tasks.", level='error')
-            raise e
+            raise

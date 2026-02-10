@@ -106,7 +106,8 @@ def main(args):
         try:
             args.logging_dir = None
             simulate(config, args)
-        except:
+        except Exception as e:
+            log(f'Exception occured: {e}', level='error')
             raise
     else:
         try:
@@ -126,7 +127,8 @@ def main(args):
 
                 for fut in as_completed(futures):
                     fut.result()
-        except:
+        except Exception as e:
+            log(f'Exception occured: {e}', level='error')
             raise
 
 
