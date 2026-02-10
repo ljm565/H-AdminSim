@@ -1,6 +1,7 @@
 import os
 import sys
 import logging
+import traceback
 from sconf import Config
 import patientsim.utils as pu
 from argparse import ArgumentParser
@@ -110,26 +111,23 @@ def main(args):
             log(f'Exception occured: {e}', level='error')
             raise
     else:
-        try:
-            if args.logging_dir is None:
-                args.logging_dir = os.path.join(args.output_dir, 'logs')
-                os.makedirs(args.logging_dir, exist_ok=True)
-            
-            with ProcessPoolExecutor(max_workers=num_workers) as ex:
-                futures = [
-                    ex.submit(
-                        simulate, 
-                        config,
-                        args,
-                        path
-                    ) for path in simulation_data_files
-                ]
-
-                for fut in as_completed(futures):
+        failures = list()
+        if args.logging_dir is None:
+            args.logging_dir = os.path.join(args.output_dir, 'logs')
+            os.makedirs(args.logging_dir, exist_ok=True)
+        with ProcessPoolExecutor(max_workers=num_workers) as ex:
+            futures = {ex.submit(simulate, config, args, path): path for path in simulation_data_files}
+            for fut in as_completed(futures):
+                path = futures[fut]
+                try:
                     fut.result()
-        except Exception as e:
-            log(f'Exception occured: {e}', level='error')
-            raise
+                except Exception:
+                    log(f"{path}\n{traceback.format_exc()}", level="error")
+                    failures.append(path)
+                    continue
+            
+        if failures:
+            raise RuntimeError(f"{len(failures)} simulations failed: {failures}")
 
 
 
