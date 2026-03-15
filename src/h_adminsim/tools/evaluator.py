@@ -20,6 +20,21 @@ class Evaluator:
         except:
             pass
 
+        self.model_pricing = {
+            "gpt-5-nano": {
+                "input": 0.05,    # $0.05 / 1M tokens
+                "output": 0.40,   # $0.40 / 1M tokens (reasoning)
+            },
+            "gpt-5-mini": {
+                "input": 0.25,    # $0.25 / 1M tokens
+                "output": 2.00,   # $2.00 / 1M tokens (reasoning)
+            },
+            "gemini-2.5-flash": {
+                "input": 0.30,    # $0.30 / 1M tokens
+                "output": 2.50,   # $2.50 / 1M tokens (reasoning)
+            },
+        }
+
 
     def task_evaluation(self):
         """
@@ -39,7 +54,8 @@ class Evaluator:
         # Macro-wise evaluation
         log('--------------Macro-wise Evaluation--------------')
         for task, value in aggregated_results.items():
-            accuracies = [sum(x if isinstance(x, bool) else sum(x) for x in status) / sum(1 if isinstance(x, bool) else len(x) for x in status) * 100 for status in value['status']]
+            statuses = [[all(s.values()) for s in single_s] for single_s in value['status']] if task == 'intake' else value['status']
+            accuracies = [sum(x if isinstance(x, bool) else sum(x) for x in status) / sum(1 if isinstance(x, bool) else len(x) for x in status) * 100 for status in statuses]
             avg_accuracy = sum(accuracies) / len(accuracies)
             stdv = round((sum((x - avg_accuracy) ** 2 for x in accuracies) / len(accuracies)) ** 0.5, 2) if len(accuracies) > 1 else 0.0
             log(f'{colorstr(task):<27} | average accuracy: {colorstr("green", f"{avg_accuracy:.2f}% ± {stdv}")}, files: {len(accuracies)}')
@@ -51,13 +67,38 @@ class Evaluator:
         log('--------------Micro-wise Evaluation--------------')
         fail_data_dict = dict()
         for task, value in aggregated_results.items():
-            status = [x for y in sum(value['status'], []) for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
-            status_code = [x for y in sum(value['status_code'], []) for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
+            if task == 'intake':
+                # Statuses
+                _status = [[all(s.values()) for s in single_s] for single_s in value['status']]
+                _patient_status = [[s['patient'] for s in single_s] for single_s in value['status']]
+                _staff_status = [[s['staff'] for s in single_s] for single_s in value['status']]
+                status = [x for y in sum(_status, []) for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
+                patient_status = [x for y in sum(_patient_status, []) for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
+                staff_status = [x for y in sum(_staff_status, []) for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
+                
+                # Status codes
+                _patient_status_code = [[sc['patient'] for sc in single_sc] for single_sc in value['status_code']]
+                _staff_status_code = [[sc['staff'] for sc in single_sc] for single_sc in value['status_code']]
+                patient_status_code = [x for y in sum(_patient_status_code, []) for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
+                staff_status_code = [x for y in sum(_staff_status_code, []) for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
+                
+                # Fail cases
+                patient_failed_cases = [c for s, c in zip(patient_status, patient_status_code) if not s and 'unexpected' not in c]
+                failed_cases = [c for s, c in zip(staff_status, staff_status_code) if not s and 'unexpected' not in c]
+                failed_case_l = len(failed_cases)
+                patient_failed_case_l = len(patient_failed_cases)
+            else:
+                status = [x for y in sum(value['status'], []) for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
+                status_code = [x for y in sum(value['status_code'], []) for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
+                patient_failed_cases = []
+                failed_cases = [c for s, c in zip(status, status_code) if not s and 'unexpected' not in c]
+                failed_case_l = len(failed_cases)
+                patient_failed_case_l = len(patient_failed_cases)
+            
             accuracy = sum(status) / len(status) * 100
-            failed_cases = [c for s, c in zip(status, status_code) if not s and 'unexpected' not in c]
-            error_rate = (len(failed_cases) / len(status)) * 100
+            error_rate = (failed_case_l / len(status)) * 100
             log(f'{colorstr(task):<27} | accuracy: {colorstr("green", f"{accuracy:.2f}%")}, length: {sum(status)} / {len(status)}')
-            log(f'{colorstr(task):<27} | Error   : {colorstr("red", f"{error_rate:.2f}%")}, length: {len(failed_cases)} / {len(status)}')
+            log(f'{f"{colorstr(task)} (staff)":<27} | Error   : {colorstr("red", f"{error_rate:.2f}%")}, length: {failed_case_l} / {len(status)}')
 
             if failed_cases:
                 fail_summary = Counter(failed_cases)
@@ -71,7 +112,7 @@ class Evaluator:
                         fail_summary.pop(k)
 
                 for fail_type, count in fail_summary.items():
-                    percent = (count / len(failed_cases)) * 100
+                    percent = (count / failed_case_l) * 100
                     reschedule_n = reschedule_fail_summary[fail_type] if fail_type in reschedule_fail_summary else 0
                     if reschedule_n:
                         log(f'    - Fail type {colorstr("red", fail_type):<30}: {count} (reschedule: {reschedule_n}) cases ({percent:.2f}%)')
@@ -79,43 +120,88 @@ class Evaluator:
                         log(f'    - Fail type {colorstr("red", fail_type):<30}: {count} cases ({percent:.2f}%)')
                 fail_data_dict[task] = failed_cases
 
+            if patient_failed_cases:
+                error_rate = (patient_failed_case_l / len(status)) * 100
+                log(f'{f"{colorstr(task)} (patient)":<27} | Error   : {colorstr("red", f"{error_rate:.2f}%")}, length: {patient_failed_case_l} / {len(status)}')
+                fail_summary = Counter(patient_failed_cases)
+                for fail_type, count in fail_summary.items():
+                    percent = (count / patient_failed_case_l) * 100
+                    log(f'    - Fail type {colorstr("red", fail_type):<30}: {count} cases ({percent:.2f}%)')
+
         draw_fail_donut_subplots(fail_data_dict, os.path.join(self.path, 'fails.png'))
 
 
-    def ipi_evaluation(self):
+    def token_cost(self, model_name: str):
         """
-        Micro-wise IPI performance evaluation on the aggregated results.
+        Estimate and print API cost from token usage statistics per task.
+
+        Args:
+            model_name (str): Model name. One of 'gpt-5-nano', 'gpt-5-mini', 'gemini-2.5-flash'.
         """
+        if model_name not in self.model_pricing:
+            raise ValueError(f"Unknown model: {model_name}. Choose from {list(self.model_pricing.keys())}")
+
         aggregated_results = dict()
         for file in self.files:
             data = json_load(file)
+            for task, value in data.items():
+                if task not in aggregated_results:
+                    aggregated_results[task] = {'token': []}
+                aggregated_results[task]['token'].extend(value['token'])
 
-            if not 'intake' in aggregated_results:
-                aggregated_results['intake'] = {'status': [], 'status_code': []}
+        pricing = self.model_pricing[model_name]
+        agent_keys = ["patient_token", "admin_staff_token", "supervisor_token"]
 
-            aggregated_results['intake']['status'].append(data['intake']['status'])
-            aggregated_results['intake']['status_code'].append(data['intake']['status_code'])
-    
-        # Micro-wise evaluation
         log('')
-        log('------------------IPI Evaluation-----------------')
-        status = sum(aggregated_results['intake']['status'], [])
-        status_code = sum(aggregated_results['intake']['status_code'], [])
-        failed_cases = [c for s, c in zip(status, status_code) if not s]
+        log('--------------Micro-wise Calculation--------------')
+        for task, value in aggregated_results.items():
+            sim_costs = []
 
-        if failed_cases:
-            if_err_count, ipi_err_count = 0, 0
-            fail_summary = Counter(failed_cases)
-            for fail_type, count in fail_summary.items():
-                if fail_type in ['incorrect department and patient information', 'incorrect patient information']:
-                    ipi_err_count += count
-                elif fail_type in ['incorrect format']:
-                    if_err_count += count
-            
-            if_percent = (if_err_count / len(status)) * 100
-            ipi_percent = (ipi_err_count / len(status)) * 100
-            log(f'    - Fail type {colorstr("red", "incorrect format"):<38}: {if_err_count} / {len(status)} ({if_percent:.2f}%)')
-            log(f'    - Fail type {colorstr("red", "incorrect patient information"):<38}: {ipi_err_count} / {len(status)} ({ipi_percent:.2f}%)')
+            for sim in value['token']:
+                if not len(sim):
+                    continue
+                
+                sim_cost = {}
+                sim_total = 0.0
+
+                for agent_key in agent_keys:
+                    agent_data = sim.get(agent_key, {})
+                    input_tokens     = sum(agent_data.get("input", []))
+                    output_tokens    = sum(agent_data.get("output", []))
+                    reasoning_tokens = sum(agent_data.get("reasoning", []))
+                    total_output_tokens = output_tokens + reasoning_tokens
+
+                    agent_cost = (input_tokens / 1_000_000) * pricing["input"] \
+                            + (total_output_tokens / 1_000_000) * pricing["output"]
+
+                    sim_cost[agent_key] = agent_cost
+                    sim_cost[f"{agent_key}_input"]     = input_tokens
+                    sim_cost[f"{agent_key}_output"]    = output_tokens
+                    sim_cost[f"{agent_key}_reasoning"] = reasoning_tokens
+                    sim_total += agent_cost
+
+                sim_cost["total"] = sim_total
+                sim_costs.append(sim_cost)
+
+            n = len(sim_costs)
+            avg = {k: sum(s[k] for s in sim_costs) / n for k in agent_keys + ["total"]}
+
+            log(f"{task} (n={n})", color=True)
+            for agent_key in agent_keys:
+                avg_cost = sum(s[agent_key]                      for s in sim_costs) / n
+                avg_input = sum(s[f"{agent_key}_input"]           for s in sim_costs) / n
+                avg_output = sum(s[f"{agent_key}_output"]          for s in sim_costs) / n
+                avg_reasoning = sum(s[f"{agent_key}_reasoning"]       for s in sim_costs) / n
+
+                log(f"{agent_key}")
+                log(f"    price               : ${avg_cost:.6f}")
+                log(f"    avg_input_tokens    : {avg_input:.1f}")
+                log(f"    avg_output_tokens   : {avg_output:.1f}")
+                log(f"    avg_reasoning_tokens: {avg_reasoning:.1f}")
+
+                print(f"{avg_cost:.6f} & {avg_input:.1f} & {avg_reasoning:.1f} & {avg_output:.1f}")
+
+            log(f"total            : ${avg['total']:.6f}")
 
 
     def supervisor_evaluation(self):
@@ -227,7 +313,7 @@ class Evaluator:
 
         gt = aggregated_results['intake']['gt']
         pred = aggregated_results['intake']['pred']
-        status = aggregated_results['intake']['status']
+        status = [all(s.values()) for s in aggregated_results['intake']['status']]
         total_n, dept_err_n = len(gt), 0
         for g, p, s in zip(gt, pred, status):
             if not s:

@@ -15,13 +15,8 @@ def main(args):
         evaluator.task_evaluation()
         log('')
     
-    if 'ipi' in args.type:
-        evaluator.ipi_evaluation()
-        log('')
-
-    if 'feedback' in args.type:
-        evaluator.supervisor_evaluation()
-        log('')
+    if 'token' in args.type:
+        evaluator.token_cost(args.model.lower())
 
     if 'human' in args.type:
         evaluator.human_evaluation()
@@ -46,9 +41,10 @@ if __name__ == '__main__':
         type=str, 
         required=True, 
         nargs='+', 
-        choices=['task', 'human', 'department', 'rounds'], 
+        choices=['task', 'human', 'department', 'rounds', 'token'], 
         help='Task types you want to evaluate (you can specify multiple)'
     )
+    parser.add_argument('--model', type=str, required=False, default=None, help='Model to calculate token costs')
     args = parser.parse_args()
 
     main(args)
