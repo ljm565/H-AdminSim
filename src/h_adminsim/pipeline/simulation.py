@@ -91,25 +91,22 @@ class Simulator:
 
 
     @staticmethod
-    def resume_results(agent_simulation_data: dict, results_path: str, d_results_path: str) -> Tuple[dict, dict, dict, set]:
+    def resume_results(agent_simulation_data: dict, results_path: str) -> Tuple[dict, dict, set]:
         """
         Resume a previously saved simulation by aligning agent results.
 
         Args:
             agent_simulation_data (dict): Static agent test data for a simulation.
             results_path (str): Path to the JSON file containing the saved simulation results.
-            d_results_path (str): Path to the JSON file containing the saved dialog results.
 
         Returns:
             Tuple[dict, int]:
                 - dict: Schedule updated static agent test data.
                 - dict: Previously saved agent results.
-                - dict: Previously saved dialog results.
                 - set: A dictionary containing patients that have already been processed for each task.
         """
         # Load previous results
         agent_results = json_load(results_path)
-        dialog_results = json_load(d_results_path) if os.path.exists(d_results_path) else dict()
 
         # Get patients that have already been processed for each task
         done_patients = dict()
@@ -134,7 +131,7 @@ class Simulator:
                     fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].append(pred['schedule'])
                     fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].sort()
         
-        return agent_simulation_data, agent_results, dialog_results, done_patients
+        return agent_simulation_data, agent_results, done_patients
 
     
     def run(self,
@@ -177,12 +174,11 @@ class Simulator:
                 )
                 basename = os.path.splitext(os.path.basename(path))[0]
                 save_path = os.path.join(output_dir, f'{basename}_result.json')
-                d_save_path = os.path.join(output_dir, f'{basename}_dialog.json')
                 log(f'{basename} simulation started..', color=True)
 
                 # Resume the results and the virtual hospital environment
                 if resume and os.path.exists(save_path):
-                    agent_simulation_data, agent_results, dialog_results, done_patients = Simulator.resume_results(agent_simulation_data, save_path, d_save_path)
+                    agent_simulation_data, agent_results, done_patients = Simulator.resume_results(agent_simulation_data, save_path)
                     environment.resume(agent_results)
 
                 # Data per patient
@@ -190,38 +186,35 @@ class Simulator:
                     for task in self.task_queue:
                         if task.name in done_patients and gt['patient'] in done_patients[task.name]:
                             continue
-
+                        
+                        # Simulation results
                         result = task((gt, test_data), agent_simulation_data, agent_results, environment, verbose)
-                        dialogs = result.pop('dialog')
 
                         # Append a single result 
-                        agent_results.setdefault(task.name, {'gt': [], 'pred': [], 'status': [], 'status_code': [], 'trial': [], 'dialog': []})
+                        agent_results.setdefault(task.name, init_result_dict())
                         for k in result:
                             agent_results[task.name][k] += result[k]
-                        
-                        if task.name == 'intake':
-                            dialog_results[gt['patient']] = dialogs[0]
-                        else:
-                            agent_results[task.name]['dialog'] += dialogs
 
                 # Logging the results
                 for task_name, result in agent_results.items():
-                    correctness = [x for y in result['status'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
-                    status_code = [x for y in result['status_code'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
+                    if task_name == 'intake':
+                        statuses = [all(s.values()) for s in result['status']]
+                        status_codes = ['/'.join(s.values()) for s in result['status_code']]
+                    else:
+                        statuses = result['status']
+                        status_codes = result['status_code']
+                    correctness = [x for y in statuses for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
+                    status_code = [x for y in status_codes for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
                     accuracy = sum(correctness) / len(correctness)
                     log(f'{basename} - {task_name} task results..', color=True)
                     log(f'   - accuracy: {accuracy:.3f}, length: {len(correctness)}, status_code: {status_code}')
 
                 json_save_fast(save_path, agent_results)
-                if 'intake' in self.task_list:
-                    json_save_fast(d_save_path, dialog_results)
             
             log(f"Agent completed the tasks successfully", color=True)
         
         except Exception as e:
             if len(agent_results):
                 json_save_fast(save_path, agent_results)
-                if 'intake' in self.task_list:
-                    json_save_fast(d_save_path, dialog_results)
             log(f"Error occured while execute the tasks: {e}", level='error')
             raise

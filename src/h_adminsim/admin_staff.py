@@ -254,6 +254,7 @@ class AdminStaffAgent:
         executor = AgentExecutor(
             agent=agent,
             tools=tools,
+            stream_runnable=False,
             verbose=False,
             max_iterations=1,
             return_intermediate_steps=True,

@@ -2,6 +2,7 @@ import re
 import os
 import json
 import random
+from copy import deepcopy
 from importlib import resources
 from patientsim import PatientAgent
 from decimal import Decimal, getcontext
@@ -14,6 +15,7 @@ from h_adminsim.registry.errors import ToolCallingError, ScheduleNotFoundError, 
 from h_adminsim.registry import PREFERENCE_PHRASE_PATIENT, PREFERENCE_PHRASE_STAFF, STATUS_CODES
 from h_adminsim.environment.hospital import HospitalEnvironment
 from h_adminsim.utils import log, colorstr
+from h_adminsim.tools.callback import TokenUsageCallback
 from h_adminsim.tools.sanity_checker import SanityChecker
 from h_adminsim.tools import SchedulingRule, scheduling_tool_calling
 from h_adminsim.utils.common_utils import *
@@ -391,6 +393,7 @@ class OPScehdulingSimulation:
             assert doctor_information is not None, log(f"Doctor information must be provided if you don't use FHIR.", level="error")
 
         # Initialization based on the known condition from the staff
+        callback = kwargs.pop('callback', None)
         department = known_condition['department']
         filtered_doctor_information = self.environment.get_doctor_schedule(
             doctor_information=doctor_information if not self.fhir_integration else None,
@@ -406,7 +409,8 @@ class OPScehdulingSimulation:
             prediction = scheduling_tool_calling(
                 client=client, 
                 user_prompt=known_condition['patient_intention'],
-                history=chat_history
+                history=chat_history,
+                callback=callback,
             )
 
             # Post-processing
@@ -465,7 +469,8 @@ class OPScehdulingSimulation:
             prediction = {
                 'type': 'tool',
                 'result': schedule,
-                'raw': None
+                'raw': None,
+                'token': deepcopy(self.admin_staff_agent.client.token_usages),
             }
             self.admin_staff_agent.reset_history(verbose=False)
 
@@ -636,7 +641,7 @@ class OPScehdulingSimulation:
                             max_inferences: int = 5,
                             patient_kwargs: dict = {},
                             staff_kwargs: dict = {},
-                            **kwargs) -> Tuple[dict, dict]:
+                            **kwargs) -> Tuple[dict, dict, dict]:
         """
         Simulate a multi-turn outpatient scheduling dialogue between a patient agent and an administrative staff agent.
 
@@ -652,14 +657,19 @@ class OPScehdulingSimulation:
             **kwargs: Shared keyword arguments passed to both agents.
 
         Returns:
-            Tuple[dict, dict]: Doctor information and a result dictionary after scheduling a new appointment.
+            Tuple[dict, dict, dict]: 
+                - Doctor information.
+                - Result dictionary after scheduling a new appointment.
+                - Token statistics.
         """
         # Sanity Check
         if not self.fhir_integration:
             assert doctor_information is not None, log(f"Doctor information must be provided if you don't use FHIR.", level="error")
 
         # Initialize agents and result dictionary
+        staff_token_callback = TokenUsageCallback()
         self._init_agents(verbose=verbose)
+        staff_token_stats = {}
         filtered_doctor_information = self.environment.get_doctor_schedule(
             doctor_information=doctor_information if not self.fhir_integration else None,
             department=staff_known_data[0]['department'],
@@ -700,6 +710,7 @@ class OPScehdulingSimulation:
                     verbose=False,
                     **patient_kwargs,
                 )
+                patient_token_stats = self.patient_agent.client.token_usages
                 self.dialog_history['scheduling'].append({"role": "Patient", "content": patient_response})
                 role = f"{colorstr('green', 'Patient')} ({gt_patient_condition['preference']})"
                 log(f"{role:<25}: {patient_response}")
@@ -712,8 +723,17 @@ class OPScehdulingSimulation:
                     staff_known_condition,
                     doctor_information,
                     chat_history=self._to_lc_history('scheduling'),
+                    callback=staff_token_callback,
                     **staff_kwargs
                 )
+                if self.scheduling_strategy == 'tool_calling':
+                    staff_token_stats = staff_token_callback.token_usage
+                else:
+                    for k, v in staff_response['token'].items():
+                        if k not in staff_token_stats:
+                            staff_token_stats[k] = deepcopy(v)
+                        else:
+                            staff_token_stats[k].extend(v)  # 두 번째~: extend
                 
                 # Clarification message
                 if staff_response['type'] == 'text':
@@ -740,7 +760,8 @@ class OPScehdulingSimulation:
                         'status_code': [STATUS_CODES['simulation']],
                         'dialog': [preprocess_dialog(self.dialog_history['scheduling'])]
                     }
-                    return doctor_information, result_dict
+                    token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
+                    return doctor_information, result_dict, token_usage
             
             # Sanity check
             ## No GT case
@@ -802,7 +823,8 @@ class OPScehdulingSimulation:
                 log('No sanity checker is available; an error occurred while parsing the prediction. Returning a failure result.', level='warning')
 
         log("Simulation completed.", color=True)
-        return doctor_information, result_dict
+        token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
+        return doctor_information, result_dict, token_usage
 
     
     def canceling_simulate(self, 

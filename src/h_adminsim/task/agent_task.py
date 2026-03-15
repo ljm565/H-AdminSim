@@ -26,13 +26,18 @@ from h_adminsim.utils.common_utils import *
 
 class FirstVisitOutpatientTask:
     def __init__(self):
+        self.reset_token_data()
+
+    
+    def reset_token_data(self):
         self.token_stats = {
+            'simulation_n': 0,
             'patient_token': {'input':[], 'output': [], 'reasoning': []}, 
             'admin_staff_token': {'input': [], 'output': [], 'reasoning': []}, 
             'supervisor_token': {'input':[], 'output': [], 'reasoning': []}
         }
 
-    
+
     def save_token_data(self, 
                         patient_token: Optional[dict] = None, 
                         admin_staff_token: Optional[dict] = None, 
@@ -45,6 +50,7 @@ class FirstVisitOutpatientTask:
             admin_staff_token (Optional[dict], optional): Administration staff token information. Defaults to None.
             supervisor_token (Optional[dict], optional): Supervisor token information. Defaults to None.
         """
+        self.token_stats['simulation_n'] += 1
         if patient_token:
             self.token_stats['patient_token']['input'].extend(patient_token['prompt_tokens'])
             self.token_stats['patient_token']['output'].extend(patient_token['completion_tokens'])
@@ -244,6 +250,7 @@ class OutpatientFirstIntake(FirstVisitOutpatientTask):
         gt, test_data = data_pair
         departments = list(agent_test_data['department'].keys())
         results = init_result_dict()
+        self.reset_token_data()
         sanity_checker = SanityChecker()
         
         # Append a ground truth
@@ -364,6 +371,7 @@ class OutpatientFirstIntake(FirstVisitOutpatientTask):
         results['status_code'].append(status_code)
         results['trial'].append(trial)
         results['dialog'].append(dialogs)
+        results['token'].append(self.token_stats)
 
         return results
 
@@ -776,6 +784,7 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
         patient_info, department, sanity = self.get_intake_information(gt, agent_results, doctor_information)
         self.rules = SchedulingRule(self._metadata, self._department_data, environment, self.fhir_integration)
         results = init_result_dict()
+        self.reset_token_data()
 
         # Make scheduling GT list
         gt_data = [
@@ -801,6 +810,8 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
             results['pred'].append({})
             results['status'].append(False)
             results['status_code'].append(STATUS_CODES['preceding'])
+            results['dialog'].append('')
+            results['token'].append(self.token_stats)
             return results
         
         #################################################### Regular Scheudling Simulation ####################################################
@@ -819,7 +830,7 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
         )
     
         # Simulate the main scheduling task
-        doctor_information, result_dict = run_with_retry(
+        doctor_information, result_dict, token_usage = run_with_retry(
             sim_environment.scheduling_simulate,
             gt_data=gt_data,
             staff_known_data=staff_known_data,
@@ -828,6 +839,10 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
             patient_kwargs=self.patient_reasoning_kwargs,
             staff_kwargs=self.staff_reasoning_kwargs,
             max_retries=self.max_retries,
+        )
+        self.save_token_data(
+            token_usage['patient_token'], 
+            token_usage['admin_staff_token'], 
         )
 
         prediction, status, status_code = \
@@ -854,6 +869,7 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
         # Append results
         for key in result_dict.keys():
             results[key] += result_dict[key]
+        results['token'].append(self.token_stats)
         #######################################################################################################################################
         
         # Other events
@@ -871,6 +887,7 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
                 results['status'].extend(result_dict['status'])
                 results['status_code'].extend(result_dict['status_code'])
                 results['dialog'].extend(result_dict['dialog'])
+                results['token'].extend([{}]*len(result_dict['gt']))
 
                 if verbose:
                     log(f'Pred  : {result_dict["pred"]}')
@@ -891,6 +908,7 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
                 results['status'].extend(result_dict['status'])
                 results['status_code'].extend(result_dict['status_code'])
                 results['dialog'].extend(result_dict['dialog'])
+                results['token'].extend([{}]*len(result_dict['gt']))
 
                 if verbose:
                     log(f'Pred  : {result_dict["pred"]}')

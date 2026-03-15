@@ -658,7 +658,7 @@ def init_result_dict() -> dict:
     Returns:
         dict: Initialized result dictionary.
     """
-    return {'gt': [], 'pred': [], 'status': [], 'status_code': [], 'trial': [], 'dialog': []}
+    return {'gt': [], 'pred': [], 'status': [], 'status_code': [], 'trial': [], 'dialog': [], 'token': []}
 
 
 

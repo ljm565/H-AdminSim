@@ -143,9 +143,14 @@ class GeminiClient:
 
                 # Logging token usage
                 if response.usage_metadata:
-                    self.token_usages.setdefault("prompt_tokens", []).append(response.usage_metadata.prompt_token_count)
-                    self.token_usages.setdefault("completion_tokens", []).append(response.usage_metadata.candidates_token_count)
-                    self.token_usages.setdefault("total_tokens", []).append(response.usage_metadata.total_token_count)
+                    prompt_token_cnt = response.usage_metadata.prompt_token_count if isinstance(response.usage_metadata.prompt_token_count, int) else 0
+                    candidates_token_cnt = response.usage_metadata.candidates_token_count if isinstance(response.usage_metadata.candidates_token_count, int) else 0
+                    total_token_cnt = response.usage_metadata.total_token_count if isinstance(response.usage_metadata.total_token_count, int) else 0
+                    thoughts_token_cnt = response.usage_metadata.thoughts_token_count if isinstance(response.usage_metadata.thoughts_token_count, int) else 0
+                    self.token_usages.setdefault("prompt_tokens", []).append(prompt_token_cnt)
+                    self.token_usages.setdefault("completion_tokens", []).append(candidates_token_cnt)
+                    self.token_usages.setdefault("total_tokens", []).append(total_token_cnt)
+                    self.token_usages.setdefault("reasoning_tokens", []).append(thoughts_token_cnt)
 
                 # After the maximum retries
                 if count >= max_retry:

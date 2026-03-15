@@ -392,7 +392,8 @@ def create_tools(rule: SchedulingRule,
 
 def scheduling_tool_calling(client: AgentExecutor, 
                             user_prompt: str,
-                            history: list = []) -> dict:
+                            history: list = [],
+                            callback = None) -> dict:
     """
     Make an appointment using tool-calling agent.
 
@@ -400,6 +401,7 @@ def scheduling_tool_calling(client: AgentExecutor,
         client (AgentExecutor): The agent executor to handle tool calls.
         user_prompt (str): User prompt used for tool calling.
         history (list, optional): A list of LangChain HumanMessage and AIMessage objects. Defaults to [].
+        callback (Optional[TokenUsageCallback], optional): Callback to calculate token usages. Defaults to None.
     
     Returns:
         dict: A dictionary containing the scheduled doctor and their corresponding schedule.
@@ -408,13 +410,19 @@ def scheduling_tool_calling(client: AgentExecutor,
         "input": user_prompt,
         "chat_history": history,
     }
-    response = client.invoke(inputs)
+    if callback is not None:
+        response = client.invoke(inputs, config={"callbacks": [callback]})
+        token_usage = callback.token_usage
+    else:
+        response = client.invoke(inputs)
+        token_usage = {}
+
     steps = response.get("intermediate_steps") or []
 
     if len(steps) > 0:
         tool_output = steps[0][1]
-        return {"type": "tool", "result": tool_output, "raw": response}
+        return {"type": "tool", "result": tool_output, "raw": response, "token": token_usage}
 
     # No tool call happened
     text = response.get("output") or ""
-    return {"type": "text", "result": text, "raw": response}
+    return {"type": "text", "result": text, "raw": response, "token": token_usage}
