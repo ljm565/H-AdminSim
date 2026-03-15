@@ -22,7 +22,7 @@ class SanityChecker:
     def intake_check(self,
                      prediction: dict, 
                      gt: dict,
-                     conversations: str) -> Tuple[bool, str]:
+                     conversations: str) -> Tuple[dict[bool], dict[str]]:
         """
         Performs a sanity check on the predicted patient information and department against the ground truth.
 
@@ -36,29 +36,35 @@ class SanityChecker:
             conversations (str): The full conversation text between the patient and administration staff.
 
         Returns:
-            Tuple[bool, str]:
+            Tuple[dict[bool], dict[str]]:
                 - bool: True if the prediction passes all sanity checks, False otherwise
                 - str: Status code indicating the type of check passed or failed
         """
+        ############################ Incomplete simulation case #############################
+        patient_agent_status, patient_agent_status_code = True, STATUS_CODES['correct']
+        if not all(v.lower() in conversations.lower() for k, v in gt['patient'].items()):
+            patient_agent_status, patient_agent_status_code = False, STATUS_CODES['simulation']
+        
         ############################ Check the prediciton format #############################
         if not isinstance(prediction['patient'], dict):
-            return False, STATUS_CODES['format']  # Could not be parsed as a dictionary
-        
-        ############################ Incomplete simulation case #############################
-        if not all(v.lower() in conversations.lower() for k, v in gt['patient'].items()):
-            return False, STATUS_CODES['simulation']
+            return {'patient': patient_agent_status, 'staff': False}, \
+                {'patient': patient_agent_status_code, 'staff': STATUS_CODES['format']}   # Could not be parsed as a dictionary
         
         ############################ Check with the ground truth #############################
         wrong_department = prediction['department'][0] not in gt['department']
-        wrong_info = prediction['patient'] != gt['patient']
+        wrong_info = not all(v == 'none' or v.lower() in conversations.lower() for k, v in prediction['patient'].items())   # Check whether the the not 'none' values are same or not
         if wrong_department and wrong_info:
-            return False, STATUS_CODES['department & patient']
+            return {'patient': patient_agent_status, 'staff': False}, \
+                {'patient': patient_agent_status_code, 'staff': STATUS_CODES['department & patient']}
         elif wrong_department:
-            return False, STATUS_CODES['department']
+            return {'patient': patient_agent_status, 'staff': False}, \
+                {'patient': patient_agent_status_code, 'staff': STATUS_CODES['department']}
         elif wrong_info:
-            return False, STATUS_CODES['patient']
+            return {'patient': patient_agent_status, 'staff': False}, \
+                {'patient': patient_agent_status_code, 'staff': STATUS_CODES['patient']}
         
-        return True, STATUS_CODES['correct']
+        return {'patient': patient_agent_status, 'staff': True}, \
+            {'patient': patient_agent_status_code, 'staff': STATUS_CODES['correct']}
     
 
     def __check_is_earliest(self, 
