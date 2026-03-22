@@ -17,9 +17,9 @@ from h_adminsim.utils.filesys_utils import yaml_save, get_files
 
 
 def bridge_patientsim():
-        main_logger = logging.getLogger(LOGGING_NAME)
-        pu.LOGGER = main_logger
-        pu.LOGGING_NAME = LOGGING_NAME
+    main_logger = logging.getLogger(LOGGING_NAME)
+    pu.LOGGER = main_logger
+    pu.LOGGING_NAME = LOGGING_NAME
 
 
 def init_worker_logging(output_dir: str, name: str):

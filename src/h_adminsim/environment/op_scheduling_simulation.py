@@ -126,8 +126,8 @@ class OPScehdulingSimulation:
         return msgs
     
     
-    def postprocessing(self, 
-                       strategy: str, 
+    @staticmethod
+    def postprocessing(strategy: str, 
                        data: Union[str, dict],
                        filtered_doctor_information: Optional[dict] = None) -> Union[str, dict]:
         """
@@ -416,7 +416,7 @@ class OPScehdulingSimulation:
             # Post-processing
             ## Scheduling result
             if prediction['type'] == 'tool':
-                schedule = self.postprocessing(
+                schedule = OPScehdulingSimulation.postprocessing(
                     strategy='tool_calling',
                     data=prediction['result'],
                     filtered_doctor_information=filtered_doctor_information,
@@ -451,7 +451,7 @@ class OPScehdulingSimulation:
                 TIME_UNIT=self._TIME_UNIT,
                 CURRENT_TIME=self.environment.current_time,
                 DEPARTMENT=department,
-                PREFERENCE=known_condition['patient_intention'], #if reschedule_flag else preprocess_dialog(self.dialog_history['scheduling']),
+                PREFERENCE=known_condition['patient_intention'], 
                 RESCHEDULING_FLAG=reschedule_desc,
                 DAY=self._DAY,
                 DOCTOR=json.dumps(filtered_doctor_information, indent=2),
@@ -462,7 +462,7 @@ class OPScehdulingSimulation:
                 verbose=False,
                 **kwargs,
             )
-            schedule = self.postprocessing(
+            schedule = OPScehdulingSimulation.postprocessing(
                 strategy='reasoning',
                 data=schedule,
             )
@@ -635,7 +635,7 @@ class OPScehdulingSimulation:
 
     def scheduling_simulate(self,
                             gt_data: dict,
-                            staff_known_data: dict,
+                            staff_known_data: list[dict],
                             doctor_information: Optional[dict] = None,
                             verbose: bool = False,
                             max_inferences: int = 5,
@@ -647,7 +647,7 @@ class OPScehdulingSimulation:
 
         Args:
             gt_data (dict): Ground-truth patient condition(s) for each dialogue turn.
-            staff_known_data (dict): Patient information known to the staff agent at each turn.
+            staff_known_data (list[dict]): Patient information known to the staff agent at each turn.
             doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s) involved, 
                                                            including availability and other relevant details. Defaults to None.
             verbose (bool, optional): Whether to log detailed simulation outputs. Defaults to False.

@@ -28,6 +28,7 @@ hospital_data/
 dist/
 legacy/
 new/*
+demo/human_dialogs/*
 
 # Data and configuration folders
 data/

@@ -1,0 +1,658 @@
+{
+  "metadata": {
+    "hospital_name": "hospital_00",
+    "start_date": "2025-04-17",
+    "end_date": "2025-04-23",
+    "days": 7,
+    "department_num": 9,
+    "doctor_num": 13,
+    "time": {
+      "start_hour": 9.0,
+      "end_hour": 18.0,
+      "interval_hour": 0.25
+    }
+  },
+  "department": {
+    "cardiology": {
+      "code": "IMCAR",
+      "doctor": [
+        "Dr. Rupert Throneberry"
+      ]
+    },
+    "nephrology": {
+      "code": "IMNEP",
+      "doctor": [
+        "Dr. Spencer Burkstrand",
+        "Dr. Burt Kroemer"
+      ]
+    },
+    "rheumatology": {
+      "code": "IMRHE",
+      "doctor": [
+        "Dr. John Gouzalez"
+      ]
+    },
+    "hematology/oncology": {
+      "code": "IMHEM",
+      "doctor": [
+        "Dr. Leonard Riller",
+        "Dr. Leigh Ohaire"
+      ]
+    },
+    "infectious diseases": {
+      "code": "IMINF",
+      "doctor": [
+        "Dr. Dorsey Cerar"
+      ]
+    },
+    "pulmonary": {
+      "code": "IMPUL",
+      "doctor": [
+        "Dr. Eugenio Verba"
+      ]
+    },
+    "endocrinology/metabolism": {
+      "code": "IMEND",
+      "doctor": [
+        "Dr. Christian Frohock"
+      ]
+    },
+    "gastroenterology": {
+      "code": "IMGAS",
+      "doctor": [
+        "Dr. Franklyn Demien",
+        "Dr. Miles Pritt"
+      ]
+    },
+    "allergy": {
+      "code": "IMALL",
+      "doctor": [
+        "Dr. Royce Vallejo",
+        "Dr. Justin Smietana"
+      ]
+    }
+  },
+  "doctor": {
+    "Dr. Rupert Throneberry": {
+      "department": "cardiology",
+      "specialty": {
+        "name": "Heart Failure and Transplantation",
+        "code": "IMCAR-2"
+      },
+      "schedule": {
+        "2025-04-17": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-18": [],
+        "2025-04-19": [],
+        "2025-04-20": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-21": [],
+        "2025-04-22": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-23": []
+      },
+      "capacity_per_hour": 2,
+      "capacity": 72,
+      "gender": "male",
+      "telecom": [
+        {
+          "system": "phone",
+          "value": "+8210084112808",
+          "use": "mobile"
+        }
+      ],
+      "birthDate": "1963-06-15"
+    },
+    "Dr. Spencer Burkstrand": {
+      "department": "nephrology",
+      "specialty": {
+        "name": "Glomerular Diseases",
+        "code": "IMNEP-0"
+      },
+      "schedule": {
+        "2025-04-17": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-18": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-19": [],
+        "2025-04-20": [],
+        "2025-04-21": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-22": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-23": []
+      },
+      "capacity_per_hour": 1,
+      "capacity": 27,
+      "gender": "female",
+      "telecom": [
+        {
+          "system": "phone",
+          "value": "+82470061359",
+          "use": "mobile"
+        }
+      ],
+      "birthDate": "1990-01-28"
+    },
+    "Dr. Burt Kroemer": {
+      "department": "nephrology",
+      "specialty": {
+        "name": "Kidney Transplantation",
+        "code": "IMNEP-2"
+      },
+      "schedule": {
+        "2025-04-17": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-18": [],
+        "2025-04-19": [],
+        "2025-04-20": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-21": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-22": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-23": []
+      },
+      "capacity_per_hour": 1,
+      "capacity": 27,
+      "gender": "female",
+      "telecom": [
+        {
+          "system": "phone",
+          "value": "+821564998471",
+          "use": "mobile"
+        }
+      ],
+      "birthDate": "1990-07-26"
+    },
+    "Dr. John Gouzalez": {
+      "department": "rheumatology",
+      "specialty": {
+        "name": "Rheumatoid Arthritis",
+        "code": "IMRHE-1"
+      },
+      "schedule": {
+        "2025-04-17": [],
+        "2025-04-18": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-19": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-20": [],
+        "2025-04-21": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-22": [],
+        "2025-04-23": [
+          [
+            9.0,
+            18.0
+          ]
+        ]
+      },
+      "capacity_per_hour": 4,
+      "capacity": 108,
+      "gender": "male",
+      "telecom": [
+        {
+          "system": "phone",
+          "value": "+8274249792472",
+          "use": "mobile"
+        }
+      ],
+      "birthDate": "1966-12-07"
+    },
+    "Dr. Leonard Riller": {
+      "department": "hematology/oncology",
+      "specialty": {
+        "name": "Solid Tumor Oncology",
+        "code": "IMHEM-1"
+      },
+      "schedule": {
+        "2025-04-17": [],
+        "2025-04-18": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-19": [],
+        "2025-04-20": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-21": [],
+        "2025-04-22": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-23": [
+          [
+            9.0,
+            18.0
+          ]
+        ]
+      },
+      "capacity_per_hour": 1,
+      "capacity": 27,
+      "gender": "male",
+      "telecom": [
+        {
+          "system": "phone",
+          "value": "+8246535683198",
+          "use": "work"
+        }
+      ],
+      "birthDate": "1997-03-26"
+    },
+    "Dr. Leigh Ohaire": {
+      "department": "hematology/oncology",
+      "specialty": {
+        "name": "Leukemia and Lymphoma",
+        "code": "IMHEM-0"
+      },
+      "schedule": {
+        "2025-04-17": [],
+        "2025-04-18": [],
+        "2025-04-19": [],
+        "2025-04-20": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-21": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-22": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-23": []
+      },
+      "capacity_per_hour": 1,
+      "capacity": 36,
+      "gender": "male",
+      "telecom": [
+        {
+          "system": "phone",
+          "value": "+8294192317",
+          "use": "mobile"
+        }
+      ],
+      "birthDate": "1986-03-23"
+    },
+    "Dr. Dorsey Cerar": {
+      "department": "infectious diseases",
+      "specialty": {
+        "name": "HIV/AIDS",
+        "code": "IMINF-0"
+      },
+      "schedule": {
+        "2025-04-17": [],
+        "2025-04-18": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-19": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-20": [],
+        "2025-04-21": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-22": [],
+        "2025-04-23": [
+          [
+            9.0,
+            18.0
+          ]
+        ]
+      },
+      "capacity_per_hour": 4,
+      "capacity": 108,
+      "gender": "female",
+      "telecom": [
+        {
+          "system": "phone",
+          "value": "+82442254467",
+          "use": "mobile"
+        }
+      ],
+      "birthDate": "1990-08-03"
+    },
+    "Dr. Eugenio Verba": {
+      "department": "pulmonary",
+      "specialty": {
+        "name": "Sleep Medicine",
+        "code": "IMPUL-1"
+      },
+      "schedule": {
+        "2025-04-17": [],
+        "2025-04-18": [],
+        "2025-04-19": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-20": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-21": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-22": [],
+        "2025-04-23": [
+          [
+            9.0,
+            18.0
+          ]
+        ]
+      },
+      "capacity_per_hour": 1,
+      "capacity": 27,
+      "gender": "female",
+      "telecom": [
+        {
+          "system": "phone",
+          "value": "+828117723819332",
+          "use": "mobile"
+        }
+      ],
+      "birthDate": "1999-05-16"
+    },
+    "Dr. Christian Frohock": {
+      "department": "endocrinology/metabolism",
+      "specialty": {
+        "name": "Thyroid Disorders",
+        "code": "IMEND-1"
+      },
+      "schedule": {
+        "2025-04-17": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-18": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-19": [],
+        "2025-04-20": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-21": [],
+        "2025-04-22": [],
+        "2025-04-23": []
+      },
+      "capacity_per_hour": 2,
+      "capacity": 72,
+      "gender": "male",
+      "telecom": [
+        {
+          "system": "phone",
+          "value": "+8216025243191",
+          "use": "mobile"
+        }
+      ],
+      "birthDate": "1982-03-15"
+    },
+    "Dr. Franklyn Demien": {
+      "department": "gastroenterology",
+      "specialty": {
+        "name": "Pancreatobiliary Medicine",
+        "code": "IMGAS-1"
+      },
+      "schedule": {
+        "2025-04-17": [],
+        "2025-04-18": [],
+        "2025-04-19": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-20": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-21": [],
+        "2025-04-22": [],
+        "2025-04-23": [
+          [
+            9.0,
+            18.0
+          ]
+        ]
+      },
+      "capacity_per_hour": 2,
+      "capacity": 72,
+      "gender": "female",
+      "telecom": [
+        {
+          "system": "phone",
+          "value": "+8261426764960",
+          "use": "mobile"
+        }
+      ],
+      "birthDate": "1995-03-31"
+    },
+    "Dr. Miles Pritt": {
+      "department": "gastroenterology",
+      "specialty": {
+        "name": "Pancreatobiliary Medicine",
+        "code": "IMGAS-1"
+      },
+      "schedule": {
+        "2025-04-17": [],
+        "2025-04-18": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-19": [],
+        "2025-04-20": [],
+        "2025-04-21": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-22": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-23": []
+      },
+      "capacity_per_hour": 2,
+      "capacity": 72,
+      "gender": "male",
+      "telecom": [
+        {
+          "system": "phone",
+          "value": "+8224278653317",
+          "use": "mobile"
+        }
+      ],
+      "birthDate": "1962-03-13"
+    },
+    "Dr. Royce Vallejo": {
+      "department": "allergy",
+      "specialty": {
+        "name": "Immunodeficiency Disorders",
+        "code": "IMALL-1"
+      },
+      "schedule": {
+        "2025-04-17": [],
+        "2025-04-18": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-19": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-20": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-21": [],
+        "2025-04-22": [],
+        "2025-04-23": []
+      },
+      "capacity_per_hour": 4,
+      "capacity": 144,
+      "gender": "female",
+      "telecom": [
+        {
+          "system": "phone",
+          "value": "+821833688739",
+          "use": "mobile"
+        }
+      ],
+      "birthDate": "1964-12-19"
+    },
+    "Dr. Justin Smietana": {
+      "department": "allergy",
+      "specialty": {
+        "name": "Food and Drug Allergy",
+        "code": "IMALL-2"
+      },
+      "schedule": {
+        "2025-04-17": [],
+        "2025-04-18": [],
+        "2025-04-19": [],
+        "2025-04-20": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-21": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-22": [
+          [
+            9.0,
+            18.0
+          ]
+        ],
+        "2025-04-23": [
+          [
+            9.0,
+            18.0
+          ]
+        ]
+      },
+      "capacity_per_hour": 1,
+      "capacity": 27,
+      "gender": "male",
+      "telecom": [
+        {
+          "system": "phone",
+          "value": "+8243438834",
+          "use": "mobile"
+        }
+      ],
+      "birthDate": "1972-05-25"
+    }
+  }
+}

@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 class PromptRequest(BaseModel):
     user_prompt: str
     system_prompt: Optional[str] = None
+    session_id: Optional[str] = None
 
 
 

@@ -45,7 +45,7 @@ class HospitalEnvironment:
         self._START_HOUR = agent_test_data.get('metadata').get('time').get('start_hour')
         self._END_HOUR = agent_test_data.get('metadata').get('time').get('end_hour')
         self._TIME_UNIT = agent_test_data.get('metadata').get('time').get('interval_hour')
-        self._PATIENT_NUM = len(agent_test_data.get('agent_data'))
+        self._PATIENT_NUM = len(agent_test_data.get('agent_data')) if agent_test_data.get('agent_data', None) != None else 100
         _country_code = agent_test_data.get('metadata').get('country_code', 'KR')
         self.booking_num = {k: 0 for k in agent_test_data.get('doctor')}
         
