@@ -494,7 +494,7 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
 
             patient_info = agent_results['intake']['pred'][i]['patient']
             department = agent_results['intake']['pred'][i]['department'][0]
-            sanity = agent_results['intake']['status'][i]
+            sanity = all(agent_results['intake']['status'][i].values())
 
             assert gt['patient'] == agent_results['intake']['gt'][i]['patient']['name']
         
