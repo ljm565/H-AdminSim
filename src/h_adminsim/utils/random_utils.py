@@ -326,7 +326,64 @@ def generate_random_code_with_prob(codes: list[Any],
 
 
 
-def generate_random_specialty(department: str, 
+def generate_random_tests(department: str,
+                          n_tests: int,
+                          department_json_path: Optional[str] = None,
+                          cross_department_prob: float = 0.0,
+                          verbose: bool = True) -> list[dict]:
+    """
+    Select random medical tests for a follow-up patient, primarily from their department.
+
+    Args:
+        department (str): The patient's primary department.
+        n_tests (int): Number of tests to select.
+        department_json_path (Optional[str], optional): Path to department.json containing test definitions. Defaults to None.
+        cross_department_prob (float, optional): Probability that each test is drawn from a different department. Defaults to 0.0.
+        verbose (bool, optional): If True, log warnings when department not found. Defaults to True.
+
+    Returns:
+        list[dict]: List of test dicts with keys: test_name, test_code, duration_hour, test_department.
+    """
+    if department_json_path is None:
+        department_json_path = str(resources.files("h_adminsim.assets.departments").joinpath("department.json"))
+
+    if registry.DEPARTMENT_TESTS is None:
+        department_data = json_load(department_json_path)['specialty']
+        registry.DEPARTMENT_TESTS = {
+            k2: v2['tests']
+            for v1 in department_data.values()
+            for k2, v2 in v1['subspecialty'].items()
+            if 'tests' in v2
+        }
+
+    if department not in registry.DEPARTMENT_TESTS:
+        if verbose:
+            log(f'No matched department {department} for tests. Empty list will return.', 'warning')
+        return []
+
+    all_departments = list(registry.DEPARTMENT_TESTS.keys())
+    other_departments = [d for d in all_departments if d != department]
+    selected_tests = []
+
+    for _ in range(n_tests):
+        if other_departments and random.random() < cross_department_prob:
+            src_dept = random.choice(other_departments)
+        else:
+            src_dept = department
+
+        test = random.choice(registry.DEPARTMENT_TESTS[src_dept])
+        selected_tests.append({
+            'test_name': test['name'],
+            'test_code': test['code'],
+            'duration_hour': test['duration_hour'],
+            'test_department': src_dept,
+        })
+
+    return selected_tests
+
+
+
+def generate_random_specialty(department: str,
                               specialty_path: Optional[str] = None, 
                               verbose: bool = True) -> Tuple[str, str]:
     """

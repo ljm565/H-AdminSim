@@ -39,9 +39,10 @@ hospital_data:
     appointment_coverage_ratio:   # Proportion of appointment time scheduled with patients outside the doctor's fixed schedule.
         min: 0.2
         max: 0.5
-    preference:
-        type: ['asap', 'doctor', 'date']    # Types of patient preferences.
-        probs: [0.4, 0.4, 0.2]           # Types probability distribution.
-    symptom:
-        type: ['simple', 'with_history']    # Types of patient history.
-        probs: [0.6, 0.4]                   # Types probability distribution.
+    first_visit:
+        preference:
+            type: ['asap', 'doctor', 'date']    # Types of patient preferences.
+            probs: [0.4, 0.4, 0.2]           # Types probability distribution.
+        symptom:
+            type: ['simple', 'with_history']    # Types of patient history.
+            probs: [0.6, 0.4]                   # Types probability distribution.

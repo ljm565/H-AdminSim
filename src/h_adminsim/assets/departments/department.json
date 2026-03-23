@@ -1,4 +1,4 @@
-{   
+{
     "metadata": {
         "reference": "https://emergency.or.kr/bbs/general-notice/2513"
     },
@@ -12,6 +12,14 @@
                         "Hepatology",
                         "Pancreatobiliary Medicine",
                         "Inflammatory Bowel Disease"
+                    ],
+                    "tests": [
+                        {"name": "Upper GI Endoscopy", "code": "IMGAS-T01", "duration_hour": 0.5},
+                        {"name": "Colonoscopy", "code": "IMGAS-T02", "duration_hour": 1.0},
+                        {"name": "Abdominal Ultrasound", "code": "IMGAS-T03", "duration_hour": 0.5},
+                        {"name": "Liver Elastography", "code": "IMGAS-T04", "duration_hour": 0.25},
+                        {"name": "Helicobacter Pylori Breath Test", "code": "IMGAS-T05", "duration_hour": 0.5},
+                        {"name": "ERCP", "code": "IMGAS-T06", "duration_hour": 1.5}
                     ]
                 },
                 "cardiology": {
@@ -20,6 +28,14 @@
                         "Interventional Cardiology",
                         "Electrophysiology",
                         "Heart Failure and Transplantation"
+                    ],
+                    "tests": [
+                        {"name": "Echocardiography", "code": "IMCAR-T01", "duration_hour": 0.5},
+                        {"name": "Electrocardiogram", "code": "IMCAR-T02", "duration_hour": 0.25},
+                        {"name": "Cardiac Stress Test", "code": "IMCAR-T03", "duration_hour": 1.0},
+                        {"name": "24-hour Holter Monitor Setup", "code": "IMCAR-T04", "duration_hour": 0.25},
+                        {"name": "Coronary CT Angiography", "code": "IMCAR-T05", "duration_hour": 0.75},
+                        {"name": "Cardiac MRI", "code": "IMCAR-T06", "duration_hour": 1.0}
                     ]
                 },
                 "pulmonary": {
@@ -28,6 +44,14 @@
                         "Interstitial Lung Disease",
                         "Sleep Medicine",
                         "Pulmonary Hypertension"
+                    ],
+                    "tests": [
+                        {"name": "Pulmonary Function Test", "code": "IMPUL-T01", "duration_hour": 0.5},
+                        {"name": "Chest CT Scan", "code": "IMPUL-T02", "duration_hour": 0.5},
+                        {"name": "Bronchoscopy", "code": "IMPUL-T03", "duration_hour": 1.0},
+                        {"name": "Arterial Blood Gas Analysis", "code": "IMPUL-T04", "duration_hour": 0.25},
+                        {"name": "Polysomnography Setup", "code": "IMPUL-T05", "duration_hour": 0.5},
+                        {"name": "Methacholine Challenge Test", "code": "IMPUL-T06", "duration_hour": 0.75}
                     ]
                 },
                 "endocrinology/metabolism": {
@@ -36,6 +60,14 @@
                         "Diabetes Mellitus",
                         "Thyroid Disorders",
                         "Osteoporosis and Metabolic Bone Disease"
+                    ],
+                    "tests": [
+                        {"name": "Thyroid Ultrasound", "code": "IMEND-T01", "duration_hour": 0.5},
+                        {"name": "Thyroid Fine Needle Aspiration", "code": "IMEND-T02", "duration_hour": 0.5},
+                        {"name": "Oral Glucose Tolerance Test", "code": "IMEND-T03", "duration_hour": 2.0},
+                        {"name": "Bone Densitometry", "code": "IMEND-T04", "duration_hour": 0.25},
+                        {"name": "HbA1c Blood Test", "code": "IMEND-T05", "duration_hour": 0.25},
+                        {"name": "Adrenal CT Scan", "code": "IMEND-T06", "duration_hour": 0.5}
                     ]
                 },
                 "nephrology": {
@@ -44,6 +76,14 @@
                         "Glomerular Diseases",
                         "Dialysis",
                         "Kidney Transplantation"
+                    ],
+                    "tests": [
+                        {"name": "Renal Ultrasound", "code": "IMNEP-T01", "duration_hour": 0.5},
+                        {"name": "24-hour Urine Collection Analysis", "code": "IMNEP-T02", "duration_hour": 0.25},
+                        {"name": "Renal Biopsy", "code": "IMNEP-T03", "duration_hour": 1.0},
+                        {"name": "GFR Measurement", "code": "IMNEP-T04", "duration_hour": 0.5},
+                        {"name": "Dialysis Access Evaluation", "code": "IMNEP-T05", "duration_hour": 0.5},
+                        {"name": "Renal CT Angiography", "code": "IMNEP-T06", "duration_hour": 0.75}
                     ]
                 },
                 "hematology/oncology": {
@@ -52,6 +92,14 @@
                         "Leukemia and Lymphoma",
                         "Solid Tumor Oncology",
                         "Stem Cell Transplantation"
+                    ],
+                    "tests": [
+                        {"name": "Complete Blood Count with Differential", "code": "IMHEM-T01", "duration_hour": 0.25},
+                        {"name": "Bone Marrow Biopsy", "code": "IMHEM-T02", "duration_hour": 1.0},
+                        {"name": "CT Scan with Contrast", "code": "IMHEM-T03", "duration_hour": 0.75},
+                        {"name": "PET-CT Scan", "code": "IMHEM-T04", "duration_hour": 2.0},
+                        {"name": "Peripheral Blood Smear", "code": "IMHEM-T05", "duration_hour": 0.25},
+                        {"name": "Coagulation Panel", "code": "IMHEM-T06", "duration_hour": 0.25}
                     ]
                 },
                 "infectious diseases": {
@@ -60,6 +108,14 @@
                         "HIV/AIDS",
                         "Tropical Medicine",
                         "Antimicrobial Stewardship"
+                    ],
+                    "tests": [
+                        {"name": "Blood Culture", "code": "IMINF-T01", "duration_hour": 0.25},
+                        {"name": "Chest X-ray", "code": "IMINF-T02", "duration_hour": 0.25},
+                        {"name": "Lumbar Puncture", "code": "IMINF-T03", "duration_hour": 0.75},
+                        {"name": "HIV Viral Load Test", "code": "IMINF-T04", "duration_hour": 0.25},
+                        {"name": "Tuberculosis Skin Test", "code": "IMINF-T05", "duration_hour": 0.25},
+                        {"name": "Wound Culture and Sensitivity", "code": "IMINF-T06", "duration_hour": 0.25}
                     ]
                 },
                 "allergy": {
@@ -68,6 +124,14 @@
                         "Asthma",
                         "Immunodeficiency Disorders",
                         "Food and Drug Allergy"
+                    ],
+                    "tests": [
+                        {"name": "Skin Prick Test", "code": "IMALL-T01", "duration_hour": 0.5},
+                        {"name": "Specific IgE Blood Test", "code": "IMALL-T02", "duration_hour": 0.25},
+                        {"name": "Patch Test", "code": "IMALL-T03", "duration_hour": 0.5},
+                        {"name": "Spirometry", "code": "IMALL-T04", "duration_hour": 0.5},
+                        {"name": "Oral Food Challenge", "code": "IMALL-T05", "duration_hour": 2.0},
+                        {"name": "Drug Provocation Test", "code": "IMALL-T06", "duration_hour": 1.5}
                     ]
                 },
                 "rheumatology": {
@@ -76,10 +140,18 @@
                         "Systemic Lupus Erythematosus",
                         "Rheumatoid Arthritis",
                         "Vasculitis"
+                    ],
+                    "tests": [
+                        {"name": "Rheumatoid Factor and Anti-CCP Test", "code": "IMRHE-T01", "duration_hour": 0.25},
+                        {"name": "Joint Ultrasound", "code": "IMRHE-T02", "duration_hour": 0.5},
+                        {"name": "Joint X-ray", "code": "IMRHE-T03", "duration_hour": 0.25},
+                        {"name": "MRI of Joints", "code": "IMRHE-T04", "duration_hour": 1.0},
+                        {"name": "ANA Panel", "code": "IMRHE-T05", "duration_hour": 0.25},
+                        {"name": "Synovial Fluid Analysis", "code": "IMRHE-T06", "duration_hour": 0.5}
                     ]
                 }
             }
-        
+
         }
     }
 }

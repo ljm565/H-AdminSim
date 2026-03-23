@@ -39,9 +39,10 @@ hospital_data:
     appointment_coverage_ratio:   # Proportion of appointments scheduled outside fixed schedules
         min: 0.2
         max: 0.5
-    preference:
-        type: ['asap', 'doctor', 'date']    # Types of patient scheduling preferences
-        probs: [0.4, 0.4, 0.2]              # Probability distribution for each preference type
-    symptom:
-        type: ['simple', 'with_history']    # 'simple' = no referral; 'with_history' = referral case
-        probs: [0.7, 0.3]                   # Probability distribution for symptom types
+    first_visit:
+        preference:
+            type: ['asap', 'doctor', 'date']    # Types of patient scheduling preferences
+            probs: [0.4, 0.4, 0.2]              # Probability distribution for each preference type
+        symptom:
+            type: ['simple', 'with_history']    # 'simple' = no referral; 'with_history' = referral case
+            probs: [0.7, 0.3]                   # Probability distribution for symptom types

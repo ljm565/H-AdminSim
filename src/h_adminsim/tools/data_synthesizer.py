@@ -200,16 +200,17 @@ class DataSynthesizer:
                     patients = DataSynthesizer.name_list_generator(len(appointments))
                     for patient, appointment in zip(patients, appointments):
                         preference = generate_random_code_with_prob(
-                            config.hospital_data.preference.type,
-                            config.hospital_data.preference.probs
+                            config.hospital_data.first_visit.preference.type,
+                            config.hospital_data.first_visit.preference.probs
                         )
                         preference_rank = DataSynthesizer.second_preference_generator(preference)
                         symptom_level = generate_random_code_with_prob(
-                            config.hospital_data.symptom.type,
-                            config.hospital_data.symptom.probs
+                            config.hospital_data.first_visit.symptom.type,
+                            config.hospital_data.first_visit.symptom.probs
                         )
                         birth_date =  generate_random_date()
                         patient_info[patient] = {
+                            'type': 'first_visit',
                             'department': department,
                             'attending_physician': doctor,
                             'date': date,
