@@ -48,7 +48,8 @@ def generate_random_number_string(length: int) -> str:
 
 def generate_random_names(n: int,
                           first_name_file: Optional[str] = None,
-                          last_name_file: Optional[str] = None) -> list[str]:
+                          last_name_file: Optional[str] = None,
+                          reject_list: Optional[list[str]] = None) -> list[str]:
     """
     Generate a list of random names by combining first and last names from specified files.
 
@@ -56,13 +57,15 @@ def generate_random_names(n: int,
         n (int): Number of random names to generate.
         first_name_file (Optional[str], optional): Path to the file containing first names. Defaults to None.
         last_name_file (Optional[str], optional): Path to the file containing last names. Defaults to None.
+        reject_list (Optional[list[str]], optional): List of names to exclude.
 
     Returns:
         list[str]: List of randomly generated names in the format "First Last".
     """
-    if first_name_file == None:
+    reject_list = set(reject_list) if reject_list else set()
+    if first_name_file is None:
         first_name_file = str(resources.files("h_adminsim.assets.names").joinpath("firstname.txt"))
-    if last_name_file == None:
+    if last_name_file is None:
         last_name_file = str(resources.files("h_adminsim.assets.names").joinpath("lastname.txt"))
 
     if registry.FIRST_NAMES is None:
@@ -71,17 +74,18 @@ def generate_random_names(n: int,
         registry.LAST_NAMES = [word.capitalize() for word in txt_load(last_name_file).split('\n') if word.strip()]
 
     # Ensure unique names
-    duplicate_name_num, names = dict(), set()
+    names = set()
+    duplicate_name_num = {rn: 1 for rn in set(reject_list)}
     while len(names) < n:
         first_name = random.choice(registry.FIRST_NAMES)
         last_name = random.choice(registry.LAST_NAMES)
         full_name = f'{first_name} {last_name}'
 
-        if full_name in names:
+        if full_name in names or full_name in reject_list:
             duplicate_name_num[full_name] = duplicate_name_num.setdefault(full_name, 1) + 1
             full_name = f'{full_name}{duplicate_name_num[full_name]}'
                 
-        names.add(f"{first_name} {last_name}")
+        names.add(full_name)
     return sorted(list(names))
 
 

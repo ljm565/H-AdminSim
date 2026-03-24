@@ -13,24 +13,25 @@ from h_adminsim.utils.random_utils import (
     generate_random_date,
     generate_random_code,
     generate_random_names,
-    generate_random_address,
     generate_random_telecom,
-    generate_random_id_number,
     generate_random_specialty,
-    generate_random_code_with_prob,
 )
 
 
 
 class DataSynthesizer:
-    def __init__(self, config):
+    def __init__(self, config, existint_data_dir: Optional[str] = None):
         # Initialize configuration, path and save directory
         self.config = config
         self._n = self.config.hospital_data.hospital_n
-        self.save_dir = make_project_dir(self.config)
-        self.data_save_dir = self.save_dir / 'data'
-        yaml_save(self.save_dir / 'args.yaml', self.config)
-        os.makedirs(self.data_save_dir, exist_ok=True)
+        if existint_data_dir is None:
+            self.save_dir = make_project_dir(self.config)
+            self.data_save_dir = self.save_dir / 'data'
+            yaml_save(self.save_dir / 'args.yaml', self.config)
+            os.makedirs(self.data_save_dir, exist_ok=True)
+        else:
+            self.data_save_dir = existint_data_dir
+            os.makedirs(self.data_save_dir, exist_ok=True)
         getcontext().prec = 10
         
 
@@ -68,7 +69,6 @@ class DataSynthesizer:
         doctor_n = sum(doctor_n_per_department)
         doctor_capacity_per_hour_list = [c for c in range(config.hospital_data.doctor_capacity_per_hour.min, config.hospital_data.doctor_capacity_per_hour.max + 1) \
                                          if float(Decimal(str(1))/Decimal(str(c)) % Decimal(str(interval_hour))) == 0]
-        hospital_time_segments = convert_time_to_segment(start_hour, end_hour, interval_hour)
         metadata = Information(
             hospital_name=hospital_name,
             start_date=dates[0],
@@ -86,8 +86,8 @@ class DataSynthesizer:
         # Define ScheduleAssigner class to randomly assign schedules to each doctor
         scheduler = ScheduleAssigner(start_hour, end_hour, interval_hour)
 
-        # Define detailed hospital department, doctoral, and patient information
-        department_info, doctor_info, patient_info = dict(), dict(), dict()
+        # Define detailed hospital department and doctoral information
+        department_info, doctor_info = dict(), dict()
         departments = DataSynthesizer.department_list_generator(department_n)
         doctors = DataSynthesizer.name_list_generator(doctor_n, prefix='Dr. ')   # Doctor names are unique across all departments
         for department_data, doc_n in zip(departments, doctor_n_per_department):
@@ -124,13 +124,11 @@ class DataSynthesizer:
                     }],
                     'birthDate': generate_random_date()
                 }
-                duration = int(1 / capacity_per_hour / interval_hour)
-
-                # Generate doctor schedules and apponitments based on the pre-defined days
+                # Generate doctor schedules based on the pre-defined days
                 for date in dates:
                     # Working day case
                     if date in working_dates:
-                        schedule_segments, schedule_times = scheduler(
+                        _, schedule_times = scheduler(
                             generate_random_prob(
                                 config.hospital_data.doctor_has_schedule_prob,
                                 config.hospital_data.schedule_coverage_ratio.min,
@@ -140,67 +138,15 @@ class DataSynthesizer:
                         doctor_info[doctor]['schedule'][date] = schedule_times
                     # Not working day case
                     else:
-                        schedule_segments, schedule_times = scheduler(1)
+                        _, schedule_times = scheduler(1)
                         doctor_info[doctor]['schedule'][date] = schedule_times
 
-                    # Add patient information per doctor
-                    patient_segments = list(set(hospital_time_segments) - set(sum(schedule_segments, [])))
-                    _, appointments = scheduler(
-                        generate_random_prob(
-                            1,
-                            config.hospital_data.appointment_coverage_ratio.min,
-                            config.hospital_data.appointment_coverage_ratio.max
-                        ),
-                        True,
-                        patient_segments,
-                        min_chunk_size=duration,
-                        max_chunk_size=duration
-                    )
-                    patients = DataSynthesizer.name_list_generator(len(appointments))
-                    for patient, appointment in zip(patients, appointments):
-                        preference = generate_random_code_with_prob(
-                            config.hospital_data.first_visit.preference.type,
-                            config.hospital_data.first_visit.preference.probs
-                        )
-                        preference_rank = DataSynthesizer.second_preference_generator(preference)
-                        symptom_level = generate_random_code_with_prob(
-                            config.hospital_data.first_visit.symptom.type,
-                            config.hospital_data.first_visit.symptom.probs
-                        )
-                        birth_date =  generate_random_date()
-                        patient_info[patient] = {
-                            'type': 'first_visit',
-                            'department': department,
-                            'attending_physician': doctor,
-                            'date': date,
-                            'schedule': appointment,
-                            'preference': preference_rank,
-                            'symptom_level': symptom_level,
-                            'gender': generate_random_code('gender'),
-                            'telecom': [{
-                                'system': 'phone',
-                                'value': generate_random_telecom(),
-                                'use': generate_random_code('use')
-                            }],
-                            'birthDate': birth_date,
-                            'identifier': [{
-                                'value': generate_random_id_number(birth_date=birth_date),
-                                'use': 'official'
-
-                            }],
-                            'address': [{
-                                'type': 'postal',
-                                'text': generate_random_address(),
-                                'use': 'home'
-                            }]
-                        }
-            
         # Finalize data structure
         data = Information(
             metadata=metadata,
             department=department_info,
             doctor=doctor_info,
-            patient=patient_info,
+            patient={},
         )
 
         # Data sanity check
@@ -272,7 +218,8 @@ class DataSynthesizer:
     def name_list_generator(n: int,
                             first_name_file_path: Optional[str] = None, 
                             last_name_file_path: Optional[str] = None,
-                            prefix: Optional[str] = None) -> list[str]:
+                            prefix: Optional[str] = None,
+                            reject_list: Optional[list[str]] = None) -> list[str]:
         """
         Generate a list of names.
         
@@ -281,6 +228,7 @@ class DataSynthesizer:
             first_name_file_path (Optional[str], optional): Path to a file containing first names. Defaults to None.
             last_name_file_path (Optional[str], optional): Path to a file containing last names. Defaults to None.
             prefix (Optional[str], optional): Prefix for to be generated names.
+            reject_list (Optional[list[str]], optional): List of names to exclude.
         
         Returns:
             list[str]: List of names.
@@ -292,9 +240,9 @@ class DataSynthesizer:
 
         if prefix != None:
             assert isinstance(prefix, str), log("`prefix` must be a string type", "error")
-            names = [f'{prefix}{name}' for name in generate_random_names(n, first_name_file_path, last_name_file_path)]
+            names = [f'{prefix}{name}' for name in generate_random_names(n, first_name_file_path, last_name_file_path, reject_list)]
         else:
-            names = [name for name in generate_random_names(n, first_name_file_path, last_name_file_path)]
+            names = [name for name in generate_random_names(n, first_name_file_path, last_name_file_path, reject_list)]
         random.shuffle(names)
         return names
 

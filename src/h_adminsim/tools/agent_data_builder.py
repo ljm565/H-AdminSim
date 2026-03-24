@@ -45,44 +45,48 @@ class AgentDataBuilder:
         agent_data = {'metadata': data['metadata'], 'department': data['department'], 'doctor': data['doctor'], 'agent_data': []}
         
         for patient, patient_values in data['patient'].items():
-            doctor, department, date = patient_values['attending_physician'], patient_values['department'], patient_values['date']
-            gender, telecom, birth_date, identifier, address = \
-                patient_values['gender'], patient_values['telecom'], patient_values['birthDate'], patient_values['identifier'], patient_values['address']
-            preference, symptom_level = patient_values['preference'], patient_values['symptom_level']
-            disease = generate_random_symptom(
-                department=department,
-                symptom_file_path=symptom_file_path, 
-                ensure_unique_department='doctor' in patient_values['preference']
-            )
-            gt_department = disease['department'] if isinstance(disease, dict) else [department]
-            gt = {
-                'patient': patient,
-                'gender': gender,
-                'telecom': telecom,
-                'birthDate': birth_date,
-                'identifier': identifier,
-                'address': address,
-                'department': gt_department,
-                'attending_physician': doctor,
-                'valid_from': date if 'date' in preference else 'N/A',
-                'preference': preference,
-                'symptom_level': symptom_level,
-            }
-            agent = {
-                'patient': patient,
-                'gender': gender,
-                'telecom': telecom,
-                'birthDate': birth_date,
-                'identifier': identifier,
-                'address': address,
-                'constraint': {
-                    'preference': preference,
+            visit_type = patient_values['type']
+            if visit_type == 'first_visit':
+                doctor, department, date = patient_values['attending_physician'], patient_values['department'], patient_values['date']
+                gender, telecom, birth_date, identifier, address = \
+                    patient_values['gender'], patient_values['telecom'], patient_values['birthDate'], patient_values['identifier'], patient_values['address']
+                preference, symptom_level = patient_values['preference'], patient_values['symptom_level']
+                disease = generate_random_symptom(
+                    department=department,
+                    symptom_file_path=symptom_file_path, 
+                    ensure_unique_department='doctor' in patient_values['preference']
+                )
+                gt_department = disease['department'] if isinstance(disease, dict) else [department]
+                gt = {
+                    'visit_type': visit_type,
+                    'patient': patient,
+                    'gender': gender,
+                    'telecom': telecom,
+                    'birthDate': birth_date,
+                    'identifier': identifier,
+                    'address': address,
+                    'department': gt_department,
                     'attending_physician': doctor,
                     'valid_from': date if 'date' in preference else 'N/A',
+                    'preference': preference,
                     'symptom_level': symptom_level,
-                    'symptom': disease,
                 }
-            }
+                agent = {
+                    'visit_type': visit_type,
+                    'patient': patient,
+                    'gender': gender,
+                    'telecom': telecom,
+                    'birthDate': birth_date,
+                    'identifier': identifier,
+                    'address': address,
+                    'constraint': {
+                        'preference': preference,
+                        'attending_physician': doctor,
+                        'valid_from': date if 'date' in preference else 'N/A',
+                        'symptom_level': symptom_level,
+                        'symptom': disease,
+                    }
+                }
             agent_data['agent_data'].append((gt, agent))
         
         if save_path:
