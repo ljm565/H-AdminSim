@@ -14,12 +14,12 @@
                         "Inflammatory Bowel Disease"
                     ],
                     "tests": [
-                        {"name": "Upper GI Endoscopy", "code": "IMGAS-T01", "duration_hour": 0.5},
-                        {"name": "Colonoscopy", "code": "IMGAS-T02", "duration_hour": 1.0},
-                        {"name": "Abdominal Ultrasound", "code": "IMGAS-T03", "duration_hour": 0.5},
-                        {"name": "Liver Elastography", "code": "IMGAS-T04", "duration_hour": 0.25},
-                        {"name": "Helicobacter Pylori Breath Test", "code": "IMGAS-T05", "duration_hour": 0.5},
-                        {"name": "ERCP", "code": "IMGAS-T06", "duration_hour": 1.5}
+                        {"name": "Upper GI Endoscopy", "code": "IMGAS-T01", "duration_hour": 0.5, "priority": 1},
+                        {"name": "Colonoscopy", "code": "IMGAS-T02", "duration_hour": 1.0, "priority": 1},
+                        {"name": "Abdominal Ultrasound", "code": "IMGAS-T03", "duration_hour": 0.5, "priority": 0},
+                        {"name": "Liver Elastography", "code": "IMGAS-T04", "duration_hour": 0.25, "priority": 0},
+                        {"name": "Helicobacter Pylori Breath Test", "code": "IMGAS-T05", "duration_hour": 0.5, "priority": 0},
+                        {"name": "ERCP", "code": "IMGAS-T06", "duration_hour": 1.5, "priority": 2}
                     ]
                 },
                 "cardiology": {
@@ -30,12 +30,12 @@
                         "Heart Failure and Transplantation"
                     ],
                     "tests": [
-                        {"name": "Echocardiography", "code": "IMCAR-T01", "duration_hour": 0.5},
-                        {"name": "Electrocardiogram", "code": "IMCAR-T02", "duration_hour": 0.25},
-                        {"name": "Cardiac Stress Test", "code": "IMCAR-T03", "duration_hour": 1.0},
-                        {"name": "24-hour Holter Monitor Setup", "code": "IMCAR-T04", "duration_hour": 0.25},
-                        {"name": "Coronary CT Angiography", "code": "IMCAR-T05", "duration_hour": 0.75},
-                        {"name": "Cardiac MRI", "code": "IMCAR-T06", "duration_hour": 1.0}
+                        {"name": "Echocardiography", "code": "IMCAR-T01", "duration_hour": 0.5, "priority": 0},
+                        {"name": "Electrocardiogram", "code": "IMCAR-T02", "duration_hour": 0.25, "priority": 0},
+                        {"name": "Cardiac Stress Test", "code": "IMCAR-T03", "duration_hour": 1.0, "priority": 1},
+                        {"name": "24-hour Holter Monitor Setup", "code": "IMCAR-T04", "duration_hour": 0.25, "priority": 0},
+                        {"name": "Coronary CT Angiography", "code": "IMCAR-T05", "duration_hour": 0.75, "priority": 1},
+                        {"name": "Cardiac MRI", "code": "IMCAR-T06", "duration_hour": 1.0, "priority": 2}
                     ]
                 },
                 "pulmonary": {
@@ -46,12 +46,12 @@
                         "Pulmonary Hypertension"
                     ],
                     "tests": [
-                        {"name": "Pulmonary Function Test", "code": "IMPUL-T01", "duration_hour": 0.5},
-                        {"name": "Chest CT Scan", "code": "IMPUL-T02", "duration_hour": 0.5},
-                        {"name": "Bronchoscopy", "code": "IMPUL-T03", "duration_hour": 1.0},
-                        {"name": "Arterial Blood Gas Analysis", "code": "IMPUL-T04", "duration_hour": 0.25},
-                        {"name": "Polysomnography Setup", "code": "IMPUL-T05", "duration_hour": 0.5},
-                        {"name": "Methacholine Challenge Test", "code": "IMPUL-T06", "duration_hour": 0.75}
+                        {"name": "Pulmonary Function Test", "code": "IMPUL-T01", "duration_hour": 0.5, "priority": 0},
+                        {"name": "Chest CT Scan", "code": "IMPUL-T02", "duration_hour": 0.5, "priority": 0},
+                        {"name": "Bronchoscopy", "code": "IMPUL-T03", "duration_hour": 1.0, "priority": 2},
+                        {"name": "Arterial Blood Gas Analysis", "code": "IMPUL-T04", "duration_hour": 0.25, "priority": 0},
+                        {"name": "Polysomnography Setup", "code": "IMPUL-T05", "duration_hour": 0.5, "priority": 1},
+                        {"name": "Methacholine Challenge Test", "code": "IMPUL-T06", "duration_hour": 0.75, "priority": 1}
                     ]
                 },
                 "endocrinology/metabolism": {
@@ -62,12 +62,12 @@
                         "Osteoporosis and Metabolic Bone Disease"
                     ],
                     "tests": [
-                        {"name": "Thyroid Ultrasound", "code": "IMEND-T01", "duration_hour": 0.5},
-                        {"name": "Thyroid Fine Needle Aspiration", "code": "IMEND-T02", "duration_hour": 0.5},
-                        {"name": "Oral Glucose Tolerance Test", "code": "IMEND-T03", "duration_hour": 2.0},
-                        {"name": "Bone Densitometry", "code": "IMEND-T04", "duration_hour": 0.25},
-                        {"name": "HbA1c Blood Test", "code": "IMEND-T05", "duration_hour": 0.25},
-                        {"name": "Adrenal CT Scan", "code": "IMEND-T06", "duration_hour": 0.5}
+                        {"name": "Thyroid Ultrasound", "code": "IMEND-T01", "duration_hour": 0.5, "priority": 0},
+                        {"name": "Thyroid Fine Needle Aspiration", "code": "IMEND-T02", "duration_hour": 0.5, "priority": 1},
+                        {"name": "Oral Glucose Tolerance Test", "code": "IMEND-T03", "duration_hour": 2.0, "priority": 1},
+                        {"name": "Bone Densitometry", "code": "IMEND-T04", "duration_hour": 0.25, "priority": 0},
+                        {"name": "HbA1c Blood Test", "code": "IMEND-T05", "duration_hour": 0.25, "priority": 0},
+                        {"name": "Adrenal CT Scan", "code": "IMEND-T06", "duration_hour": 0.5, "priority": 1}
                     ]
                 },
                 "nephrology": {
@@ -78,12 +78,12 @@
                         "Kidney Transplantation"
                     ],
                     "tests": [
-                        {"name": "Renal Ultrasound", "code": "IMNEP-T01", "duration_hour": 0.5},
-                        {"name": "24-hour Urine Collection Analysis", "code": "IMNEP-T02", "duration_hour": 0.25},
-                        {"name": "Renal Biopsy", "code": "IMNEP-T03", "duration_hour": 1.0},
-                        {"name": "GFR Measurement", "code": "IMNEP-T04", "duration_hour": 0.5},
-                        {"name": "Dialysis Access Evaluation", "code": "IMNEP-T05", "duration_hour": 0.5},
-                        {"name": "Renal CT Angiography", "code": "IMNEP-T06", "duration_hour": 0.75}
+                        {"name": "Renal Ultrasound", "code": "IMNEP-T01", "duration_hour": 0.5, "priority": 0},
+                        {"name": "24-hour Urine Collection Analysis", "code": "IMNEP-T02", "duration_hour": 0.25, "priority": 0},
+                        {"name": "Renal Biopsy", "code": "IMNEP-T03", "duration_hour": 1.0, "priority": 2},
+                        {"name": "GFR Measurement", "code": "IMNEP-T04", "duration_hour": 0.5, "priority": 0},
+                        {"name": "Dialysis Access Evaluation", "code": "IMNEP-T05", "duration_hour": 0.5, "priority": 1},
+                        {"name": "Renal CT Angiography", "code": "IMNEP-T06", "duration_hour": 0.75, "priority": 1}
                     ]
                 },
                 "hematology/oncology": {
@@ -94,12 +94,12 @@
                         "Stem Cell Transplantation"
                     ],
                     "tests": [
-                        {"name": "Complete Blood Count with Differential", "code": "IMHEM-T01", "duration_hour": 0.25},
-                        {"name": "Bone Marrow Biopsy", "code": "IMHEM-T02", "duration_hour": 1.0},
-                        {"name": "CT Scan with Contrast", "code": "IMHEM-T03", "duration_hour": 0.75},
-                        {"name": "PET-CT Scan", "code": "IMHEM-T04", "duration_hour": 2.0},
-                        {"name": "Peripheral Blood Smear", "code": "IMHEM-T05", "duration_hour": 0.25},
-                        {"name": "Coagulation Panel", "code": "IMHEM-T06", "duration_hour": 0.25}
+                        {"name": "Complete Blood Count with Differential", "code": "IMHEM-T01", "duration_hour": 0.25, "priority": 0},
+                        {"name": "Bone Marrow Biopsy", "code": "IMHEM-T02", "duration_hour": 1.0, "priority": 2},
+                        {"name": "CT Scan with Contrast", "code": "IMHEM-T03", "duration_hour": 0.75, "priority": 1},
+                        {"name": "PET-CT Scan", "code": "IMHEM-T04", "duration_hour": 2.0, "priority": 1},
+                        {"name": "Peripheral Blood Smear", "code": "IMHEM-T05", "duration_hour": 0.25, "priority": 0},
+                        {"name": "Coagulation Panel", "code": "IMHEM-T06", "duration_hour": 0.25, "priority": 0}
                     ]
                 },
                 "infectious diseases": {
@@ -110,12 +110,12 @@
                         "Antimicrobial Stewardship"
                     ],
                     "tests": [
-                        {"name": "Blood Culture", "code": "IMINF-T01", "duration_hour": 0.25},
-                        {"name": "Chest X-ray", "code": "IMINF-T02", "duration_hour": 0.25},
-                        {"name": "Lumbar Puncture", "code": "IMINF-T03", "duration_hour": 0.75},
-                        {"name": "HIV Viral Load Test", "code": "IMINF-T04", "duration_hour": 0.25},
-                        {"name": "Tuberculosis Skin Test", "code": "IMINF-T05", "duration_hour": 0.25},
-                        {"name": "Wound Culture and Sensitivity", "code": "IMINF-T06", "duration_hour": 0.25}
+                        {"name": "Blood Culture", "code": "IMINF-T01", "duration_hour": 0.25, "priority": 0},
+                        {"name": "Chest X-ray", "code": "IMINF-T02", "duration_hour": 0.25, "priority": 0},
+                        {"name": "Lumbar Puncture", "code": "IMINF-T03", "duration_hour": 0.75, "priority": 1},
+                        {"name": "HIV Viral Load Test", "code": "IMINF-T04", "duration_hour": 0.25, "priority": 0},
+                        {"name": "Tuberculosis Skin Test", "code": "IMINF-T05", "duration_hour": 0.25, "priority": 0},
+                        {"name": "Wound Culture and Sensitivity", "code": "IMINF-T06", "duration_hour": 0.25, "priority": 0}
                     ]
                 },
                 "allergy": {
@@ -126,12 +126,12 @@
                         "Food and Drug Allergy"
                     ],
                     "tests": [
-                        {"name": "Skin Prick Test", "code": "IMALL-T01", "duration_hour": 0.5},
-                        {"name": "Specific IgE Blood Test", "code": "IMALL-T02", "duration_hour": 0.25},
-                        {"name": "Patch Test", "code": "IMALL-T03", "duration_hour": 0.5},
-                        {"name": "Spirometry", "code": "IMALL-T04", "duration_hour": 0.5},
-                        {"name": "Oral Food Challenge", "code": "IMALL-T05", "duration_hour": 2.0},
-                        {"name": "Drug Provocation Test", "code": "IMALL-T06", "duration_hour": 1.5}
+                        {"name": "Skin Prick Test", "code": "IMALL-T01", "duration_hour": 0.5, "priority": 0},
+                        {"name": "Specific IgE Blood Test", "code": "IMALL-T02", "duration_hour": 0.25, "priority": 0},
+                        {"name": "Patch Test", "code": "IMALL-T03", "duration_hour": 0.5, "priority": 1},
+                        {"name": "Spirometry", "code": "IMALL-T04", "duration_hour": 0.5, "priority": 0},
+                        {"name": "Oral Food Challenge", "code": "IMALL-T05", "duration_hour": 2.0, "priority": 2},
+                        {"name": "Drug Provocation Test", "code": "IMALL-T06", "duration_hour": 1.5, "priority": 2}
                     ]
                 },
                 "rheumatology": {
@@ -142,12 +142,12 @@
                         "Vasculitis"
                     ],
                     "tests": [
-                        {"name": "Rheumatoid Factor and Anti-CCP Test", "code": "IMRHE-T01", "duration_hour": 0.25},
-                        {"name": "Joint Ultrasound", "code": "IMRHE-T02", "duration_hour": 0.5},
-                        {"name": "Joint X-ray", "code": "IMRHE-T03", "duration_hour": 0.25},
-                        {"name": "MRI of Joints", "code": "IMRHE-T04", "duration_hour": 1.0},
-                        {"name": "ANA Panel", "code": "IMRHE-T05", "duration_hour": 0.25},
-                        {"name": "Synovial Fluid Analysis", "code": "IMRHE-T06", "duration_hour": 0.5}
+                        {"name": "Rheumatoid Factor and Anti-CCP Test", "code": "IMRHE-T01", "duration_hour": 0.25, "priority": 0},
+                        {"name": "Joint Ultrasound", "code": "IMRHE-T02", "duration_hour": 0.5, "priority": 1},
+                        {"name": "Joint X-ray", "code": "IMRHE-T03", "duration_hour": 0.25, "priority": 0},
+                        {"name": "MRI of Joints", "code": "IMRHE-T04", "duration_hour": 1.0, "priority": 2},
+                        {"name": "ANA Panel", "code": "IMRHE-T05", "duration_hour": 0.25, "priority": 0},
+                        {"name": "Synovial Fluid Analysis", "code": "IMRHE-T06", "duration_hour": 0.5, "priority": 1}
                     ]
                 }
             }

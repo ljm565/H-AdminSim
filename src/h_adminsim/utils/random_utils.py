@@ -346,7 +346,7 @@ def generate_random_tests(department: str,
         verbose (bool, optional): If True, log warnings when department not found. Defaults to True.
 
     Returns:
-        list[dict]: List of test dicts with keys: test_name, test_code, duration_hour, test_department.
+        list[dict]: List of test dicts with keys: test_name, test_code, duration_hour, test_department, priority.
     """
     if department_json_path is None:
         department_json_path = str(resources.files("h_adminsim.assets.departments").joinpath("department.json"))
@@ -381,6 +381,7 @@ def generate_random_tests(department: str,
             'test_code': test['code'],
             'duration_hour': test['duration_hour'],
             'test_department': src_dept,
+            'priority': test.get('priority', 0),
         })
 
     return selected_tests
