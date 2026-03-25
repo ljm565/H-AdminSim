@@ -61,6 +61,7 @@ We provide optional support for integrating with FHIR, allowing the simulator to
 
 ---
 ## Recent updates 📣
+* *v1.0.5 (March 2026)*: Minor improvements.
 * *v1.0.4 (March 2026)*: Simulation improvements.
     * Separated intake rubric into patient and staff, along with their respective results.
     * Added token usage statistics.

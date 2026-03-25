@@ -1,11 +1,11 @@
 import time
 import pytz
 import random
-from openai import InternalServerError
 from decimal import Decimal, getcontext
 from datetime import datetime, timedelta
 from typing import Optional, Union, Tuple
 from google.genai.errors import ServerError
+from openai import InternalServerError, BadRequestError
 
 from h_adminsim import registry
 from h_adminsim.registry import Hospital
@@ -683,7 +683,7 @@ def run_with_retry(func, *args, max_retries=8, **kwargs):
         try:
             return func(*args, **kwargs)
 
-        except (ServerError, InternalServerError) as e:
+        except (ServerError, InternalServerError, BadRequestError) as e:
             if retry_count >= max_retries:
                 log(f"\nMax retries reached. Last error: {e}", level='error')
                 raise e
