@@ -107,7 +107,7 @@ class FirstVisitDataSynthesizer(DataSynthesizer):
                     )
 
                 # Compute available patient segments
-                patient_segments = list(set(hospital_time_segments) - set(schedule_segments_flat))
+                vacant_segments = list(set(hospital_time_segments) - set(schedule_segments_flat))
 
                 # Generate appointments from available segments
                 _, appointments = scheduler(
@@ -117,7 +117,7 @@ class FirstVisitDataSynthesizer(DataSynthesizer):
                         config.hospital_data.appointment_coverage_ratio.max
                     ),
                     True,
-                    patient_segments,
+                    vacant_segments,
                     min_chunk_size=duration,
                     max_chunk_size=duration
                 )

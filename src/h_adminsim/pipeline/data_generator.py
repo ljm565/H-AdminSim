@@ -7,7 +7,8 @@ from importlib import resources
 from typing import Optional, Union
 
 from h_adminsim.task.fhir_manager import FHIRManager
-from h_adminsim.tools import DataSynthesizer, DataConverter, AgentDataBuilder
+from h_adminsim.tools import DataConverter, AgentDataBuilder
+from h_adminsim.tools.synthdat import FirstVisitDataSynthesizer, FollowUpDataSynthesizer
 from h_adminsim.utils import Information, colorstr, log
 from h_adminsim.utils.random_utils import random_uuid
 from h_adminsim.utils.filesys_utils import get_files, json_load
@@ -16,16 +17,19 @@ from h_adminsim.utils.filesys_utils import get_files, json_load
 
 class DataGenerator:
     def __init__(self,
+                 task: Optional[list[str]] = None,
                  care_level: str = 'primary',
                  config: Optional[Union[str, Config]] = None):
-        
+
         # Initialize
         self.config = self.load_config(care_level, config)
+        self.task = self.__init_task(task or ['first_visit'])
         self.__env_setup(self.config)
         self.fhir_url = self.config.get('fhir_url', None)
-        self.data_synthesizer = DataSynthesizer(self.config)
-        self.save_dir = self.data_synthesizer._save_dir
-        log(f'Data saving directory: {colorstr(self.save_dir)}')
+        if 'first_visit' in self.task:
+            self.fv_synthesizer = FirstVisitDataSynthesizer(self.config)
+            self.save_dir = self.fv_synthesizer.save_dir
+            log(f'Data saving directory: {colorstr(self.save_dir)}')
 
         
     def load_config(self, care_level: str, config: Optional[Union[str, Config]]) -> Config:
@@ -68,6 +72,24 @@ class DataGenerator:
         raise TypeError(
             log(f"Invalid config: expected None, str, or Config, got {type(config).__name__}", "error")
         )
+    
+
+    def __init_task(self, task: list[str]) -> set:
+        """
+        Initialize task set.
+
+        Args:
+            task (list[str]): Task list for synthesizing data.
+
+        Returns:
+            set: Initialized task set.
+        """
+        _task = set()
+        if 'first_visit' in task:
+            _task.add('first_visit')
+        if 'follow_up_visit' in task:
+            _task.add('follow_up_visit')
+        return _task
 
 
     def __env_setup(self, config: Config):
@@ -81,71 +103,94 @@ class DataGenerator:
         np.random.seed(config.seed)
     
 
-    def build(self, 
+    def build(self,
               sanity_check: bool = True,
               convert_to_fhir: bool = False,
-              build_agent_data: bool = True) -> Information:
+              build_agent_data: bool = True,
+              source_data_dir: Optional[str] = None) -> Information:
         """
-        Build the complete information bundle for the administrative simulation pipeline.
+        Build the complete data pipeline based on the configured task set.
+
+        Dispatches to first-visit and/or follow-up data synthesis depending on
+        which tasks are in `self.task`. The execution order is always:
+        first_visit -> follow_up_visit (follow-up requires existing first-visit data).
 
         Args:
-            sanity_check (bool, optional): Whether to perform validation checks during synthetic data generation. Defaults to True.
-            convert_to_fhir (bool, optional): If True, converts synthesized data into FHIR-compliant resources and stores them 
-                                              in the configured output directory. Defaults to False.
-            build_agent_data (bool, optional): If True, generates additional derived data required for agent-based
-                                               simulations (e.g., patient profiles, department assignments, task inputs). Defaults to True.
-
-        Raises:
-            Exception: Propagates any exception encountered during:
-                - synthetic data synthesis
-                - FHIR conversion
-                - agent data generation
+            sanity_check (bool, optional): Whether to perform validation checks. Defaults to True.
+            convert_to_fhir (bool, optional): If True, converts data into FHIR resources. Defaults to False.
+            build_agent_data (bool, optional): If True, generates agent simulation data. Defaults to True.
+            source_data_dir (Optional[str], optional): Path to existing hospital data for follow-up synthesis.
+                If None, uses `self.save_dir / 'data'`. Defaults to None.
 
         Returns:
             Information:
                 A structured container holding:
-                    - `data`: the synthesized dataset
-                    - `fhir_data`: list of FHIR resources (or None if disabled)
-                    - `agent_data`: processed agent input data (or None if disabled)
+                    - `data`: first-visit synthesized dataset (or None)
+                    - `fhir_data`: list of FHIR resources (or None)
+                    - `agent_data`: processed agent input data (or None)
+                    - `followup_data`: follow-up merged data (or None)
         """
-        # Data generator
-        try:
-            data, hospital_obj = self.data_synthesizer.synthesize(sanity_check=sanity_check)
-            log(f"Data synthesis completed successfully", color=True)
-        except Exception:
-            log("Data synthesis failed.", level="error")
-            raise
-        
-        # FHIR conversion
-        all_resource_list = None
-        if convert_to_fhir:
-            converter = DataConverter(self.config)
+        data, all_resource_list, agent_data_list = None, None, None
+
+        # First-visit data synthesis
+        if 'first_visit' in self.task:
             try:
-                all_resource_list = converter(self.save_dir / 'fhir_data', sanity_check)
-                log(f"Data FHIR conversion completed successfully", color=True)
+                data, _ = self.fv_synthesizer.synthesize(sanity_check=sanity_check)
+                log(f"Data synthesis completed successfully", color=True)
             except Exception:
-                log("Data FHIR conversion failed.", level='error')
+                log("Data synthesis failed.", level="error")
                 raise
-            
-        # Build data for agent simulation
-        agent_data_list = None
-        if build_agent_data:
-            builder = AgentDataBuilder(self.config)
+
+            # FHIR conversion
+            if convert_to_fhir:
+                converter = DataConverter(self.config)
+                try:
+                    all_resource_list = converter(self.save_dir / 'fhir_data', sanity_check)
+                    log(f"Data FHIR conversion completed successfully", color=True)
+                except Exception:
+                    log("Data FHIR conversion failed.", level='error')
+                    raise
+
+            # Build data for agent simulation
+            if build_agent_data:
+                builder = AgentDataBuilder(self.config)
+                try:
+                    agent_data_list = builder(self.save_dir / 'agent_data')
+                    log(f"Agent data generation completed successfully", color=True)
+                except Exception:
+                    log("Agent data generation failed.", level='error')
+                    raise
+
+        # Follow-up visit data synthesis
+        if 'follow_up_visit' in self.task:
+            assert hasattr(self.config.hospital_data, 'follow_up_visit'), \
+                log("Config must contain a 'hospital_data.follow_up_visit' section for follow-up synthesis.", "error")
+
             try:
-                agent_data_list = builder(self.save_dir / 'agent_data')
-                log(f"Agent data generation completed successfully", color=True)
+                if 'first_visit' in self.task:
+                    # First-visit data already generated -> merge follow-up into existing files
+                    if source_data_dir is None:
+                        source_data_dir = str(self.save_dir / 'data')
+                    followup_synthesizer = FollowUpDataSynthesizer(self.config, source_data_dir)
+                else:
+                    # Standalone mode -> generate hospital infra + follow-up patients from scratch
+                    followup_synthesizer = FollowUpDataSynthesizer(self.config)
+                    self.data_save_dir = followup_synthesizer.save_dir 
+
+                data = followup_synthesizer.synthesize(sanity_check=sanity_check)
+                log(f"Follow-up data synthesis completed successfully", color=True)
             except Exception:
-                log("Agent data generation failed.", level='error')
+                log("Follow-up data synthesis failed.", level="error")
                 raise
-        
+
         output = Information(
             data=data,
             fhir_data=all_resource_list,
-            agent_data=agent_data_list
+            agent_data=agent_data_list,
         )
-        
+
         return output
-    
+
 
     def upload_to_fhir(self,
                        fhir_data_dir: str,

@@ -538,6 +538,40 @@ def group_consecutive_segments(segments: list[int]) -> list[list[int]]:
 
 
 
+def split_into_contiguous_chunks(segments: list[int], chunk_size: int) -> list[list[int]]:
+    """
+    Split segments into contiguous chunks of a fixed size.
+
+    Groups consecutive segments together, then slices each consecutive block
+    into as many non-overlapping chunks of ``chunk_size`` as possible.
+    Remainders shorter than ``chunk_size`` are discarded.
+
+    Args:
+        segments (list[int]): List of segment indices (not necessarily sorted or consecutive).
+        chunk_size (int): Required size of each chunk.
+
+    Returns:
+        list[list[int]]: List of contiguous chunks, each of length ``chunk_size``.
+
+    Example:
+        >>> split_into_contiguous_chunks([0, 1, 2, 3, 5, 6, 7, 8, 9, 12], 3)
+        [[0, 1, 2], [5, 6, 7]]
+    """
+    if not segments or chunk_size <= 0:
+        return []
+
+    consecutive_blocks = group_consecutive_segments(sorted(segments))
+
+    chunks = []
+    for block in consecutive_blocks:
+        n_chunks = len(block) // chunk_size
+        for i in range(n_chunks):
+            chunks.append(block[i * chunk_size : (i + 1) * chunk_size])
+
+    return chunks
+
+
+
 def convert_time_list_to_merged_time(start: float,
                                      end: float,
                                      interval: float,
