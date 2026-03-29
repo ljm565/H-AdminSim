@@ -10,6 +10,8 @@ __pycache__/
 .env
 .pypirc
 .vscode
+*claude*
+*CLAUDE*
 
 # Shell scripts
 *.sh

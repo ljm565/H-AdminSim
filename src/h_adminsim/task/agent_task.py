@@ -8,12 +8,11 @@ from typing import Tuple, Union, Optional
 from dotenv import load_dotenv, find_dotenv
 
 from patientsim import PatientAgent
-from patientsim import AdminStaffAgent as IntakeAdminStaffAgent
-from patientsim.environment import OPSimulation as OPFVIntakeSimulation
 
 from h_adminsim import SupervisorAgent
-from h_adminsim import AdminStaffAgent as SchedulingAdminStaffAgent
+from h_adminsim import IntakeAdminStaffAgent, SchedulingAdminStaffAgent
 from h_adminsim.environment.hospital import HospitalEnvironment
+from h_adminsim.environment import OPIntakeSimulation as OPFVIntakeSimulation
 from h_adminsim.environment import OPScehdulingSimulation as OPFVScheduleSimulation
 from h_adminsim.tools.sanity_checker import SanityChecker
 from h_adminsim.tools import DataConverter, SchedulingRule

@@ -1,4 +1,4 @@
-from .admin_staff import AdminStaffAgent
+from .admin_staff import *
 from .supervisor import SupervisorAgent
 
 from importlib import resources

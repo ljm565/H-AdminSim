@@ -15,13 +15,12 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 
 import patientsim.utils as pu
-from patientsim import AdminStaffAgent as IntakeAdminStaffAgent
 
 from h_adminsim.registry.errors import ToolCallingError
 from h_adminsim.environment import OPScehdulingSimulation
 from h_adminsim.task.agent_task import OutpatientFirstIntake
 from h_adminsim.environment.hospital import HospitalEnvironment
-from h_adminsim import AdminStaffAgent as SchedulingAdminStaffAgent
+from h_adminsim import IntakeAdminStaffAgent, SchedulingAdminStaffAgent
 from h_adminsim.tools import SchedulingRule, scheduling_tool_calling
 from h_adminsim.registry import PromptRequest
 from h_adminsim.utils import log, colorstr, LOGGING_NAME
