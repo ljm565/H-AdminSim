@@ -10,7 +10,7 @@ from typing import Tuple, Union, Optional
 from langchain.agents import AgentExecutor
 from langchain_core.messages import HumanMessage, AIMessage
 
-from h_adminsim import AdminStaffAgent
+from h_adminsim import SchedulingAdminStaffAgent
 from h_adminsim.registry.errors import ToolCallingError, ScheduleNotFoundError, SchedulingError
 from h_adminsim.registry import PREFERENCE_PHRASE_PATIENT, PREFERENCE_PHRASE_STAFF, STATUS_CODES
 from h_adminsim.environment.hospital import HospitalEnvironment
@@ -25,7 +25,7 @@ from h_adminsim.utils.common_utils import *
 class OPScehdulingSimulation:
     def __init__(self,
                  patient_agent: PatientAgent,
-                 admin_staff_agent: AdminStaffAgent,
+                 admin_staff_agent: SchedulingAdminStaffAgent,
                  metadata: dict,
                  department_data: dict,
                  environment: HospitalEnvironment,

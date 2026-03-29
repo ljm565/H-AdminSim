@@ -16,7 +16,7 @@ class VLLMClient:
         self._init_environment()
         self.histories = list()
         self.token_usages = dict()
-        self.__first_turn = False
+        self.__first_turn = True
         self.__sanity_check()
 
 
@@ -103,6 +103,7 @@ class VLLMClient:
                  image_size: Optional[Tuple[int]] = None,
                  using_multi_turn: bool = False,
                  verbose: bool = True,
+                 greeting: Optional[str] = None,
                  **kwargs) -> str:
         """
         Sends a chat completion request to the model with optional image input and system prompt.
@@ -113,6 +114,7 @@ class VLLMClient:
             image_path (Optional[str], optional): Path to an image file to be included in the prompt. Defaults to None.
             image_size (Optional[Tuple[int]], optional): The target image size in (width, height) format, if resizing is needed. Defaults to None.
             using_multi_turn (bool): Whether to structure it as multi-turn. Defaults to False.
+            greeting (Optional[str]): An optional greeting message to include in the conversation. Defaults to None.
             verbose (bool): Whether to print verbose output. Defaults to True.
 
         Raises:
@@ -134,6 +136,11 @@ class VLLMClient:
                 # System prompt
                 if system_prompt:
                     self.histories.append({"role": "system", "content": [{"type": "text", "text": system_prompt}]})
+
+                # Greeting
+                if greeting and self.__first_turn:
+                    self.histories.append({"role": "assistant", "content": [{"type": "text", "text": greeting}]})
+                
                 self.__first_turn = False
 
             # User prompt
@@ -146,6 +153,9 @@ class VLLMClient:
                 **kwargs
             )
             assistant_msg = response.choices[0].message
+            if assistant_msg.content == None:
+                assistant_msg.content = 'Could you tell me again?'
+            assistant_msg.content = assistant_msg.content.strip()
             self.histories.append({"role": assistant_msg.role, "content": [{"type": "text", "text": assistant_msg.content}]})
 
             # Logging token usage

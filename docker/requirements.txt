@@ -21,4 +21,4 @@ langchain-google-genai==2.1.8
 langchain-community==0.3.27
 vllm==0.10.2
 beautifulsoup4==4.13.5
-patientsim==1.0.0
+patientsim==1.0.3

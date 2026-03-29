@@ -43,14 +43,14 @@ python3 demo/llm_server.py --model gpt-5-mini --backend_host 124.12.33.12 --port
 You can run frontend via streamlit:
 ```bash
 # Base execution
-streamlit run src/demo/front.py
+streamlit run demo/front.py
 
 # Using an other port
-streamlit run src/demo/front.py --server.port 20000
+streamlit run demo/front.py --server.port 20000
 
 # When you set the backend server with your own address
 # Don't forget the `--` in the middle of the command
-streamlit run src/demo/front.py --server.port 20000 -- --backend_host 124.12.33.12 --port 8732
+streamlit run demo/front.py --server.port 20000 -- --backend_host 124.12.33.12 --port 8732
 ```
 * `--backend_host`: When you deploy backend server with your own host, you can use this option. Defaults to `127.0.0.1`.
 * `--backend_port`: When you deploy backend server with your own port, you can use this option. Defaults to `8778`.

@@ -7,14 +7,6 @@ from h_adminsim.utils import log
 from h_adminsim.utils.image_preprocess_utils import *
 
 
-########### For langchain integration (currently not used) ############
-# from langchain_openai import ChatOpenAI
-# from langchain_core.prompts import ChatPromptTemplate
-# from langchain_core.output_parsers import JsonOutputParser
-# from h_adminsim.registry import ScheduleModel
-#######################################################################
-
-
 
 class GPTClient:
     def __init__(self, model: str, api_key: Optional[str] = None):
@@ -101,6 +93,7 @@ class GPTClient:
                  image_size: Optional[Tuple[int]] = None,
                  using_multi_turn: bool = False,
                  verbose: bool = True,
+                 greeting: Optional[str] = None,
                  **kwargs) -> str:
         """
         Sends a chat completion request to the model with optional image input and system prompt.
@@ -112,6 +105,7 @@ class GPTClient:
             image_size (Optional[Tuple[int]], optional): The target image size in (width, height) format, if resizing is needed. Defaults to None.
             using_multi_turn (bool): Whether to structure it as multi-turn. Defaults to False.
             verbose (bool): Whether to print verbose output. Defaults to True.
+            greeting (Optional[str]): An optional greeting message to include in the conversation. Defaults to None.
 
         Raises:
             FileNotFoundError: If `image_path` is provided but the file does not exist.
@@ -132,6 +126,11 @@ class GPTClient:
                 # System prompt
                 if system_prompt:
                     self.histories.append({"role": "system", "content": [{"type": "text", "text": system_prompt}]})
+                
+                # Greeting
+                if greeting and self.__first_turn:
+                    self.histories.append({"role": "assistant", "content": [{"type": "text", "text": greeting}]})
+                
                 self.__first_turn = False
             
             # User prompt
@@ -144,6 +143,9 @@ class GPTClient:
                 **kwargs
             )
             assistant_msg = response.choices[0].message
+            if assistant_msg.content == None:
+                assistant_msg.content = 'Could you tell me again?'
+            assistant_msg.content = assistant_msg.content.strip()
             self.histories.append({"role": assistant_msg.role, "content": [{"type": "text", "text": assistant_msg.content}]})
 
             # Logging token usage

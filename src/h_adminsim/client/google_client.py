@@ -10,14 +10,6 @@ from h_adminsim.utils.common_utils import exponential_backoff
 from h_adminsim.utils.image_preprocess_utils import *
 
 
-########### For langchain integration (currently not used) ############
-# from langchain_google_genai import ChatGoogleGenerativeAI
-# from langchain_core.prompts import ChatPromptTemplate
-# from langchain_core.output_parsers import JsonOutputParser
-# from h_adminsim.registry import ScheduleModel
-#######################################################################
-
-
 
 class GeminiClient:
     def __init__(self, model: str, api_key: Optional[str] = None):
@@ -26,6 +18,7 @@ class GeminiClient:
         self._init_environment(api_key)
         self.histories = list()
         self.token_usages = dict()
+        self.__first_turn = True
 
 
     def _init_environment(self, api_key: Optional[str] = None):
@@ -50,6 +43,7 @@ class GeminiClient:
         Args:
             verbose (bool): Whether to print verbose output. Defaults to True.
         """
+        self.__first_turn = True
         self.histories = list()
         self.token_usages = dict()
         if verbose:
@@ -98,6 +92,7 @@ class GeminiClient:
                  image_size:Optional[Tuple[int]] = None,
                  using_multi_turn: bool = False,
                  verbose: bool = True,
+                 greeting: Optional[str] = None,
                  **kwargs) -> str:
         """
         Sends a chat completion request to the model with optional image input and system prompt.
@@ -109,6 +104,7 @@ class GeminiClient:
             image_size (Optional[Tuple[int]], optional): The target image size in (width, height) format, if resizing is needed. Defaults to None.
             using_multi_turn (bool): Whether to structure it as multi-turn. Defaults to False.
             verbose (bool): Whether to print verbose output. Defaults to True.
+            greeting (Optional[str]): An optional greeting message to include in the conversation. Defaults to None.
 
         Raises:
             FileNotFoundError: If `image_path` is provided but the file does not exist.
@@ -124,6 +120,11 @@ class GeminiClient:
             # To ensure empty history
             if not using_multi_turn:
                 self.reset_history(verbose)
+
+            # Greeting
+            if greeting and self.__first_turn:
+                self.histories.append(types.Content(role='model', parts=[types.Part.from_text(text=greeting)]))
+                self.__first_turn = False
             
             # User prompt
             self.histories += self.__make_payload(user_prompt, image_path, image_size)
@@ -154,7 +155,7 @@ class GeminiClient:
 
                 # After the maximum retries
                 if count >= max_retry:
-                    replace_text = 'None'
+                    replace_text = 'Could you tell me again?'
                     self.histories.append(types.Content(role='model', parts=[types.Part.from_text(text=replace_text)]))
                     return replace_text
                 
