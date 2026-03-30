@@ -47,7 +47,6 @@ hospital_data:
             type: ['simple', 'with_history']    # Types of patient history.
             probs: [0.2, 0.8]                   # Types probability distribution.
     follow_up_visit:
-        prob: 0.2                               # Proportion of follow-up patients compare to the first_visit
         test_per_department:
             min: 4
             max: 6
