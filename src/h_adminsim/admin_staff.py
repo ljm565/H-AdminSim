@@ -30,6 +30,7 @@ class IntakeAdminStaffAgent:
                  azure_endpoint: Optional[str] = None,
                  vllm_endpoint: Optional[str] = None,
                  system_prompt_path: Optional[str] = None,
+                 log_verbose: bool = True,
                  **kwargs) -> None:
         
         # Initialize environment
@@ -54,7 +55,8 @@ class IntakeAdminStaffAgent:
         self._system_prompt_template = self._init_prompt(system_prompt_path)
         self.build_prompt()
         
-        log("AdminStaffAgent initialized successfully", color=True)
+        if log_verbose:
+            log("Intake adminStaffAgent initialized successfully", color=True)
     
 
     def _init_env(self, **kwargs) -> None:
@@ -206,6 +208,7 @@ class SchedulingAdminStaffAgent:
                  scheduling_user_prompt_path: Optional[str] = None,
                  tool_calling_prompt_path: Optional[str] = None,
                  sc_tool_calling_prompt_path: Optional[str] = None,
+                 log_verbose: bool = True,
                  **kwargs):
         
         # Initialize environment
@@ -230,7 +233,8 @@ class SchedulingAdminStaffAgent:
                 sc_tool_calling_prompt_path=sc_tool_calling_prompt_path,
             )
         
-        log("Administrative staff agent initialized successfully", color=True)
+        if log_verbose:
+            log("Scheduling adminStaffAgent initialized successfully", color=True)
     
 
     def _init_env(self, **kwargs):
