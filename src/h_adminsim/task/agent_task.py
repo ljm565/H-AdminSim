@@ -795,11 +795,6 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
                 'valid_from': gt.get('valid_from') if preference == 'date' else None,
             } for preference in gt.get('preference')
         ]
-        staff_known_data = {
-            'patient': patient_info['name'],
-            'department': department,
-            'patient_intention': None,
-        }
 
         # If the precedent department data is wrong, continue
         if not sanity:
@@ -813,6 +808,11 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
         
         #################################################### Regular Scheudling Simulation ####################################################
         # Initialize the simulation environment using the first preference data
+        staff_known_data = {
+            'patient': patient_info['name'],
+            'department': department,
+            'patient_intention': None,
+        }
         preference = gt_data[0].get('preference')
         preference_desc = PREFERENCE_PHRASE_PATIENT[preference] if preference != 'date' \
                     else PREFERENCE_PHRASE_PATIENT[preference].format(date=gt_data[0].get('valid_from'))
