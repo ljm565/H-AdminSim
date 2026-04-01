@@ -676,6 +676,20 @@ def preprocess_dialog(dialog: dict) -> str:
 
 
 
+def preprocess_utterance(utterance: str) -> str:
+    """
+    Preprocess utterance data into a formatted string.
+
+    Args:
+        utterance (str): The content of the utterance.
+
+    Returns:
+        str: Pre-processed utterance string.
+    """
+    return ' '.join(utterance.split())
+
+
+
 def run_with_retry(func, *args, max_retries=8, **kwargs):
     retry_count = 0
 

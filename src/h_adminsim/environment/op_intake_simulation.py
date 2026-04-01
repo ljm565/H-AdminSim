@@ -6,6 +6,7 @@ from patientsim.utils.common_utils import detect_op_termination
 
 from h_adminsim import IntakeAdminStaffAgent
 from h_adminsim.utils import log, colorstr
+from h_adminsim.utils.common_utils import preprocess_utterance
 
 
 
@@ -64,8 +65,7 @@ class OPIntakeSimulation:
                  staff_kwargs: dict = {},
                  **kwargs) -> list[dict]:
         """
-        Run a full conversation simulation between the Administration Staff and Patient agents
-        in the emergency department setting.
+        Run a full conversation simulation between the Administration Staff and Patient agents in the outpatient setting.
 
         The simulation alternates turns between the Administration Staff and Patient until
         the maximum number of inference rounds is reached or early termination
@@ -94,29 +94,30 @@ class OPIntakeSimulation:
         role = f"{colorstr('blue', 'Staff')}   [0%]"
         log(f"{role:<23}: {staff_greet}")
 
+        merged_patient_kwargs = {**patient_kwargs, **kwargs}
+        merged_staff_kwargs = {**staff_kwargs, **kwargs}
+
         for inference_idx in range(self.max_inferences):
             progress = int(((inference_idx + 1) / self.max_inferences) * 100)
 
             # Obtain response from patient
-            patient_kwargs.update(kwargs)
             patient_response = self.patient_agent(
                 user_prompt=dialog_history[-1]["content"],
                 using_multi_turn=True,
                 verbose=verbose,
-                **patient_kwargs
+                **merged_patient_kwargs
             )
             dialog_history.append({"role": "Patient", "content": patient_response})
             role = f"{colorstr('green', 'Patient')} [{progress}%]"
             log(f"{role:<23}: {patient_response}")
 
             # Obtain response from staff
-            staff_kwargs.update(kwargs)
             staff_response = self.admin_staff_agent(
                 user_prompt=dialog_history[-1]["content"] + "\nThis is the final turn. Now, you must provide your top5 differential diagnosis." \
                     if inference_idx == self.max_inferences - 1 else dialog_history[-1]["content"],
                 using_multi_turn=True,
                 verbose=verbose,
-                **staff_kwargs
+                **merged_staff_kwargs
             )
             dialog_history.append({"role": "Staff", "content": staff_response})
             role = f"{colorstr('blue', 'Staff')}   [{progress}%]"
@@ -131,12 +132,9 @@ class OPIntakeSimulation:
                 termination_check = self.checker_agent(response=staff_response).strip().upper()
 
                 # Check if the response indicates termination
-                if termination_check == "Y": 
+                if termination_check == "Y":
                     log("Conversation termination detected by the checker agent.", level="warning")
                     break
-
-            # Prevent API timeouts
-            time.sleep(1.0)
 
         log("Simulation completed.", color=True)
 
@@ -146,3 +144,86 @@ class OPIntakeSimulation:
             "admin_staff_token_usage": self.admin_staff_agent.client.token_usages,
         }
         return output
+    
+
+    def simulate_stream(self,
+                        verbose: bool = True,
+                        patient_kwargs: dict = {},
+                        staff_kwargs: dict = {},
+                        **kwargs):
+        """
+        Run a streaming conversation simulation, yielding each utterance as it is produced.
+
+        Functionally equivalent to `simulate()`, but yields each formatted utterance
+        immediately after it is generated rather than returning the full result at the end.
+        Useful for real-time display or downstream streaming pipelines.
+
+        Args:
+            verbose (bool, optional): Whether to print verbose output. Defaults to True.
+            patient_kwargs (dict, optional): Additional keyword arguments for the Patient agent. Defaults to {}.
+            staff_kwargs (dict, optional): Additional keyword arguments for the Administration Staff agent. Defaults to {}.
+            **kwargs: Additional keyword arguments passed to both agents.
+
+        Yields:
+            Tuple[str, str]: A 2-tuple of (role, content) where role is 'Staff' or 'Patient'
+                             and content is the whitespace-normalized utterance text.
+        """
+        # Initialize agents
+        self._init_agents(verbose=verbose)
+        
+        if verbose:
+            log(f"Patient prompt:\n{self.patient_agent.system_prompt}")
+            log(f"Administration staff prompt:\n{self.admin_staff_agent.system_prompt}")
+
+        # Start conversation
+        staff_greet = self.admin_staff_agent.staff_greet
+        dialog_history = [{"role": "Staff", "content": staff_greet}]
+        role = f"{colorstr('blue', 'Staff')}   [0%]"
+        log(f"{role:<23}: {staff_greet}")
+        yield 'Staff', preprocess_utterance(staff_greet)
+
+        merged_patient_kwargs = {**patient_kwargs, **kwargs}
+        merged_staff_kwargs = {**staff_kwargs, **kwargs}
+
+        for inference_idx in range(self.max_inferences):
+            progress = int(((inference_idx + 1) / self.max_inferences) * 100)
+
+            # Obtain response from patient
+            patient_response = self.patient_agent(
+                user_prompt=dialog_history[-1]["content"],
+                using_multi_turn=True,
+                verbose=verbose,
+                **merged_patient_kwargs
+            )
+            dialog_history.append({"role": "Patient", "content": patient_response})
+            role = f"{colorstr('green', 'Patient')} [{progress}%]"
+            log(f"{role:<23}: {patient_response}")
+            yield 'Patient', preprocess_utterance(patient_response)
+
+            # Obtain response from staff
+            staff_response = self.admin_staff_agent(
+                user_prompt=dialog_history[-1]["content"] + "\nThis is the final turn. Now, you must provide your top5 differential diagnosis." \
+                    if inference_idx == self.max_inferences - 1 else dialog_history[-1]["content"],
+                using_multi_turn=True,
+                verbose=verbose,
+                **merged_staff_kwargs
+            )
+            dialog_history.append({"role": "Staff", "content": staff_response})
+            role = f"{colorstr('blue', 'Staff')}   [{progress}%]"
+            log(f"{role:<23}: {staff_response}")
+            yield 'Staff', preprocess_utterance(staff_response)
+
+            # If early termination is detected, break the loop
+            if detect_op_termination(staff_response):
+                break
+
+            elif self.checker_agent:
+                # Check if the staff response contains termination cues
+                termination_check = self.checker_agent(response=staff_response).strip().upper()
+
+                # Check if the response indicates termination
+                if termination_check == "Y": 
+                    log("Conversation termination detected by the checker agent.", level="warning")
+                    break
+
+        log("Simulation completed.", color=True)

@@ -635,7 +635,7 @@ class OPScehdulingSimulation:
 
     def scheduling_simulate(self,
                             gt_data: dict,
-                            staff_known_data: list[dict],
+                            staff_known_data: dict,
                             doctor_information: Optional[dict] = None,
                             verbose: bool = False,
                             max_inferences: int = 5,
@@ -647,7 +647,7 @@ class OPScehdulingSimulation:
 
         Args:
             gt_data (dict): Ground-truth patient condition(s) for each dialogue turn.
-            staff_known_data (list[dict]): Patient information known to the staff agent at each turn.
+            staff_known_data (dict): Patient information known to the staff agent.
             doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s) involved, 
                                                            including availability and other relevant details. Defaults to None.
             verbose (bool, optional): Whether to log detailed simulation outputs. Defaults to False.
@@ -672,18 +672,16 @@ class OPScehdulingSimulation:
         staff_token_stats = {}
         filtered_doctor_information = self.environment.get_doctor_schedule(
             doctor_information=doctor_information if not self.fhir_integration else None,
-            department=staff_known_data[0]['department'],
+            department=staff_known_data['department'],
             fhir_integration=self.fhir_integration,
         )
         client = self.admin_staff_agent.build_agent(
             rule=self.rules, 
             doctor_info=filtered_doctor_information
         )
+        merged_patient_kwargs = {**patient_kwargs, **kwargs}
+        merged_staff_kwargs = {**staff_kwargs, **kwargs}
         
-        # Sanity check for the simulation
-        assert len(gt_data) == len(staff_known_data), \
-            log(f"The lengths of gt_data and staff_known_data must be the same, but got gt_data length: {len(gt_data)} and staff_known_data length: {len(staff_known_data)}", level="error")
-
         # Start conversation
         staff_greet = self.admin_staff_agent.staff_greet
         self.dialog_history['scheduling'].append({"role": "Staff", "content": staff_greet})
@@ -692,7 +690,7 @@ class OPScehdulingSimulation:
 
         # Iterate over multiple preferences if exists
         preference_reject_prob = 0.0 if len(gt_data) <= 1 else self.preference_rejection_prob
-        for i, (gt_patient_condition, staff_known_condition) in enumerate(zip(gt_data, staff_known_data)):
+        for i, gt_patient_condition in enumerate(gt_data):
             # For the rejection scenario
             if i != 0:
                 self.update_patient_preference_system_prompt(
@@ -703,12 +701,11 @@ class OPScehdulingSimulation:
             tries = 0
             while 1:
                 # Obtain response from patient
-                patient_kwargs.update(kwargs)
                 patient_response = self.patient_agent(
                     self.dialog_history['scheduling'][-1]["content"],
                     using_multi_turn=True,
                     verbose=False,
-                    **patient_kwargs,
+                    **merged_patient_kwargs,
                 )
                 patient_token_stats = self.patient_agent.client.token_usages
                 self.dialog_history['scheduling'].append({"role": "Patient", "content": patient_response})
@@ -716,15 +713,14 @@ class OPScehdulingSimulation:
                 log(f"{role:<25}: {patient_response}")
                 
                 # Scheduling from staff
-                staff_kwargs.update(kwargs)
-                staff_known_condition.update({'patient_intention': patient_response})
+                staff_known_data.update({'patient_intention': patient_response})
                 staff_response = self.scheduling(
                     client,
-                    staff_known_condition,
+                    staff_known_data,
                     doctor_information,
                     chat_history=self._to_lc_history('scheduling'),
                     callback=staff_token_callback,
-                    **staff_kwargs
+                    **merged_staff_kwargs
                 )
                 if self.scheduling_strategy == 'tool_calling':
                     staff_token_stats = staff_token_callback.token_usage
@@ -805,12 +801,12 @@ class OPScehdulingSimulation:
                 pred_doctor_name = list(pred_schedule['schedule'].keys())[0]
                 schedule = pred_schedule['schedule'][pred_doctor_name]
                 prediction = {
-                    'patient': staff_known_data[i]['patient'],
+                    'patient': staff_known_data['patient'],
                     'attending_physician': pred_doctor_name,
-                    'department': staff_known_data[i]['department'],
+                    'department': staff_known_data['department'],
                     'date': schedule['date'],
                     'schedule': [schedule['start'], schedule['end']],
-                    'patient_intention': staff_known_data[i]['patient_intention'],
+                    'patient_intention': staff_known_data['patient_intention'],
                     'preference': gt_data[i].get('preference'),
                     'preferred_doctor': gt_data[i].get('preferred_doctor'),
                     'valid_from': gt_data[i].get('valid_from'),
@@ -870,6 +866,7 @@ class OPScehdulingSimulation:
             patient_schedule_list=patient_schedules,
             gt_idx=gt_idx,
         )
+        merged_patient_kwargs = {**patient_kwargs, **kwargs}
 
         # Start conversation
         staff_greet = self.admin_staff_agent.general_staff_greet
@@ -880,12 +877,11 @@ class OPScehdulingSimulation:
         try:
             for _ in range(max_inferences):
                 # Obtain response from patient
-                patient_kwargs.update(kwargs)
                 patient_response = self.patient_agent(
                     self.dialog_history['cancel'][-1]["content"],
                     using_multi_turn=True,
                     verbose=False,
-                    **patient_kwargs
+                    **merged_patient_kwargs
                 )
                 self.dialog_history['cancel'].append({"role": "Patient", "content": patient_response})
                 role = f"{colorstr('green', 'Patient')} (cancel)"
@@ -1019,6 +1015,8 @@ class OPScehdulingSimulation:
             patient_schedule_list=patient_schedules,
             gt_idx=gt_idx,
         )
+        merged_patient_kwargs = {**patient_kwargs, **kwargs}
+        merged_staff_kwargs = {**staff_kwargs, **kwargs}
 
         # Start conversation
         staff_greet = self.admin_staff_agent.general_staff_greet
@@ -1029,25 +1027,23 @@ class OPScehdulingSimulation:
         try:
             for _ in range(max_inferences):
                 # Obtain response from patient
-                patient_kwargs.update(kwargs)
                 patient_response = self.patient_agent(
                     self.dialog_history['reschedule'][-1]["content"],
                     using_multi_turn=True,
                     verbose=False,
-                    **patient_kwargs
+                    **merged_patient_kwargs
                 )
                 self.dialog_history['reschedule'].append({"role": "Patient", "content": patient_response})
                 role = f"{colorstr('green', 'Patient')} (move)"
                 log(f"{role:<25}: {patient_response}")
 
                 # Rescheduling from staff
-                staff_kwargs.update(kwargs)
                 staff_response = self.rescheduling(
                     client=client,
                     patient_intention=patient_response,
                     doctor_information=doctor_information,
                     chat_history=self._to_lc_history('reschedule'),
-                    **staff_kwargs
+                    **merged_staff_kwargs
                 )
                 
                 # Clarification message
@@ -1146,3 +1142,129 @@ class OPScehdulingSimulation:
         log("Simulation completed.", color=True)
         return doctor_information, result_dict
     
+
+    def scheduling_simulate_stream(self,
+                                   gt_data: dict,
+                                   staff_known_data: dict,
+                                   doctor_information: Optional[dict] = None,
+                                   verbose: bool = False,
+                                   max_inferences: int = 5,
+                                   patient_kwargs: dict = {},
+                                   staff_kwargs: dict = {},
+                                   **kwargs):
+        """
+        Simulate a multi-turn outpatient scheduling dialogue between a patient agent and an administrative staff agent.
+
+        Args:
+            gt_data (dict): Ground-truth patient condition(s) for each dialogue turn.
+            staff_known_data (dict): Patient information known to the staff agent.
+            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s) involved, 
+                                                           including availability and other relevant details. Defaults to None.
+            verbose (bool, optional): Whether to log detailed simulation outputs. Defaults to False.
+            max_inferences (int, optional): Maximum number of dialogue turns.
+            patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent.
+            staff_kwargs (dict, optional): Additional keyword arguments passed to the staff scheduling function.
+            **kwargs: Shared keyword arguments passed to both agents.
+        """
+        # Sanity Check
+        if not self.fhir_integration:
+            assert doctor_information is not None, log(f"Doctor information must be provided if you don't use FHIR.", level="error")
+
+        # Initialize agents and result dictionary
+        staff_token_callback = TokenUsageCallback()
+        self._init_agents(verbose=verbose)
+        staff_token_stats = {}
+        filtered_doctor_information = self.environment.get_doctor_schedule(
+            doctor_information=doctor_information if not self.fhir_integration else None,
+            department=staff_known_data['department'],
+            fhir_integration=self.fhir_integration,
+        )
+        client = self.admin_staff_agent.build_agent(
+            rule=self.rules, 
+            doctor_info=filtered_doctor_information
+        )
+        merged_patient_kwargs = {**patient_kwargs, **kwargs}
+        merged_staff_kwargs = {**staff_kwargs, **kwargs}
+        
+        # Start conversation
+        staff_greet = self.admin_staff_agent.staff_greet
+        self.dialog_history['scheduling'].append({"role": "Staff", "content": staff_greet})
+        role = f"{colorstr('blue', 'Staff')}"
+        log(f"{role:<25}: {staff_greet}")
+
+        # Iterate over multiple preferences if exists
+        preference_reject_prob = 0.0 if len(gt_data) <= 1 else self.preference_rejection_prob
+        for i, gt_patient_condition in enumerate(gt_data):
+            # For the rejection scenario
+            if i != 0:
+                self.update_patient_preference_system_prompt(
+                    patient_condition=gt_patient_condition,
+                    rejected_preference=gt_data[i-1]['preference']
+                )
+
+            tries = 0
+            while 1:
+                # Obtain response from patient
+                patient_response = self.patient_agent(
+                    self.dialog_history['scheduling'][-1]["content"],
+                    using_multi_turn=True,
+                    verbose=False,
+                    **merged_patient_kwargs,
+                )
+                self.dialog_history['scheduling'].append({"role": "Patient", "content": patient_response})
+                role = f"{colorstr('green', 'Patient')} ({gt_patient_condition['preference']})"
+                log(f"{role:<25}: {patient_response}")
+                yield 'Patient', preprocess_utterance(patient_response), None
+                
+                # Scheduling from staff
+                staff_known_data.update({'patient_intention': patient_response})
+                staff_response = self.scheduling(
+                    client,
+                    staff_known_data,
+                    doctor_information,
+                    chat_history=self._to_lc_history('scheduling'),
+                    callback=staff_token_callback,
+                    **merged_staff_kwargs
+                )
+                if self.scheduling_strategy == 'tool_calling':
+                    staff_token_stats = staff_token_callback.token_usage
+                else:
+                    for k, v in staff_response['token'].items():
+                        if k not in staff_token_stats:
+                            staff_token_stats[k] = deepcopy(v)
+                        else:
+                            staff_token_stats[k].extend(v)  # 두 번째~: extend
+                
+                # Clarification message
+                if staff_response['type'] == 'text':
+                    response = staff_response['result']
+                    self.dialog_history['scheduling'].append({"role": "Staff", "content": response})
+                    role = f"{colorstr('blue', 'Staff')}"
+                    log(f"{role:<25}: {response}")
+                    yield 'Staff', preprocess_utterance(response), None
+                
+                # Tool calling result
+                elif staff_response['type'] == 'tool':
+                    pred_schedule = staff_response['result']
+                    response = self.admin_staff_agent.staff_suggestion.format(schedule=pred_schedule)
+                    self.dialog_history['scheduling'].append({"role": "Staff", "content": response})
+                    role = f"{colorstr('blue', 'Staff')}"
+                    log(f"{role:<25}: {response}")
+                    yield 'Staff', preprocess_utterance(response), pred_schedule
+                    break
+
+                tries += 1
+                if tries > max_inferences:
+                    return
+            
+            # Preference rejection logic
+            ## Rejection case
+            if random.random() < preference_reject_prob and i != len(gt_data) - 1:
+                preference_reject_prob *= self.preference_rejection_prob_decay
+            ## Non-rejection case
+            else:
+                self.dialog_history['scheduling'].append({"role": "Patient", "content": self.end_phrase})
+                role = f"{colorstr('green', 'Patient')} ({gt_data[i]['preference']})"
+                log(f"{role:<25}: {self.end_phrase}")
+                yield 'Patient', preprocess_utterance(self.end_phrase), None
+                break

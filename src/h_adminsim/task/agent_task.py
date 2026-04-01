@@ -499,7 +499,7 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
         
         # Loading from the ground truth
         except:
-            log('The predicted department is not given. The ground truth value will be used.', 'warning')
+            log('The predicted information mismatched. The ground truth value will be used.', 'warning')
             patient_info = {
                 'name': gt['patient'],
                 'gender': gt['gender'],
@@ -795,13 +795,11 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
                 'valid_from': gt.get('valid_from') if preference == 'date' else None,
             } for preference in gt.get('preference')
         ]
-        staff_known_data = [
-            {
-                'patient': patient_info['name'],
-                'department': department,
-                'patient_intention': None,
-            } for _ in range(len(gt_data))
-        ]
+        staff_known_data = {
+            'patient': patient_info['name'],
+            'department': department,
+            'patient_intention': None,
+        }
 
         # If the precedent department data is wrong, continue
         if not sanity:
