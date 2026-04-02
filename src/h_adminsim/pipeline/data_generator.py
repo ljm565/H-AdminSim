@@ -141,26 +141,6 @@ class DataGenerator:
                 log("Data synthesis failed.", level="error")
                 raise
 
-            # FHIR conversion
-            if convert_to_fhir:
-                converter = DataConverter(self.config)
-                try:
-                    all_resource_list = converter(self.save_dir / 'fhir_data', sanity_check)
-                    log(f"Data FHIR conversion completed successfully", color=True)
-                except Exception:
-                    log("Data FHIR conversion failed.", level='error')
-                    raise
-
-            # Build data for agent simulation
-            if build_agent_data:
-                builder = AgentDataBuilder(self.config)
-                try:
-                    agent_data_list = builder(self.save_dir / 'agent_data')
-                    log(f"Agent data generation completed successfully", color=True)
-                except Exception:
-                    log("Agent data generation failed.", level='error')
-                    raise
-
         # Follow-up visit data synthesis
         if 'follow_up_visit' in self.task:
             assert hasattr(self.config.hospital_data, 'follow_up_visit'), \
@@ -181,6 +161,26 @@ class DataGenerator:
                 log(f"Follow-up data synthesis completed successfully", color=True)
             except Exception:
                 log("Follow-up data synthesis failed.", level="error")
+                raise
+
+        # FHIR conversion
+        if convert_to_fhir:
+            converter = DataConverter(self.config)
+            try:
+                all_resource_list = converter(self.save_dir / 'fhir_data', sanity_check)
+                log(f"Data FHIR conversion completed successfully", color=True)
+            except Exception:
+                log("Data FHIR conversion failed.", level='error')
+                raise
+
+        # Build data for agent simulation
+        if build_agent_data:
+            builder = AgentDataBuilder(self.config)
+            try:
+                agent_data_list = builder(self.save_dir / 'agent_data')
+                log(f"Agent data generation completed successfully", color=True)
+            except Exception:
+                log("Agent data generation failed.", level='error')
                 raise
 
         output = Information(

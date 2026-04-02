@@ -102,6 +102,20 @@ def get_appointment_id(individual_id: str, date: str, start_time_segment_index: 
 
 
 
+def get_device_id(test_code: str) -> str:
+    """
+    Make a Device ID from a test code.
+
+    Args:
+        test_code (str): A test code (e.g., 'IMGAS-T01').
+
+    Returns:
+        str: A sanitized Device ID.
+    """
+    return sanitize_id(test_code)
+
+
+
 def get_all_doctor_info(practitioners: list[dict],
                         practitioner_roles: list[dict],
                         schedules: list[dict],

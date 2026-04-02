@@ -334,6 +334,13 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         follow_up_patient_info = dict()
         used_names = list(set(patient_info.keys()))
         new_names = DataSynthesizer.name_list_generator(len(all_combinations), reject_list=list(used_names))
+
+        # Make sure not to duplicate the first-visit appointments
+        _doctor_info = deepcopy(doctor_info)
+        for info in patient_info.values():
+            _doctor, _date, _schedule = info['attending_physician'], info['date'], info['schedule']
+            _doctor_info[_doctor]['schedule'][_date].append(_schedule)
+
         for name, combination in zip(new_names, all_combinations):
             department = combination[0]['department']
             doctor = random.choice(department_info[department]['doctor'])
@@ -345,12 +352,6 @@ class FollowUpDataSynthesizer(DataSynthesizer):
             birth_date = generate_random_date()
 
             if include_consultation:
-                # Make sure not to duplicate the first-visit appointments
-                _doctor_info = deepcopy(doctor_info)
-                for info in patient_info.values():
-                    _doctor, _date, _schedule = info['attending_physician'], info['date'], info['schedule']
-                    _doctor_info[_doctor]['schedule'][_date].append(_schedule)
-
                 last_date, last_schedule = combination[-1]['date'], combination[-1]['schedule'][1]
 
                 # Find valid consultation slots for the attending doctor after the last test
@@ -386,6 +387,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
 
                 if valid_slots:
                     date, appointment = random.choice(valid_slots)
+                    _doctor_info[doctor]['schedule'][date].append(appointment)
                 else:
                     date, appointment = None, None
 

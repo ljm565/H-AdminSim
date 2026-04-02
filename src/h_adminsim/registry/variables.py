@@ -8,3 +8,15 @@ TELECOM_COUNTRY_CODE = None
 SPECIALTIES = None
 ADDRESSES = None
 DEPARTMENT_TESTS = None
+PRIORITY_MAP = {
+    'priority_to_code': {
+        0: 'initial',
+        1: 'intermediate',
+        2: 'advanced'
+    },
+    'code_to_priority': {
+        'initial': 0,
+        'intermediate': 1,
+        'advanced': 2
+    }
+}
