@@ -37,7 +37,6 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                     log(f"No hospital JSON files found in {source_data_dir}", "error")
                 )
         else:
-            self.data_save_dir = self.save_dir
             self.source_data_files = []
 
 
@@ -153,7 +152,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                 test_schedule = {
                     date: scheduler(
                         generate_random_prob(
-                            1,
+                            fu_config.test_has_schedule_prob,
                             fu_config.test_fixed_schedule_ratio.min,
                             fu_config.test_fixed_schedule_ratio.max,
                         ),
@@ -424,6 +423,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
             'metadata': metadata,
             'department': department_info,
             'doctor': doctor_info,
+            'test': fixed_test_schedule,
             'patient': patient_info,
         }
 
