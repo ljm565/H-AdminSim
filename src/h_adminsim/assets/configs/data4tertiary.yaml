@@ -47,6 +47,9 @@ hospital_data:
             type: ['simple', 'with_history']    # Types of patient history.
             probs: [0.2, 0.8]                   # Types probability distribution.
     follow_up_visit:
+        n_machines_per_test:
+            min: 1
+            max: 3
         test_per_department:
             min: 4
             max: 6
@@ -59,7 +62,7 @@ hospital_data:
             max: 4
         test_schedule_appointment_ratio:            # Proportion of a test's appontment schedules relative to vacant slots
             min: 0.2
-            max: 0.8
+            max: 0.4
         cross_department_test_prob: 0.2             # Probability of tests from other departments
         include_consultation: True                 # Whether to include post-test doctor consultation
         symptom:

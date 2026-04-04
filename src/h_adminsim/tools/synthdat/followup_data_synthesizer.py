@@ -2,8 +2,9 @@ import math
 import random
 from tqdm import tqdm
 from copy import deepcopy
-from typing import Optional
+from datetime import timedelta
 from importlib import resources
+from typing import Tuple, Optional
 from collections import defaultdict
 from decimal import Decimal, getcontext
 
@@ -148,21 +149,28 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         scheduler = ScheduleAssigner(start_hour, end_hour, interval_hour)
         for test_list in eligible_tests.values():
             for _test in test_list:
+                device_n = random.randint(fu_config.n_machines_per_test.min, fu_config.n_machines_per_test.max)
                 test_duration_segments = max(1, math.ceil(Decimal(str(_test['duration_hour'])) / Decimal(str(interval_hour))))
-                test_schedule = {
-                    date: scheduler(
-                        generate_random_prob(
-                            fu_config.test_has_schedule_prob,
-                            fu_config.test_fixed_schedule_ratio.min,
-                            fu_config.test_fixed_schedule_ratio.max,
-                        ),
-                        True,
-                        hospital_time_segments,
-                        min_chunk_size=test_duration_segments,
-                        max_chunk_size=test_duration_segments,
-                    )[1] for date in dates
-                }
-                _test['schedule'] = test_schedule
+                _test['device_n'] = device_n
+                _test['devices'] = dict()
+                for i in range(device_n):
+                    device_name = f"{_test['code']}_{i}"
+                    _test['devices'][device_name] = dict()
+                    test_schedule = {
+                        date: scheduler(
+                            generate_random_prob(
+                                fu_config.test_has_schedule_prob,
+                                fu_config.test_fixed_schedule_ratio.min,
+                                fu_config.test_fixed_schedule_ratio.max,
+                            ),
+                            True,
+                            hospital_time_segments,
+                            min_chunk_size=test_duration_segments,
+                            max_chunk_size=test_duration_segments,
+                        )[1] for date in dates
+                    }
+                    _test['devices'][device_name]['schedule'] = test_schedule
+        
         return eligible_tests
 
 
@@ -185,6 +193,58 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         Returns:
             dict: Hospital data with follow-up patients merged into the patient dict.
         """
+        def _get_available_tests(vacant_test_schedule: dict, func: callable) -> list[Tuple]:
+            """
+            Get available test keys that satisfy the condition defined by func, sorted by priority and shuffled within the same priority level.
+
+            Args:
+                vacant_test_schedule (dict): Dictionary containing vacant test schedules with their details.
+                func (callable): A function that takes a test key and its corresponding schedule details, 
+                                 and returns True if the test is considered available based on custom conditions.
+
+            Returns:
+                list[Tuple]: A list of test keys (priority, test_code, department, device_name) that satisfy the condition defined by func,
+                             sorted by priority and shuffled within the same priority level.
+            """
+            available_keys = sorted(
+                [k for k, v in vacant_test_schedule.items() if func(k, v)],
+                key=lambda k: k[0],
+            )
+            grouped = defaultdict(list)
+            for k in available_keys:
+                grouped[k[0]].append(k)
+
+            shuffled_candidates = []
+            for priority in sorted(grouped.keys()):
+                group = grouped[priority]
+                random.shuffle(group)
+                shuffled_candidates.extend(group)
+            
+            return shuffled_candidates
+        
+
+        def _get_available_slots(schedules: list[list[str]], func: callable) -> list[tuple[int, list[str]]]:
+            """
+            Filter time slots from a schedule list based on a condition function.
+
+            Args:
+                schedules (list[list[str]]): List of [start_iso, end_iso] time pairs representing candidate slots.
+                func (callable): Filter function that receives (start_iso, end_iso) and returns True
+                                 if the slot satisfies the scheduling conditions (e.g. after prev_end_iso,
+                                 not on a blocked date, after all depends_on result times).
+
+            Returns:
+                list[tuple[int, list[str]]]: List of (original_index, [start_iso, end_iso]) for slots
+                                             that passed the filter. The index is needed to remove the
+                                             chosen slot from the schedule upon commitment.
+            """
+            valid_slots = [
+                (idx, [st, tr]) for idx, (st, tr) in enumerate(schedules)
+                if func(st, tr)
+            ]
+            return valid_slots
+        
+
         # Hospital time parameters and data
         metadata = hospital_data['metadata']
         start_hour = float(metadata['time']['start_hour'])
@@ -209,107 +269,125 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         vacant_test_schedules = {}
         for dept, test_list in fixed_test_schedule.items():
             for single_test in test_list:
-                key = (single_test['priority'], single_test['name'], dept)
-                test_duration_segments = max(1, math.ceil(Decimal(str(single_test['duration_hour'])) / Decimal(str(interval_hour))))
-                # Initialize
-                if key not in vacant_test_schedules:
-                    vacant_test_schedules[key] = {
-                        'schedule': [],
-                        'remain_n': 0,
-                    }
-                for date, schedules in single_test['schedule'].items():
-                    schedule_segments_flat = list()
-                    for time_range in schedules:
-                        schedule_segments_flat.extend(
-                            convert_time_to_segment(start_hour, end_hour, interval_hour, time_range=time_range)
+                for device_name, device_info in single_test['devices'].items():
+                    key = (single_test['priority'], single_test['code'], dept ,device_name)
+                    test_duration_segments = max(1, math.ceil(Decimal(str(single_test['duration_hour'])) / Decimal(str(interval_hour))))
+                    # Initialize
+                    if key not in vacant_test_schedules:
+                        vacant_test_schedules[key] = {
+                            'result_hours': single_test.get('result_hours', 0),
+                            'depends_on': single_test.get('depends_on', []),
+                            'avoid_same_day': single_test.get('avoid_same_day', []),
+                            'schedule': [],
+                            'remain_n': 0,
+                        }
+                    for date, schedules in device_info['schedule'].items():
+                        schedule_segments_flat = list()
+                        for time_range in schedules:
+                            schedule_segments_flat.extend(
+                                convert_time_to_segment(start_hour, end_hour, interval_hour, time_range=time_range)
+                            )
+                        
+                        # Compute available patient segments
+                        vacant_segments = list(set(hospital_time_segments) - set(schedule_segments_flat))
+                        vacant_schedules = [list(convert_segment_to_time(start_hour, end_hour, interval_hour, chunk)) 
+                            for chunk in split_into_contiguous_chunks(vacant_segments, test_duration_segments)
+                        ]
+                        ratio = generate_random_prob(
+                            1,
+                            fu_config.test_schedule_appointment_ratio.min,
+                            fu_config.test_schedule_appointment_ratio.max,
                         )
-                    
-                    # Compute available patient segments
-                    vacant_segments = list(set(hospital_time_segments) - set(schedule_segments_flat))
-                    vacant_schedules = [list(convert_segment_to_time(start_hour, end_hour, interval_hour, chunk)) 
-                        for chunk in split_into_contiguous_chunks(vacant_segments, test_duration_segments)
-                    ]
-                    ratio = generate_random_prob(
-                        1,
-                        fu_config.test_schedule_appointment_ratio.min,
-                        fu_config.test_schedule_appointment_ratio.max,
-                    )
-                    vacant_test_schedules[key]['schedule'].extend([
-                        [get_iso_time(vs[0], date), get_iso_time(vs[1], date)] 
-                        for vs in vacant_schedules
-                    ])
-                    vacant_test_schedules[key]['remain_n'] += int(len(vacant_schedules) * ratio)
+                        vacant_test_schedules[key]['schedule'].extend([
+                            [get_iso_time(vs[0], date), get_iso_time(vs[1], date)] 
+                            for vs in vacant_schedules
+                        ])
+                        vacant_test_schedules[key]['remain_n'] += int(len(vacant_schedules) * ratio)
                     
         # Make all possible test combinations based on the vacant_test_schedule
         all_combinations = []
         consecutive_failures = 0
 
         while consecutive_failures < max_consecutive_failures:
-            # Feasibility check: collect available tests sorted by priority
-            available_keys = sorted(
-                [k for k, v in vacant_test_schedules.items() if v['remain_n'] > 0],
-                key=lambda k: k[0],
+            # For the first test, only consider those without dependencies
+            shuffled_candidates = _get_available_tests(
+                vacant_test_schedules, 
+                lambda k, v: v['remain_n'] > 0 and len(v['depends_on']) == 0
             )
-            if len(available_keys) < tests_min:
+            if len(shuffled_candidates) < tests_min:
                 break
 
-            n_tests = random.randint(tests_min, min(tests_max, len(available_keys)))
+            n_tests = random.randint(tests_min, min(tests_max, len(shuffled_candidates)))
 
-            # Shuffle within each priority group for variety, keep priority order
-            grouped = defaultdict(list)
-            for k in available_keys:
-                grouped[k[0]].append(k)
-
-            shuffled_candidates = []
-            for priority in sorted(grouped.keys()):
-                group = grouped[priority]
-                random.shuffle(group)
-                shuffled_candidates.extend(group)
-
-            # Pick a primary department from available tests
-            available_depts = sorted(list(set(k[2] for k in available_keys)))
+            # Choose a primary department for the patient and allow cross-department tests with a certain probability
+            available_depts = sorted(list(set(k[2] for k in shuffled_candidates)))
             primary_dept = random.choice(available_depts)
 
             # Build one combination in ascending priority order
             combination = []
             prev_end_iso = ''
-            used_keys = set()
+            used_codes = set()
+            impossible_date = defaultdict(list)
+            result_out_time = dict()
 
             for step in range(n_tests):
                 # First test: primary dept only; subsequent: cross-dept with probability
                 allow_cross = (step > 0) and (random.random() < cross_dept_prob)
 
                 for key in shuffled_candidates:
-                    if key in used_keys:
-                        continue
-
-                    priority, test_name, dept = key
+                    priority, test_code, dept, device_name = key
+                    
+                    # Cross-dept and priority conditions
                     if (not allow_cross and dept != primary_dept) or \
                         (len(combination) and combination[-1]['priority'] > priority):
                         continue
 
+                    # Filter the valid time slots
                     entry = vacant_test_schedules[key]
-                    valid_slots = [
-                        (idx, slot) for idx, slot in enumerate(entry['schedule'])
-                        if slot[0] > prev_end_iso
-                    ]
+                    result_hours, depends_on, avoid_same_day = entry['result_hours'], entry['depends_on'], entry['avoid_same_day']
+
+                    valid_slots = _get_available_slots(
+                        entry['schedule'],
+                        lambda st, tr, _dep=depends_on: (st > prev_end_iso) and \
+                            iso_to_date(st) not in impossible_date.get(test_code, []) and \
+                            all(st > result_out_time.get(c, '') for c in _dep)
+                    )
                     if not valid_slots:
                         continue
 
                     chosen_idx, chosen_slot = random.choice(valid_slots)
                     combination.append({
                         'priority': priority,
-                        'test_name': test_name,
+                        'test_code': test_code,
                         'department': dept,
+                        'device_name': device_name,
                         'schedule': chosen_slot,
+                        'result_hours': result_hours,
+                        'depends_on': depends_on,
+                        'avoid_same_day': avoid_same_day,
                         '_key': key,
                         '_slot_idx': chosen_idx,
                     })
+
+                    # Update conditions
                     prev_end_iso = chosen_slot[1]
-                    used_keys.add(key)
+                    result_out_time[test_code] = (str_to_datetime(prev_end_iso) + timedelta(hours=result_hours)).isoformat()
+                    prev_end_date = iso_to_date(prev_end_iso)
+                    used_codes.add(test_code)
+                    for code in avoid_same_day:
+                        impossible_date[code].append(prev_end_date)
                     break
+                
                 else:
+                    # Executed only if no break occurs
                     break  # No valid test found for this step
+                
+                # Update available candidates depend on previous tests
+                shuffled_candidates = _get_available_tests(
+                    vacant_test_schedules,
+                    lambda k, v: (not k[1] in used_codes) and \
+                        (v['remain_n'] > 0) and len(set(v['depends_on']) - used_codes) == 0
+                )
 
             # Validate combination size
             if len(combination) < tests_min:
@@ -352,7 +430,13 @@ class FollowUpDataSynthesizer(DataSynthesizer):
             birth_date = generate_random_date()
 
             if include_consultation:
-                last_date, last_schedule = combination[-1]['date'], combination[-1]['schedule'][1]
+                last_time = max(
+                    [
+                        (str_to_datetime(get_iso_time(comb['schedule'][1], comb['date'])) + timedelta(hours=comb['result_hours'])).isoformat() 
+                        for comb in combination
+                    ]
+                )
+                last_date, last_schedule = iso_to_date(last_time), iso_to_hour(last_time)
 
                 # Find valid consultation slots for the attending doctor after the last test
                 valid_slots = []
@@ -374,7 +458,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                     if _date == last_date:
                         if last_schedule < end_hour:
                             after_segs = set(convert_time_to_segment(
-                                start_hour, end_hour, interval_hour, time_range=[last_schedule, end_hour]
+                                start_hour, end_hour, interval_hour, time_range=[max(last_schedule, start_hour), end_hour]
                             ))
                             available_segs = sorted(set(available_segs) & after_segs)
                         else:
@@ -436,7 +520,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
     def test_list_generator(department: str,
                             min_n_per_department: int, 
                             max_n_per_department: int, 
-                            file_path: Optional[str] = None) -> dict:
+                            file_path: Optional[str] = None) -> list[dict]:
         """
         Generate a list of test per department.
         
@@ -448,7 +532,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                                                  If provided, it will be used to load names. Defaults to None.
         
         Returns:
-            dict: Dictionary of tests per department.
+            list[dict]: Dictionary list of tests per department.
         """
         if file_path == None:
             file_path = str(resources.files("h_adminsim.assets.departments").joinpath("department.json"))
@@ -462,8 +546,59 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                 if 'tests' in v2
             }
         
-        test_n = random.randint(min_n_per_department, max_n_per_department)
-        return random.sample(registry.DEPARTMENT_TESTS[department], test_n)        
+        all_tests = registry.DEPARTMENT_TESTS[department]
+        code_to_test = {t['code']: t for t in all_tests}
+
+        def _transitive_closure(code: str) -> set:
+            """Return the full set of codes required by code (including itself)."""
+            visited, stack = set(), [code]
+            while stack:
+                c = stack.pop()
+                if c in visited:
+                    continue
+                visited.add(c)
+                for dep in code_to_test.get(c, {}).get('depends_on', []):
+                    stack.append(dep)
+            return visited
+
+        test_n = min(random.randint(min_n_per_department, max_n_per_department), len(all_tests))
+
+        # Greedily pick tests in random order; add each test's full dep closure only
+        # if it doesn't push the total over max_n_per_department.
+        candidates = list(all_tests)
+        random.shuffle(candidates)
+        selected_codes = set()
+        selected = list()
+
+        for t in candidates:
+            if len(selected_codes) >= test_n:
+                break
+            new_codes = sorted(list(_transitive_closure(t['code']) - selected_codes))
+            if len(selected_codes) + len(new_codes) <= max_n_per_department:
+                for c in new_codes:
+                    selected_codes.add(c)
+                    selected.append(code_to_test[c])
+
+        # Sanity check: every depends_on must be present in the selected list
+        final_codes = {t['code'] for t in selected}
+        for t in selected:
+            for dep in t.get('depends_on', []):
+                assert dep in final_codes, \
+                    log(
+                    (
+                        f"[test_list_generator] {t['code']} depends on {dep}, "
+                        f"but {dep} is missing in selected tests for department '{department}'"
+                    ), level='error'
+                )
+
+        if not (min_n_per_department <= len(selected) <= max_n_per_department):
+            log(
+                f"[test_list_generator] department '{department}': selected {len(selected)} tests, "
+                f"expected [{min_n_per_department}, {max_n_per_department}]",
+                level='warning'
+            )
+
+        return selected
 
 
     @staticmethod
@@ -528,7 +663,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                 assert len(pdata['required_tests']) > 0, \
                     colorstr('red', f'Follow-up patient {patient_name} has no required tests')
                 for test in pdata['required_tests']:
-                    assert 'test_name' in test, \
+                    assert 'test_code' in test, \
                         colorstr('red', f'Patient {patient_name} has test with missing fields')
                     assert len(test['schedule']) == 2, \
                         colorstr('red', f'Patient {patient_name} has test with invalid schedule')

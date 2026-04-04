@@ -14,12 +14,66 @@
                         "Inflammatory Bowel Disease"
                     ],
                     "tests": [
-                        {"name": "Upper GI Endoscopy", "code": "IMGAS-T01", "duration_hour": 0.5, "priority": 1},
-                        {"name": "Colonoscopy", "code": "IMGAS-T02", "duration_hour": 1.0, "priority": 1},
-                        {"name": "Abdominal Ultrasound", "code": "IMGAS-T03", "duration_hour": 0.5, "priority": 0},
-                        {"name": "Liver Elastography", "code": "IMGAS-T04", "duration_hour": 0.25, "priority": 0},
-                        {"name": "Helicobacter Pylori Breath Test", "code": "IMGAS-T05", "duration_hour": 0.5, "priority": 0},
-                        {"name": "ERCP", "code": "IMGAS-T06", "duration_hour": 1.5, "priority": 2}
+                        {
+                            "name": "Upper GI Endoscopy",
+                            "code": "IMGAS-T01",
+                            "duration_hour": 0.5,
+                            "priority": 1,
+                            "result_hours": 24,
+                            "depends_on": [],
+                            "avoid_same_day": ["IMGAS-T02", "IMGAS-T06"],
+                            "description": "No food or drink for at least 8 hours before the procedure. Sedation will be used; arrange for a driver. Inform your doctor of any blood-thinning medications."
+                        },
+                        {
+                            "name": "Colonoscopy",
+                            "code": "IMGAS-T02",
+                            "duration_hour": 1.0,
+                            "priority": 1,
+                            "result_hours": 48,
+                            "depends_on": [],
+                            "avoid_same_day": ["IMGAS-T01", "IMGAS-T06"],
+                            "description": "Requires bowel preparation starting the day before. Follow the prescribed laxative instructions carefully. Sedation is used; arrange for a driver. No solid food the day before."
+                        },
+                        {
+                            "name": "Abdominal Ultrasound",
+                            "code": "IMGAS-T03",
+                            "duration_hour": 0.5,
+                            "priority": 0,
+                            "result_hours": 3,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "Fast for at least 6 hours before the exam. Water is allowed. Wear comfortable, loose clothing."
+                        },
+                        {
+                            "name": "Liver Elastography",
+                            "code": "IMGAS-T04",
+                            "duration_hour": 0.25,
+                            "priority": 0,
+                            "result_hours": 2,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "Fast for at least 2 hours before the exam. Avoid eating a large meal before the procedure."
+                        },
+                        {
+                            "name": "Helicobacter Pylori Breath Test",
+                            "code": "IMGAS-T05",
+                            "duration_hour": 0.5,
+                            "priority": 0,
+                            "result_hours": 3,
+                            "depends_on": [],
+                            "avoid_same_day": ["IMGAS-T01"],
+                            "description": "No food, drink, or medication for at least 4 hours before the test. Avoid antibiotics and proton pump inhibitors for 4 weeks before testing. Do not smoke for 4 hours beforehand."
+                        },
+                        {
+                            "name": "ERCP",
+                            "code": "IMGAS-T06",
+                            "duration_hour": 1.5,
+                            "priority": 2,
+                            "result_hours": 48,
+                            "depends_on": ["IMGAS-T01", "IMGAS-T03"],
+                            "avoid_same_day": ["IMGAS-T01", "IMGAS-T02"],
+                            "description": "Fast for at least 8 hours before the procedure. Sedation will be used; arrange for a driver. Inform your doctor of all current medications, especially blood thinners. Plan to rest for the remainder of the day."
+                        }
                     ]
                 },
                 "cardiology": {
@@ -30,12 +84,66 @@
                         "Heart Failure and Transplantation"
                     ],
                     "tests": [
-                        {"name": "Echocardiography", "code": "IMCAR-T01", "duration_hour": 0.5, "priority": 0},
-                        {"name": "Electrocardiogram", "code": "IMCAR-T02", "duration_hour": 0.25, "priority": 0},
-                        {"name": "Cardiac Stress Test", "code": "IMCAR-T03", "duration_hour": 1.0, "priority": 1},
-                        {"name": "24-hour Holter Monitor Setup", "code": "IMCAR-T04", "duration_hour": 0.25, "priority": 0},
-                        {"name": "Coronary CT Angiography", "code": "IMCAR-T05", "duration_hour": 0.75, "priority": 1},
-                        {"name": "Cardiac MRI", "code": "IMCAR-T06", "duration_hour": 1.0, "priority": 2}
+                        {
+                            "name": "Echocardiography",
+                            "code": "IMCAR-T01",
+                            "duration_hour": 0.5,
+                            "priority": 0,
+                            "result_hours": 6,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "No special preparation required. Wear comfortable clothing with easy access to the chest. Avoid applying lotion or powder to the chest area on the day of the test."
+                        },
+                        {
+                            "name": "Electrocardiogram",
+                            "code": "IMCAR-T02",
+                            "duration_hour": 0.25,
+                            "priority": 0,
+                            "result_hours": 1,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "No special preparation required. Avoid applying body lotion or powder to the chest area on the day of the test. Wear a two-piece outfit for easy access."
+                        },
+                        {
+                            "name": "Cardiac Stress Test",
+                            "code": "IMCAR-T03",
+                            "duration_hour": 1.0,
+                            "priority": 1,
+                            "result_hours": 6,
+                            "depends_on": ["IMCAR-T02"],
+                            "avoid_same_day": ["IMCAR-T06"],
+                            "description": "Wear comfortable clothing and walking shoes. Do not eat for 3 hours before the test. Avoid caffeine for 24 hours beforehand. Inform your doctor of all current heart medications."
+                        },
+                        {
+                            "name": "24-hour Holter Monitor Setup",
+                            "code": "IMCAR-T04",
+                            "duration_hour": 0.25,
+                            "priority": 0,
+                            "result_hours": 48,
+                            "depends_on": [],
+                            "avoid_same_day": ["IMCAR-T03"],
+                            "description": "Do not apply lotion, powder, or oil to the chest area. You will wear the monitor for 24 hours. Maintain your normal daily activities and keep a symptom diary. Avoid bathing or swimming while wearing the device."
+                        },
+                        {
+                            "name": "Coronary CT Angiography",
+                            "code": "IMCAR-T05",
+                            "duration_hour": 0.75,
+                            "priority": 1,
+                            "result_hours": 12,
+                            "depends_on": ["IMCAR-T02"],
+                            "avoid_same_day": ["IMCAR-T06", "IMCAR-T03"],
+                            "description": "Fast for at least 4 hours before the exam. Avoid caffeine for 24 hours before. Inform your doctor if you have kidney problems or are allergic to contrast dye. Beta-blockers may be given to control heart rate."
+                        },
+                        {
+                            "name": "Cardiac MRI",
+                            "code": "IMCAR-T06",
+                            "duration_hour": 1.0,
+                            "priority": 2,
+                            "result_hours": 36,
+                            "depends_on": ["IMCAR-T01", "IMCAR-T02"],
+                            "avoid_same_day": ["IMCAR-T03", "IMCAR-T05"],
+                            "description": "Remove all metal objects before the scan. Inform your doctor of any implanted metal devices (pacemaker, stents). No food restriction unless contrast is used (fast 4 hours). Inform staff if you are claustrophobic; the scan takes up to 1 hour."
+                        }
                     ]
                 },
                 "pulmonary": {
@@ -46,12 +154,66 @@
                         "Pulmonary Hypertension"
                     ],
                     "tests": [
-                        {"name": "Pulmonary Function Test", "code": "IMPUL-T01", "duration_hour": 0.5, "priority": 0},
-                        {"name": "Chest CT Scan", "code": "IMPUL-T02", "duration_hour": 0.5, "priority": 0},
-                        {"name": "Bronchoscopy", "code": "IMPUL-T03", "duration_hour": 1.0, "priority": 2},
-                        {"name": "Arterial Blood Gas Analysis", "code": "IMPUL-T04", "duration_hour": 0.25, "priority": 0},
-                        {"name": "Polysomnography Setup", "code": "IMPUL-T05", "duration_hour": 0.5, "priority": 1},
-                        {"name": "Methacholine Challenge Test", "code": "IMPUL-T06", "duration_hour": 0.75, "priority": 1}
+                        {
+                            "name": "Pulmonary Function Test",
+                            "code": "IMPUL-T01",
+                            "duration_hour": 0.5,
+                            "priority": 0,
+                            "result_hours": 3,
+                            "depends_on": [],
+                            "avoid_same_day": ["IMPUL-T06"],
+                            "description": "Avoid using bronchodilator inhalers for 4-6 hours before the test. Do not smoke for at least 4 hours beforehand. Wear loose, comfortable clothing. Avoid large meals for 2 hours before."
+                        },
+                        {
+                            "name": "Chest CT Scan",
+                            "code": "IMPUL-T02",
+                            "duration_hour": 0.5,
+                            "priority": 0,
+                            "result_hours": 6,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "No special food restriction. Inform your doctor if you are pregnant or have kidney problems, especially if contrast dye is used. Remove metal objects from the chest area."
+                        },
+                        {
+                            "name": "Bronchoscopy",
+                            "code": "IMPUL-T03",
+                            "duration_hour": 1.0,
+                            "priority": 2,
+                            "result_hours": 72,
+                            "depends_on": ["IMPUL-T01", "IMPUL-T02"],
+                            "avoid_same_day": ["IMPUL-T06", "IMPUL-T01"],
+                            "description": "Fast for at least 8 hours before the procedure. Sedation will be used; arrange for a driver. Inform your doctor of all blood-thinning medications. Do not eat or drink after the procedure until the throat numbness wears off."
+                        },
+                        {
+                            "name": "Arterial Blood Gas Analysis",
+                            "code": "IMPUL-T04",
+                            "duration_hour": 0.25,
+                            "priority": 0,
+                            "result_hours": 2,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "No special preparation required. Inform your doctor of any blood-thinning medications. Mild discomfort from the arterial puncture is expected. Apply pressure to the puncture site for at least 5 minutes after."
+                        },
+                        {
+                            "name": "Polysomnography Setup",
+                            "code": "IMPUL-T05",
+                            "duration_hour": 0.5,
+                            "priority": 1,
+                            "result_hours": 48,
+                            "depends_on": ["IMPUL-T01"],
+                            "avoid_same_day": ["IMPUL-T06", "IMPUL-T03"],
+                            "description": "Avoid caffeine and alcohol on the day of the setup. Do not nap during the day before the overnight study. Bring comfortable sleeping clothes. Wash your hair and do not apply hair products before the setup."
+                        },
+                        {
+                            "name": "Methacholine Challenge Test",
+                            "code": "IMPUL-T06",
+                            "duration_hour": 0.75,
+                            "priority": 1,
+                            "result_hours": 3,
+                            "depends_on": ["IMPUL-T01"],
+                            "avoid_same_day": ["IMPUL-T01", "IMPUL-T03", "IMPUL-T05"],
+                            "description": "Avoid bronchodilator inhalers for 8 hours before the test. Do not smoke or exercise vigorously for 4 hours beforehand. The test involves inhaling increasing doses of methacholine to assess airway sensitivity. Bring a rescue inhaler."
+                        }
                     ]
                 },
                 "endocrinology/metabolism": {
@@ -62,12 +224,66 @@
                         "Osteoporosis and Metabolic Bone Disease"
                     ],
                     "tests": [
-                        {"name": "Thyroid Ultrasound", "code": "IMEND-T01", "duration_hour": 0.5, "priority": 0},
-                        {"name": "Thyroid Fine Needle Aspiration", "code": "IMEND-T02", "duration_hour": 0.5, "priority": 1},
-                        {"name": "Oral Glucose Tolerance Test", "code": "IMEND-T03", "duration_hour": 2.0, "priority": 1},
-                        {"name": "Bone Densitometry", "code": "IMEND-T04", "duration_hour": 0.25, "priority": 0},
-                        {"name": "HbA1c Blood Test", "code": "IMEND-T05", "duration_hour": 0.25, "priority": 0},
-                        {"name": "Adrenal CT Scan", "code": "IMEND-T06", "duration_hour": 0.5, "priority": 1}
+                        {
+                            "name": "Thyroid Ultrasound",
+                            "code": "IMEND-T01",
+                            "duration_hour": 0.5,
+                            "priority": 0,
+                            "result_hours": 3,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "No special preparation required. Wear clothing with easy access to the neck area. Remove any necklaces or neck jewelry before the exam."
+                        },
+                        {
+                            "name": "Thyroid Fine Needle Aspiration",
+                            "code": "IMEND-T02",
+                            "duration_hour": 0.5,
+                            "priority": 1,
+                            "result_hours": 120,
+                            "depends_on": ["IMEND-T01"],
+                            "avoid_same_day": [],
+                            "description": "Avoid aspirin, ibuprofen, and blood-thinning medications for 5-7 days before if medically safe. No fasting required. Local anesthesia will be used. Avoid strenuous activity for 24 hours after the procedure."
+                        },
+                        {
+                            "name": "Oral Glucose Tolerance Test",
+                            "code": "IMEND-T03",
+                            "duration_hour": 2.0,
+                            "priority": 1,
+                            "result_hours": 6,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "Fast for at least 8-10 hours before the test. Water is allowed. The test takes 2 hours with blood drawn at multiple time points. Avoid strenuous exercise the day before. Bring a light snack for after the test."
+                        },
+                        {
+                            "name": "Bone Densitometry",
+                            "code": "IMEND-T04",
+                            "duration_hour": 0.25,
+                            "priority": 0,
+                            "result_hours": 6,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "No special preparation required. Wear comfortable clothing without metal zippers or buttons. Inform your doctor if you have had a recent CT scan or nuclear medicine test using contrast or radiotracer."
+                        },
+                        {
+                            "name": "HbA1c Blood Test",
+                            "code": "IMEND-T05",
+                            "duration_hour": 0.25,
+                            "priority": 0,
+                            "result_hours": 6,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "No fasting required. A simple blood draw from your arm. Results reflect average blood sugar over the past 2-3 months."
+                        },
+                        {
+                            "name": "Adrenal CT Scan",
+                            "code": "IMEND-T06",
+                            "duration_hour": 0.5,
+                            "priority": 1,
+                            "result_hours": 12,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "No food restriction unless contrast dye is used, in which case fast for 4 hours. Inform your doctor of any kidney problems or contrast dye allergies. Remove metal objects before the scan."
+                        }
                     ]
                 },
                 "nephrology": {
@@ -78,12 +294,66 @@
                         "Kidney Transplantation"
                     ],
                     "tests": [
-                        {"name": "Renal Ultrasound", "code": "IMNEP-T01", "duration_hour": 0.5, "priority": 0},
-                        {"name": "24-hour Urine Collection Analysis", "code": "IMNEP-T02", "duration_hour": 0.25, "priority": 0},
-                        {"name": "Renal Biopsy", "code": "IMNEP-T03", "duration_hour": 1.0, "priority": 2},
-                        {"name": "GFR Measurement", "code": "IMNEP-T04", "duration_hour": 0.5, "priority": 0},
-                        {"name": "Dialysis Access Evaluation", "code": "IMNEP-T05", "duration_hour": 0.5, "priority": 1},
-                        {"name": "Renal CT Angiography", "code": "IMNEP-T06", "duration_hour": 0.75, "priority": 1}
+                        {
+                            "name": "Renal Ultrasound",
+                            "code": "IMNEP-T01",
+                            "duration_hour": 0.5,
+                            "priority": 0,
+                            "result_hours": 3,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "Drink 4-6 glasses of water and do not urinate for 1 hour before the exam. A full bladder improves image quality. Wear comfortable, loose clothing."
+                        },
+                        {
+                            "name": "24-hour Urine Collection Analysis",
+                            "code": "IMNEP-T02",
+                            "duration_hour": 0.25,
+                            "priority": 0,
+                            "result_hours": 48,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "Collect all urine produced over a full 24-hour period in the provided container. Keep the container refrigerated throughout collection. Discard the first morning urine, then collect all subsequent urine until the same time next morning."
+                        },
+                        {
+                            "name": "Renal Biopsy",
+                            "code": "IMNEP-T03",
+                            "duration_hour": 1.0,
+                            "priority": 2,
+                            "result_hours": 120,
+                            "depends_on": ["IMNEP-T01", "IMNEP-T04"],
+                            "avoid_same_day": ["IMNEP-T06"],
+                            "description": "Avoid blood-thinning medications for several days before if medically safe. Fast for 8 hours beforehand. The procedure uses local anesthesia and ultrasound guidance. Plan to rest for 4-6 hours after and avoid strenuous activity for 1 week."
+                        },
+                        {
+                            "name": "GFR Measurement",
+                            "code": "IMNEP-T04",
+                            "duration_hour": 0.5,
+                            "priority": 0,
+                            "result_hours": 6,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "No fasting required. A blood sample will be drawn. Avoid excessive fluid intake for 2 hours before the test. Inform your doctor of all current medications."
+                        },
+                        {
+                            "name": "Dialysis Access Evaluation",
+                            "code": "IMNEP-T05",
+                            "duration_hour": 0.5,
+                            "priority": 1,
+                            "result_hours": 6,
+                            "depends_on": ["IMNEP-T04"],
+                            "avoid_same_day": [],
+                            "description": "No special preparation required. Wear loose clothing with easy access to both arms. Inform your doctor of any previous arm surgeries or vascular procedures."
+                        },
+                        {
+                            "name": "Renal CT Angiography",
+                            "code": "IMNEP-T06",
+                            "duration_hour": 0.75,
+                            "priority": 1,
+                            "result_hours": 12,
+                            "depends_on": ["IMNEP-T01", "IMNEP-T04"],
+                            "avoid_same_day": ["IMNEP-T03"],
+                            "description": "Fast for 4 hours if contrast dye is used. Inform your doctor of any kidney problems or contrast dye allergies. Drink plenty of fluids before and after the exam to protect the kidneys."
+                        }
                     ]
                 },
                 "hematology/oncology": {
@@ -94,12 +364,66 @@
                         "Stem Cell Transplantation"
                     ],
                     "tests": [
-                        {"name": "Complete Blood Count with Differential", "code": "IMHEM-T01", "duration_hour": 0.25, "priority": 0},
-                        {"name": "Bone Marrow Biopsy", "code": "IMHEM-T02", "duration_hour": 1.0, "priority": 2},
-                        {"name": "CT Scan with Contrast", "code": "IMHEM-T03", "duration_hour": 0.75, "priority": 1},
-                        {"name": "PET-CT Scan", "code": "IMHEM-T04", "duration_hour": 2.0, "priority": 1},
-                        {"name": "Peripheral Blood Smear", "code": "IMHEM-T05", "duration_hour": 0.25, "priority": 0},
-                        {"name": "Coagulation Panel", "code": "IMHEM-T06", "duration_hour": 0.25, "priority": 0}
+                        {
+                            "name": "Complete Blood Count with Differential",
+                            "code": "IMHEM-T01",
+                            "duration_hour": 0.25,
+                            "priority": 0,
+                            "result_hours": 3,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "No fasting required. A simple blood draw from your arm. Results include counts of red blood cells, white blood cells, and platelets."
+                        },
+                        {
+                            "name": "Bone Marrow Biopsy",
+                            "code": "IMHEM-T02",
+                            "duration_hour": 1.0,
+                            "priority": 2,
+                            "result_hours": 96,
+                            "depends_on": ["IMHEM-T01", "IMHEM-T05", "IMHEM-T06"],
+                            "avoid_same_day": ["IMHEM-T03", "IMHEM-T04"],
+                            "description": "Avoid blood-thinning medications for several days before if medically safe. Local anesthesia will be used; the procedure is performed on the back of the hip bone. Plan to rest for the remainder of the day. Some soreness is expected for several days."
+                        },
+                        {
+                            "name": "CT Scan with Contrast",
+                            "code": "IMHEM-T03",
+                            "duration_hour": 0.75,
+                            "priority": 1,
+                            "result_hours": 12,
+                            "depends_on": ["IMHEM-T01"],
+                            "avoid_same_day": ["IMHEM-T04", "IMHEM-T02"],
+                            "description": "Fast for 4 hours before the exam. Inform your doctor of any contrast dye allergies or kidney problems. Drink plenty of fluids after the exam to help clear the contrast dye."
+                        },
+                        {
+                            "name": "PET-CT Scan",
+                            "code": "IMHEM-T04",
+                            "duration_hour": 2.0,
+                            "priority": 1,
+                            "result_hours": 36,
+                            "depends_on": ["IMHEM-T01"],
+                            "avoid_same_day": ["IMHEM-T03", "IMHEM-T02"],
+                            "description": "Fast for at least 6 hours before the exam. Avoid strenuous exercise for 24 hours before. Blood glucose will be measured before the scan; the exam may be postponed if glucose is too high. Rest quietly for 1 hour after the radiotracer injection before imaging begins."
+                        },
+                        {
+                            "name": "Peripheral Blood Smear",
+                            "code": "IMHEM-T05",
+                            "duration_hour": 0.25,
+                            "priority": 0,
+                            "result_hours": 3,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "No fasting required. A small blood sample will be taken from a fingertip or vein. The sample is examined under a microscope to assess blood cell shape and appearance."
+                        },
+                        {
+                            "name": "Coagulation Panel",
+                            "code": "IMHEM-T06",
+                            "duration_hour": 0.25,
+                            "priority": 0,
+                            "result_hours": 3,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "No fasting required. Inform your doctor of any blood-thinning medications you are currently taking, as these will affect results."
+                        }
                     ]
                 },
                 "infectious diseases": {
@@ -110,12 +434,66 @@
                         "Antimicrobial Stewardship"
                     ],
                     "tests": [
-                        {"name": "Blood Culture", "code": "IMINF-T01", "duration_hour": 0.25, "priority": 0},
-                        {"name": "Chest X-ray", "code": "IMINF-T02", "duration_hour": 0.25, "priority": 0},
-                        {"name": "Lumbar Puncture", "code": "IMINF-T03", "duration_hour": 0.75, "priority": 1},
-                        {"name": "HIV Viral Load Test", "code": "IMINF-T04", "duration_hour": 0.25, "priority": 0},
-                        {"name": "Tuberculosis Skin Test", "code": "IMINF-T05", "duration_hour": 0.25, "priority": 0},
-                        {"name": "Wound Culture and Sensitivity", "code": "IMINF-T06", "duration_hour": 0.25, "priority": 0}
+                        {
+                            "name": "Blood Culture",
+                            "code": "IMINF-T01",
+                            "duration_hour": 0.25,
+                            "priority": 0,
+                            "result_hours": 96,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "No fasting required. Blood will be drawn from two different sites. Ideally collected during a fever spike and before starting antibiotics. Inform your doctor if you have already taken any antibiotics."
+                        },
+                        {
+                            "name": "Chest X-ray",
+                            "code": "IMINF-T02",
+                            "duration_hour": 0.25,
+                            "priority": 0,
+                            "result_hours": 3,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "No special preparation required. Remove metal objects from the chest and neck area. Inform your doctor if you are pregnant."
+                        },
+                        {
+                            "name": "Lumbar Puncture",
+                            "code": "IMINF-T03",
+                            "duration_hour": 0.75,
+                            "priority": 1,
+                            "result_hours": 48,
+                            "depends_on": ["IMINF-T02"],
+                            "avoid_same_day": [],
+                            "description": "Inform your doctor of any blood-thinning medications. Local anesthesia will be used. You will need to lie flat for 1-2 hours after the procedure. Arrange for someone to take you home. Drink plenty of fluids to prevent headache after the procedure."
+                        },
+                        {
+                            "name": "HIV Viral Load Test",
+                            "code": "IMINF-T04",
+                            "duration_hour": 0.25,
+                            "priority": 0,
+                            "result_hours": 60,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "No fasting required. A simple blood draw. Results measure the amount of HIV virus in the blood and are used to monitor treatment effectiveness."
+                        },
+                        {
+                            "name": "Tuberculosis Skin Test",
+                            "code": "IMINF-T05",
+                            "duration_hour": 0.25,
+                            "priority": 0,
+                            "result_hours": 72,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "A small amount of tuberculin fluid is injected under the skin of your forearm. Do not rub or scratch the test site. Return in 48-72 hours to have the result read by a healthcare provider. The result cannot be read before 48 hours."
+                        },
+                        {
+                            "name": "Wound Culture and Sensitivity",
+                            "code": "IMINF-T06",
+                            "duration_hour": 0.25,
+                            "priority": 0,
+                            "result_hours": 60,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "No special preparation required. The wound area will be cleaned and a swab taken before applying new dressings or antibiotics. Inform your doctor of any antibiotics you are currently taking."
+                        }
                     ]
                 },
                 "allergy": {
@@ -126,12 +504,66 @@
                         "Food and Drug Allergy"
                     ],
                     "tests": [
-                        {"name": "Skin Prick Test", "code": "IMALL-T01", "duration_hour": 0.5, "priority": 0},
-                        {"name": "Specific IgE Blood Test", "code": "IMALL-T02", "duration_hour": 0.25, "priority": 0},
-                        {"name": "Patch Test", "code": "IMALL-T03", "duration_hour": 0.5, "priority": 1},
-                        {"name": "Spirometry", "code": "IMALL-T04", "duration_hour": 0.5, "priority": 0},
-                        {"name": "Oral Food Challenge", "code": "IMALL-T05", "duration_hour": 2.0, "priority": 2},
-                        {"name": "Drug Provocation Test", "code": "IMALL-T06", "duration_hour": 1.5, "priority": 2}
+                        {
+                            "name": "Skin Prick Test",
+                            "code": "IMALL-T01",
+                            "duration_hour": 0.5,
+                            "priority": 0,
+                            "result_hours": 1,
+                            "depends_on": [],
+                            "avoid_same_day": ["IMALL-T05", "IMALL-T06"],
+                            "description": "Avoid antihistamines for at least 3-7 days before the test (check with your doctor for the specific duration). Do not apply creams or lotions to the test area. Wear short-sleeved clothing. Bring a list of all current medications."
+                        },
+                        {
+                            "name": "Specific IgE Blood Test",
+                            "code": "IMALL-T02",
+                            "duration_hour": 0.25,
+                            "priority": 0,
+                            "result_hours": 36,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "No fasting required. A blood sample will be drawn. You may continue taking antihistamines before this test as they do not affect blood test results."
+                        },
+                        {
+                            "name": "Patch Test",
+                            "code": "IMALL-T03",
+                            "duration_hour": 0.5,
+                            "priority": 1,
+                            "result_hours": 72,
+                            "depends_on": ["IMALL-T01"],
+                            "avoid_same_day": ["IMALL-T01", "IMALL-T05", "IMALL-T06"],
+                            "description": "Avoid showering or getting the test area wet for 48 hours after application. Do not apply creams or lotions to your back before the test. Return after 48 hours and again at 72-96 hours to have results read. Avoid sun exposure to the test area."
+                        },
+                        {
+                            "name": "Spirometry",
+                            "code": "IMALL-T04",
+                            "duration_hour": 0.5,
+                            "priority": 0,
+                            "result_hours": 2,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "Avoid bronchodilator inhalers for 4-6 hours before the test. Do not smoke for at least 4 hours beforehand. Wear loose, comfortable clothing. Avoid large meals for 2 hours before the test."
+                        },
+                        {
+                            "name": "Oral Food Challenge",
+                            "code": "IMALL-T05",
+                            "duration_hour": 2.0,
+                            "priority": 2,
+                            "result_hours": 3,
+                            "depends_on": ["IMALL-T01", "IMALL-T02"],
+                            "avoid_same_day": ["IMALL-T01", "IMALL-T03", "IMALL-T06"],
+                            "description": "Fast for 2 hours before the challenge. Avoid antihistamines for 3-7 days before. The procedure involves supervised ingestion of the suspected food in gradually increasing amounts. Emergency medication will be available on-site. Do not come alone; bring a companion."
+                        },
+                        {
+                            "name": "Drug Provocation Test",
+                            "code": "IMALL-T06",
+                            "duration_hour": 1.5,
+                            "priority": 2,
+                            "result_hours": 3,
+                            "depends_on": ["IMALL-T01", "IMALL-T02", "IMALL-T04"],
+                            "avoid_same_day": ["IMALL-T01", "IMALL-T03", "IMALL-T05"],
+                            "description": "Avoid antihistamines and the suspected drug for the period specified by your doctor. Do not come alone; bring a companion. Emergency medication will be on-site. The procedure involves gradually administered doses of the drug under close medical supervision."
+                        }
                     ]
                 },
                 "rheumatology": {
@@ -142,12 +574,66 @@
                         "Vasculitis"
                     ],
                     "tests": [
-                        {"name": "Rheumatoid Factor and Anti-CCP Test", "code": "IMRHE-T01", "duration_hour": 0.25, "priority": 0},
-                        {"name": "Joint Ultrasound", "code": "IMRHE-T02", "duration_hour": 0.5, "priority": 1},
-                        {"name": "Joint X-ray", "code": "IMRHE-T03", "duration_hour": 0.25, "priority": 0},
-                        {"name": "MRI of Joints", "code": "IMRHE-T04", "duration_hour": 1.0, "priority": 2},
-                        {"name": "ANA Panel", "code": "IMRHE-T05", "duration_hour": 0.25, "priority": 0},
-                        {"name": "Synovial Fluid Analysis", "code": "IMRHE-T06", "duration_hour": 0.5, "priority": 1}
+                        {
+                            "name": "Rheumatoid Factor and Anti-CCP Test",
+                            "code": "IMRHE-T01",
+                            "duration_hour": 0.25,
+                            "priority": 0,
+                            "result_hours": 36,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "No fasting required. A blood sample will be drawn from your arm. Results help diagnose rheumatoid arthritis and other autoimmune conditions."
+                        },
+                        {
+                            "name": "Joint Ultrasound",
+                            "code": "IMRHE-T02",
+                            "duration_hour": 0.5,
+                            "priority": 1,
+                            "result_hours": 3,
+                            "depends_on": ["IMRHE-T03"],
+                            "avoid_same_day": [],
+                            "description": "No special preparation required. Wear comfortable clothing with easy access to the affected joint. Inform your doctor which joints are most symptomatic."
+                        },
+                        {
+                            "name": "Joint X-ray",
+                            "code": "IMRHE-T03",
+                            "duration_hour": 0.25,
+                            "priority": 0,
+                            "result_hours": 3,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "No special preparation required. Inform your doctor if you are pregnant. Remove jewelry or metal objects near the joint to be imaged."
+                        },
+                        {
+                            "name": "MRI of Joints",
+                            "code": "IMRHE-T04",
+                            "duration_hour": 1.0,
+                            "priority": 2,
+                            "result_hours": 36,
+                            "depends_on": ["IMRHE-T03", "IMRHE-T01"],
+                            "avoid_same_day": [],
+                            "description": "Remove all metal objects before the scan. Inform your doctor of any implanted metal devices or claustrophobia. No fasting required unless contrast is used (fast 4 hours). The scan takes up to 1 hour; you must lie still throughout."
+                        },
+                        {
+                            "name": "ANA Panel",
+                            "code": "IMRHE-T05",
+                            "duration_hour": 0.25,
+                            "priority": 0,
+                            "result_hours": 36,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "No fasting required. A blood sample will be drawn. Results screen for antinuclear antibodies associated with autoimmune diseases such as lupus."
+                        },
+                        {
+                            "name": "Synovial Fluid Analysis",
+                            "code": "IMRHE-T06",
+                            "duration_hour": 0.5,
+                            "priority": 1,
+                            "result_hours": 36,
+                            "depends_on": ["IMRHE-T03", "IMRHE-T02"],
+                            "avoid_same_day": ["IMRHE-T04"],
+                            "description": "Inform your doctor of any blood-thinning medications. Local anesthesia is used at the puncture site. Avoid strenuous activity involving the affected joint for 24 hours after the procedure. Ice can be applied to reduce swelling."
+                        }
                     ]
                 }
             }
