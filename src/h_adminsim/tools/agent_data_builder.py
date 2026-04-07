@@ -4,7 +4,6 @@ from typing import Optional
 from decimal import getcontext
 from importlib import resources
 
-from h_adminsim.utils import log
 from h_adminsim.utils.fhir_utils import *
 from h_adminsim.utils.random_utils import generate_random_symptom
 from h_adminsim.utils.filesys_utils import json_load, json_save_fast, get_files

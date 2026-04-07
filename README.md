@@ -129,7 +129,7 @@ GOOGLE_API_KEY=${YOUR_GEMINI_API_KEY"}
 ```python
 from h_adminsim import AdminStaffAgent, SupervisorAgent
 from h_adminsim.pipeline import DataGenerator, Simulator
-from h_adminsim.task.agent_task import OutpatientFirstIntake, OutpatientFirstScheduling
+from h_adminsim.task.first_visit_task import OutpatientFirstIntake, OutpatientFirstScheduling
 
 data_generator = DataGenerator()
 data_generator.build(convert_to_fhir=True)
@@ -255,7 +255,7 @@ hospital_data:
 #### 2.1. Patient Intake
 ```python
 from h_adminsim import SupervisorAgent
-from h_adminsim.task.agent_task import OutpatientFirstIntake
+from h_adminsim.task.first_visit_task import OutpatientFirstIntake
 
 # 1. Patient Intake
 # 1.1. Default usage (Staff-only)
@@ -304,7 +304,7 @@ intake_task = OutpatientFirstIntake(
 #### 2.2. Appointment Scheduling
 ```python
 from h_adminsim import AdminStaffAgent, SupervisorAgent
-from h_adminsim.task.agent_task import OutpatientFirstScheduling
+from h_adminsim.task.first_visit_task import OutpatientFirstScheduling
 
 # 2. Appointment Scheduling
 # 2.1. Default usage (Tool-calling with reasoning fallbacks)

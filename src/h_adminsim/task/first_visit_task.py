@@ -9,8 +9,11 @@ from dotenv import load_dotenv, find_dotenv
 
 from patientsim import PatientAgent
 
-from h_adminsim import SupervisorAgent
-from h_adminsim import IntakeAdminStaffAgent, SchedulingAdminStaffAgent
+from h_adminsim import (
+    SupervisorAgent,
+    IntakeAdminStaffAgent,
+    SchedulingAdminStaffAgent,
+)
 from h_adminsim.environment.hospital import HospitalEnvironment
 from h_adminsim.environment import OPIntakeSimulation as OPFVIntakeSimulation
 from h_adminsim.environment import OPScehdulingSimulation as OPFVScheduleSimulation

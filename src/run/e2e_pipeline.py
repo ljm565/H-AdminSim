@@ -7,7 +7,7 @@ from argparse import ArgumentParser
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
 from h_adminsim import SupervisorAgent
-from h_adminsim.task.agent_task import *
+from h_adminsim.task.first_visit_task import *
 from h_adminsim.task.fhir_manager import FHIRManager
 from h_adminsim.pipeline import DataGenerator, Simulator
 from h_adminsim.utils import log

@@ -3,7 +3,7 @@ import random
 import numpy as np
 from typing import Optional
 
-from h_adminsim.task.agent_task import *
+from h_adminsim.task.first_visit_task import *
 from h_adminsim.task.fhir_manager import FHIRManager
 from h_adminsim.environment.hospital import HospitalEnvironment
 from h_adminsim.utils.filesys_utils import json_load, json_save_fast, get_files

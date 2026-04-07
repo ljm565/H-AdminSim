@@ -9,8 +9,8 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
 from h_adminsim import SupervisorAgent
-from h_adminsim.task.agent_task import *
 from h_adminsim.pipeline import Simulator
+from h_adminsim.task.first_visit_task import *
 from h_adminsim.utils import set_logging, LOGGING_NAME
 from h_adminsim.utils.filesys_utils import yaml_save, get_files
 
