@@ -181,7 +181,7 @@ app = FastAPI(lifespan=lifespan)
 
 
 # APIs
-@app.post('/llm_intake_response')
+@app.post('/llm_first_visit_intake_response')
 async def generate_intake_response(request: PromptRequest):
     user_prompt = request.user_prompt.strip()
 
@@ -245,7 +245,7 @@ async def generate_intake_response(request: PromptRequest):
     return {'response': response, 'session_id': session_id, 'task': sessions[session_id]['task']}
 
 
-@app.post('/llm_schedule_response')
+@app.post('/llm_first_visit_scheduling_response')
 async def generate_schedule_response(request: PromptRequest):
     user_prompt = request.user_prompt.strip()
     session_id = request.session_id
