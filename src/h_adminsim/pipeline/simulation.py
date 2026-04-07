@@ -122,8 +122,8 @@ class Simulator:
             preds = [x for y in agent_results['first_visit_scheduling']['pred'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
             for status, pred in zip(statuses, preds):
                 if status and 'status' in pred and pred['status'] != 'cancelled':
-                    fixed_schedule[pred['attending_physician']]['first_visit_scheduling'][pred['date']].append(pred['first_visit_scheduling'])
-                    fixed_schedule[pred['attending_physician']]['first_visit_scheduling'][pred['date']].sort()
+                    fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].append(pred['schedule'])
+                    fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].sort()
         
         return agent_simulation_data, agent_results, done_patients
 
