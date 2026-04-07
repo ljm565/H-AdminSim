@@ -1,4 +1,3 @@
-import time
 from typing import Optional
 from patientsim.patient import PatientAgent
 from patientsim.checker import CheckerAgent
