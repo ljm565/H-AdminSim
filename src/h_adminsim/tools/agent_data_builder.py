@@ -4,6 +4,7 @@ from typing import Optional
 from decimal import getcontext
 from importlib import resources
 
+from h_adminsim.utils import log
 from h_adminsim.utils.fhir_utils import *
 from h_adminsim.utils.random_utils import generate_random_symptom
 from h_adminsim.utils.filesys_utils import json_load, json_save_fast, get_files
@@ -46,47 +47,46 @@ class AgentDataBuilder:
         
         for patient, patient_values in data['patient'].items():
             visit_type = patient_values['type']
-            if visit_type == 'first_visit':
-                doctor, department, date = patient_values['attending_physician'], patient_values['department'], patient_values['date']
-                gender, telecom, birth_date, identifier, address = \
-                    patient_values['gender'], patient_values['telecom'], patient_values['birthDate'], patient_values['identifier'], patient_values['address']
-                preference, symptom_level = patient_values['preference'], patient_values['symptom_level']
-                disease = generate_random_symptom(
-                    department=department,
-                    symptom_file_path=symptom_file_path, 
-                    ensure_unique_department='doctor' in patient_values['preference']
-                )
-                gt_department = disease['department'] if isinstance(disease, dict) else [department]
-                gt = {
-                    'visit_type': visit_type,
-                    'patient': patient,
-                    'gender': gender,
-                    'telecom': telecom,
-                    'birthDate': birth_date,
-                    'identifier': identifier,
-                    'address': address,
-                    'department': gt_department,
+            doctor, department, date = patient_values['attending_physician'], patient_values['department'], patient_values['date']
+            gender, telecom, birth_date, identifier, address = \
+                patient_values['gender'], patient_values['telecom'], patient_values['birthDate'], patient_values['identifier'], patient_values['address']
+            preference, symptom_level = patient_values['preference'], patient_values['symptom_level']
+            disease = generate_random_symptom(
+                department=department,
+                symptom_file_path=symptom_file_path, 
+                ensure_unique_department='doctor' in patient_values['preference']
+            )
+            gt_department = disease['department'] if isinstance(disease, dict) else [department]
+            gt = {
+                'visit_type': visit_type,
+                'patient': patient,
+                'gender': gender,
+                'telecom': telecom,
+                'birthDate': birth_date,
+                'identifier': identifier,
+                'address': address,
+                'department': gt_department,
+                'attending_physician': doctor,
+                'valid_from': date if 'date' in preference else 'N/A',
+                'preference': preference,
+                'symptom_level': symptom_level,
+            }
+            agent = {
+                'visit_type': visit_type,
+                'patient': patient,
+                'gender': gender,
+                'telecom': telecom,
+                'birthDate': birth_date,
+                'identifier': identifier,
+                'address': address,
+                'constraint': {
+                    'preference': preference,
                     'attending_physician': doctor,
                     'valid_from': date if 'date' in preference else 'N/A',
-                    'preference': preference,
                     'symptom_level': symptom_level,
+                    'symptom': disease,
                 }
-                agent = {
-                    'visit_type': visit_type,
-                    'patient': patient,
-                    'gender': gender,
-                    'telecom': telecom,
-                    'birthDate': birth_date,
-                    'identifier': identifier,
-                    'address': address,
-                    'constraint': {
-                        'preference': preference,
-                        'attending_physician': doctor,
-                        'valid_from': date if 'date' in preference else 'N/A',
-                        'symptom_level': symptom_level,
-                        'symptom': disease,
-                    }
-                }
+            }
             agent_data['agent_data'].append((gt, agent))
         
         if save_path:

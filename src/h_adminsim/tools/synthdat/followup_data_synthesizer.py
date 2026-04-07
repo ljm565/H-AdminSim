@@ -246,6 +246,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         
 
         # Hospital time parameters and data
+        visit_type = 'follow_up_visit'
         metadata = hospital_data['metadata']
         start_hour = float(metadata['time']['start_hour'])
         end_hour = float(metadata['time']['end_hour'])
@@ -423,6 +424,11 @@ class FollowUpDataSynthesizer(DataSynthesizer):
             department = combination[0]['department']
             doctor = random.choice(department_info[department]['doctor'])
             duration = int(Decimal(str(1)) / Decimal(str(doctor_info[doctor]['capacity_per_hour'])) / Decimal(str(interval_hour)))
+            preference = generate_random_code_with_prob(
+                fu_config.preference.type,
+                fu_config.preference.probs
+            )
+            preference_rank = DataSynthesizer.second_preference_generator(preference, visit_type)
             symptom_level = generate_random_code_with_prob(
                 fu_config.symptom.type,
                 fu_config.symptom.probs
@@ -479,11 +485,12 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                 date, appointment = None, None
             
             follow_up_patient_info[name] = {
-                'type': 'follow_up_visit',
+                'type': visit_type,
                 'department': department,
                 'attending_physician': doctor,
                 'date': date,
                 'schedule': appointment,
+                'preference': preference_rank,
                 'symptom_level': symptom_level,
                 'required_tests': combination,
                 'gender': generate_random_code('gender'),

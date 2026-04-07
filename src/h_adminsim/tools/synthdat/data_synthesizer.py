@@ -248,26 +248,36 @@ class DataSynthesizer:
 
 
     @staticmethod
-    def second_preference_generator(preference: str) -> list[str]:
+    def second_preference_generator(preference: str, visit_type: str) -> list[str]:
         """
         Generate a list of preferences based on the initial preference.
 
         Args:
             preference (str): First priority of preference.
+            visit_type (str): Hospital visit type. Currently support [`first_visit`, `follow_up_visit`]
 
         Returns:
             list[str]: List of preferences including first and second priority.
         """
         preference_list = [preference]
         
-        if preference == 'doctor':
-            second_preference = random.choice(['asap', 'date'])
-            preference_list.append(second_preference)
-        elif preference == 'date':
-            second_preference = random.choice(['asap', 'doctor'])
-            preference_list.append(second_preference)
-        elif preference == 'asap':
-            second_preference = random.choice(['date', 'doctor'])
-            preference_list.append(second_preference)
+        if visit_type == 'first_visit':
+            if preference == 'doctor':
+                second_preference = random.choice(['asap', 'date'])
+                preference_list.append(second_preference)
+            elif preference == 'date':
+                second_preference = random.choice(['asap', 'doctor'])
+                preference_list.append(second_preference)
+            elif preference == 'asap':
+                second_preference = random.choice(['date', 'doctor'])
+                preference_list.append(second_preference)
+        
+        elif visit_type == 'follow_up_visit':
+            if preference == 'asap':
+                second_preference = random.choice(['batch'])
+                preference_list.append(second_preference)
+            elif preference == 'batch':
+                second_preference = random.choice(['asap'])
+                preference_list.append(second_preference)
 
         return preference_list

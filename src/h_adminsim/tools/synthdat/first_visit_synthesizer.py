@@ -84,6 +84,7 @@ class FirstVisitDataSynthesizer(DataSynthesizer):
             Information: Hospital data with first-visit patients populated.
         """
         # Extract time parameters
+        visit_type = 'first_visit'
         start_hour = float(data.metadata.time.start_hour)
         end_hour = float(data.metadata.time.end_hour)
         interval_hour = float(data.metadata.time.interval_hour)
@@ -129,14 +130,14 @@ class FirstVisitDataSynthesizer(DataSynthesizer):
                         config.hospital_data.first_visit.preference.type,
                         config.hospital_data.first_visit.preference.probs
                     )
-                    preference_rank = DataSynthesizer.second_preference_generator(preference)
+                    preference_rank = DataSynthesizer.second_preference_generator(preference, visit_type)
                     symptom_level = generate_random_code_with_prob(
                         config.hospital_data.first_visit.symptom.type,
                         config.hospital_data.first_visit.symptom.probs
                     )
                     birth_date = generate_random_date()
                     patient_info[patient] = {
-                        'type': 'first_visit',
+                        'type': visit_type,
                         'department': department,
                         'attending_physician': doctor,
                         'date': date,
