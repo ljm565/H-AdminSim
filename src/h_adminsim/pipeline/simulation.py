@@ -5,6 +5,7 @@ from typing import Optional
 
 from h_adminsim.task import OutpatientTask
 from h_adminsim.task.first_visit_task import *
+from h_adminsim.task.follow_up_visit_task import *
 from h_adminsim.task.fhir_manager import FHIRManager
 from h_adminsim.environment.hospital import HospitalEnvironment
 from h_adminsim.utils.filesys_utils import json_load, json_save_fast, get_files
@@ -13,8 +14,7 @@ from h_adminsim.utils.filesys_utils import json_load, json_save_fast, get_files
 
 class Simulator:
     def __init__(self,
-                 intake_task: Optional[OutpatientFirstIntake] = None,
-                 scheduling_task: Optional[OutpatientFirstScheduling] = None,
+                 task: dict,
                  simulation_start_day_before: float = 3,
                  fhir_integration: bool = False,
                  fhir_url: Optional[str] = None,
@@ -26,7 +26,7 @@ class Simulator:
         self.fhir_integration = fhir_integration
         self.fhir_url = fhir_url if self.fhir_integration else None
         self.fhir_max_connection_retries = fhir_max_connection_retries
-        self.task_queue, self.task_list = self._init_task(intake_task, scheduling_task)
+        self.task = self._init_task(task)
         self.random_seed = random_seed
 
 
@@ -50,34 +50,27 @@ class Simulator:
 
 
 
-    def _init_task(self, 
-                   intake_task: Optional[OutpatientFirstIntake] = None,
-                   scheduling_task: Optional[OutpatientFirstScheduling] = None) -> Tuple[list[OutpatientTask], list[str]]:
+    def _init_task(self, task: dict) -> dict[str, OutpatientTask]:
         """
         Initialize the task queue for first-visit outpatient workflow.
 
         Args:
-            intake_task (Optional[OutpatientFirstIntake], optional): Intake task instance to include in the queue. Defaults to None.
-            scheduling_task (Optional[OutpatientFirstScheduling], optional): Scheduling task instance to include in the queue. Defaults to None.
-
-        Returns:
-            Tuple[list[FirstVisitOutpatientTask], list[str]]:
-                A tuple containing:
-                    - the ordered list of task objects
-                    - the list of task names in execution order
+            task (dict): Task dictionary.
         """
-        task_queue, task_list = list(), list()
-        assert intake_task != None or scheduling_task != None, \
-            log("At least one of 'intake_task' or 'scheduling_task' must be provided (both cannot be None).", level='error')
+        assert len(task), \
+            log("At least one of `first_visit_intake`, `first_visit_scheduliing`, or `follow_up_visit_scheduling` must be provided.", level='error')
 
-        if intake_task != None:
-            task_queue.append(intake_task)
-            task_list.append(intake_task.name)
-        if scheduling_task != None:
-            task_queue.append(scheduling_task)
-            task_list.append(scheduling_task.name)
+        if 'first_visit_intake' in task:
+            assert isinstance(task['first_visit_intake'], OutpatientFirstIntake), \
+                log("Wrong type of `first_visit_intake` task.", level='error')
+        if 'first_visit_scheduling' in task:
+            assert isinstance(task['first_visit_scheduling'], OutpatientFirstScheduling), \
+                log("Wrong type of `first_visit_scheduling` task.", level='error')
+        if 'follow_up_visit_scheduling' in task:
+            assert isinstance(task['follow_up_visit_scheduling'], OutpatientFollowUpScheduling), \
+                log("Wrong type of `follow_up_visit_scheduling` task.", level='error')
         
-        return task_queue, task_list
+        return task
     
     
     @staticmethod
@@ -112,9 +105,9 @@ class Simulator:
         # Get patients that have already been processed for each task
         done_patients = dict()
         for task_name, result in agent_results.items():
-            if task_name == 'intake':
+            if task_name == 'first_visit_intake':
                 done_patients[task_name] = {done['patient']['name'] for done in result['gt']}
-            elif task_name == 'schedule':
+            elif task_name == 'first_visit_scheduling':
                 done_patients[task_name] = set()
                 for done in result['gt']:
                     try:
@@ -123,14 +116,14 @@ class Simulator:
                         continue
         
         # Updated doctor schedules based on the resumed results
-        if 'schedule' in agent_results:
+        if 'first_visit_scheduling' in agent_results:
             fixed_schedule = agent_simulation_data['doctor']
-            statuses = [x for y in agent_results['schedule']['status'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
-            preds = [x for y in agent_results['schedule']['pred'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
+            statuses = [x for y in agent_results['first_visit_scheduling']['status'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
+            preds = [x for y in agent_results['first_visit_scheduling']['pred'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
             for status, pred in zip(statuses, preds):
                 if status and 'status' in pred and pred['status'] != 'cancelled':
-                    fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].append(pred['schedule'])
-                    fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].sort()
+                    fixed_schedule[pred['attending_physician']]['first_visit_scheduling'][pred['date']].append(pred['first_visit_scheduling'])
+                    fixed_schedule[pred['attending_physician']]['first_visit_scheduling'][pred['date']].sort()
         
         return agent_simulation_data, agent_results, done_patients
 
@@ -184,7 +177,18 @@ class Simulator:
 
                 # Data per patient
                 for j, (gt, test_data) in enumerate(agent_simulation_data['agent_data']):
-                    for task in self.task_queue:
+                    # Make a task queue
+                    task_queue = list()
+                    if test_data['visit_type'] == 'first_visit':
+                        if 'first_visit_intake' in self.task:
+                            task_queue.append(self.task['first_visit_intake'])
+                        if 'first_visit_scheduling' in self.task:
+                            task_queue.append(self.task['first_visit_scheduling'])
+                    elif test_data['visit_type'] == 'follow_up_visit':
+                        if 'follow_up_visit_scheduling' in self.task:
+                            task_queue.append(self.task['follow_up_visit_scheduling'])
+
+                    for task in task_queue:
                         if task.name in done_patients and gt['patient'] in done_patients[task.name]:
                             continue
                         
@@ -198,7 +202,7 @@ class Simulator:
 
                 # Logging the results
                 for task_name, result in agent_results.items():
-                    if task_name == 'intake':
+                    if task_name == 'first_visit_intake':
                         statuses = [all(s.values()) for s in result['status']]
                         status_codes = ['/'.join(s.values()) for s in result['status_code']]
                     else:

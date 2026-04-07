@@ -42,7 +42,7 @@ class OutpatientFirstIntake(OutpatientTask):
         super().__init__()
         
         # Initialize variables
-        self.name = 'intake'
+        self.name = 'first_visit_intake'
         self.patient_model, self.patient_vllm_endpoint, self.patient_use_vllm \
             = self._init_task_models(patient_model, patient_vllm_endpoint)
         self.admin_staff_model, self.admin_staff_vllm_endpoint, self.admin_staff_use_vllm \
@@ -337,7 +337,7 @@ class OutpatientFirstScheduling(OutpatientTask):
         getcontext().prec = 10
         dotenv_path = find_dotenv(usecwd=True)
         load_dotenv(dotenv_path, override=True)
-        self.name = 'schedule'
+        self.name = 'first_visit_scheduling'
         self.patient_model, self.patient_vllm_endpoint, self.patient_use_vllm \
             = self._init_task_models(patient_model, patient_vllm_endpoint)
         self.admin_staff_model, self.admin_staff_vllm_endpoint, self.admin_staff_use_vllm \
@@ -428,15 +428,15 @@ class OutpatientFirstScheduling(OutpatientTask):
         """
         # Prediction results are existing case
         try:
-            for i, intake_gt in enumerate(agent_results['intake']['gt']):
+            for i, intake_gt in enumerate(agent_results['first_visit_intake']['gt']):
                 if gt['patient'] == intake_gt['patient']['name']:
                     break
 
-            patient_info = agent_results['intake']['pred'][i]['patient']
-            department = agent_results['intake']['pred'][i]['department'][0]
-            sanity = all(agent_results['intake']['status'][i].values())
+            patient_info = agent_results['first_visit_intake']['pred'][i]['patient']
+            department = agent_results['first_visit_intake']['pred'][i]['department'][0]
+            sanity = all(agent_results['first_visit_intake']['status'][i].values())
 
-            assert gt['patient'] == agent_results['intake']['gt'][i]['patient']['name']
+            assert gt['patient'] == agent_results['first_visit_intake']['gt'][i]['patient']['name']
         
         # Loading from the ground truth
         except:

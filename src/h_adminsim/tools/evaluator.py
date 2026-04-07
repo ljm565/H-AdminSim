@@ -15,11 +15,6 @@ class Evaluator:
         if human_eval:
             self.human_eval_files = get_files(self.path, '.txt')
         
-        try:
-            self.dialog_files = get_files(self.path, '_dialog.json')
-        except:
-            pass
-
         self.model_pricing = {
             "gpt-5-nano": {
                 "input": 0.05,    # $0.05 / 1M tokens
@@ -54,7 +49,7 @@ class Evaluator:
         # Macro-wise evaluation
         log('--------------Macro-wise Evaluation--------------')
         for task, value in aggregated_results.items():
-            statuses = [[all(s.values()) for s in single_s] for single_s in value['status']] if task == 'intake' else value['status']
+            statuses = [[all(s.values()) for s in single_s] for single_s in value['status']] if task == 'first_visit_intake' else value['status']
             accuracies = [sum(x if isinstance(x, bool) else sum(x) for x in status) / sum(1 if isinstance(x, bool) else len(x) for x in status) * 100 for status in statuses]
             avg_accuracy = sum(accuracies) / len(accuracies)
             stdv = round((sum((x - avg_accuracy) ** 2 for x in accuracies) / len(accuracies)) ** 0.5, 2) if len(accuracies) > 1 else 0.0
@@ -67,7 +62,7 @@ class Evaluator:
         log('--------------Micro-wise Evaluation--------------')
         fail_data_dict = dict()
         for task, value in aggregated_results.items():
-            if task == 'intake':
+            if task == 'first_visit_intake':
                 # Statuses
                 _status = [[all(s.values()) for s in single_s] for single_s in value['status']]
                 _patient_status = [[s['patient'] for s in single_s] for single_s in value['status']]
@@ -224,7 +219,7 @@ class Evaluator:
             status = sum(value['status'], [])
             trial = sum(value['trial'], [])
             
-            if task == 'intake':
+            if task == 'first_visit_intake':
                 total_length = len(status)
                 supervisor_effect_cnt, correct, error, tie = 0, 0, 0, 0
                 for t in trial:
@@ -243,7 +238,7 @@ class Evaluator:
                 log(f'{colorstr(task):<27} | length: {total_length}, effected: {supervisor_effect_cnt} ({(supervisor_effect_cnt/total_length)*100:.2f}%)')
                 log(f'    - {colorstr("green", "correct")}: {correct} ({correct_p:.2f}%), {colorstr("red", "worse")}: {error} ({error_p:.2f}%), {colorstr("yellow", "tie")}: {tie} ({tie_p:.2f}%)')
 
-            elif task == 'schedule':
+            elif task == 'first_visit_scheduling':
                 feedback_n = dict()
                 total_length = len(status)
                 supervisor_effect_cnt, correct, tie = 0, 0, 0
@@ -303,17 +298,17 @@ class Evaluator:
         """
         Evaluate solely department prediction accuracy.
         """
-        aggregated_results = {'intake': {'gt': [], 'pred': [], 'status': []}}
+        aggregated_results = {'first_visit_intake': {'gt': [], 'pred': [], 'status': []}}
         
         for file in self.files:
             data = json_load(file)
-            aggregated_results['intake']['gt'].extend(data['intake']['gt'])
-            aggregated_results['intake']['pred'].extend(data['intake']['pred'])
-            aggregated_results['intake']['status'].extend(data['intake']['status'])
+            aggregated_results['first_visit_intake']['gt'].extend(data['first_visit_intake']['gt'])
+            aggregated_results['first_visit_intake']['pred'].extend(data['first_visit_intake']['pred'])
+            aggregated_results['first_visit_intake']['status'].extend(data['first_visit_intake']['status'])
 
-        gt = aggregated_results['intake']['gt']
-        pred = aggregated_results['intake']['pred']
-        status = [all(s.values()) for s in aggregated_results['intake']['status']]
+        gt = aggregated_results['first_visit_intake']['gt']
+        pred = aggregated_results['first_visit_intake']['pred']
+        status = [all(s.values()) for s in aggregated_results['first_visit_intake']['status']]
         total_n, dept_err_n = len(gt), 0
         for g, p, s in zip(gt, pred, status):
             if not s:
@@ -332,9 +327,9 @@ class Evaluator:
         Calculate average required intake rounds 
         """
         counts = list()
-        for file in self.dialog_files:
+        for file in self.files:
             data = json_load(file)
-            dialogs = list(data.values())
+            dialogs = data['first_visit_intake']['dialog']
             for dialog in dialogs:
                 counts.append(dialog.count('Staff: ')-1)
 

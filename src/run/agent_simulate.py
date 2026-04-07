@@ -11,6 +11,7 @@ sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 from h_adminsim import SupervisorAgent
 from h_adminsim.pipeline import Simulator
 from h_adminsim.task.first_visit_task import *
+from h_adminsim.task.follow_up_visit_task import *
 from h_adminsim.utils import set_logging, LOGGING_NAME
 from h_adminsim.utils.filesys_utils import yaml_save, get_files
 
@@ -42,17 +43,17 @@ def simulate(config, args, single_file=None):
         init_worker_logging(args.logging_dir, config.task_model.replace('/', '_'))
 
     # Initialize tasks
-    intake_task, scheduling_task = None, None
-    if 'intake' in args.type:
+    task = dict()
+    if 'first_visit_intake' in args.type:
         use_vllm = False if any(m in config.supervisor_model.lower() for m in ['gpt', 'gemini']) else True
         supervisor_agent = SupervisorAgent(
-            target_task='first_outpatient_intake',
+            target_task='first_visit_intake',
             model=config.supervisor_model,
             use_vllm=use_vllm,
             vllm_endpoint = config.vllm_url if use_vllm else None
         )
         use_vllm = False if any(m in config.task_model.lower() for m in ['gpt', 'gemini']) else True
-        intake_task = OutpatientFirstIntake(
+        _task = OutpatientFirstIntake(
             patient_model=config.task_model,
             admin_staff_model=config.task_model,
             supervisor_agent=supervisor_agent if config.outpatient_intake.use_supervisor else None,
@@ -60,9 +61,10 @@ def simulate(config, args, single_file=None):
             patient_vllm_endpoint=config.vllm_url if use_vllm else None,
             admin_staff_vllm_endpoint=config.vllm_url if use_vllm else None
         )
-    if 'schedule' in args.type:
+        task[_task.name] = _task 
+    if 'first_visit_scheduling' in args.type:
         use_vllm = False if any(m in config.task_model.lower() for m in ['gpt', 'gemini']) else True
-        scheduling_task = OutpatientFirstScheduling(
+        _task = OutpatientFirstScheduling(
             patient_model=config.task_model,
             admin_staff_model=config.task_model,
             schedule_cancellation_prob=config.schedule_cancellation_prob,
@@ -72,11 +74,22 @@ def simulate(config, args, single_file=None):
             patient_vllm_endpoint=config.vllm_url if use_vllm else None,
             admin_staff_vllm_endpoint=config.vllm_url if use_vllm else None
         )
+        task[_task.name] = _task
+    if 'follow_up_visit_scheduling' in args.type:
+        use_vllm = False if any(m in config.task_model.lower() for m in ['gpt', 'gemini']) else True
+        _task = OutpatientFollowUpScheduling(
+            patient_model=config.task_model,
+            admin_staff_model=config.task_model,
+            fhir_integration=config.integration_with_fhir,
+            scheduling_strategy=config.schedule_task.scheduling_strategy,
+            patient_vllm_endpoint=config.vllm_url if use_vllm else None,
+            admin_staff_vllm_endpoint=config.vllm_url if use_vllm else None
+        )
+        task[_task.name] = _task
 
     # Run simulations
     simulator = Simulator(
-        intake_task=intake_task,
-        scheduling_task=scheduling_task,
+        task=task,
         simulation_start_day_before=config.booking_days_before_simulation,
         fhir_integration=config.integration_with_fhir,
         fhir_url=config.fhir_url,
@@ -134,7 +147,7 @@ def main(args):
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('-c', '--config', type=str, required=True, help='Path to the configuration file')
-    parser.add_argument('-t', '--type', type=str, required=True, nargs='+', choices=['intake', 'schedule'], help='Task types you want to execute (you can specify multiple)')
+    parser.add_argument('-t', '--type', type=str, required=True, nargs='+', choices=['first_visit_intake', 'first_visit_scheduling', 'follow_up_visit_scheduling'], help='Task types you want to execute (you can specify multiple)')
     parser.add_argument('-o', '--output_dir', type=str, required=True, help='Path to save agent test results')
     parser.add_argument('--resume', action='store_true', required=False, help='Continue the stopped processing')
     parser.add_argument('--verbose', action='store_true', required=False, help='Whether logging the each result or not')

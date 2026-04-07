@@ -286,9 +286,9 @@ class HospitalEnvironment:
                                     about doctors, patients, and other hospital resources.
             agent_results (dict): Previously saved results from the agent's simulation.
         """
-        if 'schedule' in agent_results:
-            statuses = [x for y in agent_results['schedule']['status'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
-            preds = [x for y in agent_results['schedule']['pred'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
+        if 'first_visit_scheduling' in agent_results:
+            statuses = [x for y in agent_results['first_visit_scheduling']['status'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
+            preds = [x for y in agent_results['first_visit_scheduling']['pred'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
             for status, pred in zip(statuses, preds):
                 if isinstance(status, bool) and status:
                     if 'patient' in pred:

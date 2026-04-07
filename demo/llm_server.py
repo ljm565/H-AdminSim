@@ -57,7 +57,7 @@ def init_session(session_id: str):
         'known_condition': None,
         'intake_dialog_history': [{"role": "Staff", "content": "How can I help you?"}],
         'schedule_dialog_history': [{"role": "Staff", "content": "How would you like to schedule the appointment?"}],
-        'task': 'intake'
+        'task': 'first_visit_intake'
     }
 
 
@@ -65,7 +65,7 @@ def update_session(session_id: str, **kwargs):
     for key, value in kwargs.items():
         sessions[session_id][key] = value
 
-    if kwargs.get('task', None) == 'schedule':
+    if kwargs.get('task', None) == 'first_visit_scheduling':
         filtered_doctor_information = app_state['environment'].get_doctor_schedule(
             doctor_information=app_state['doctor'],
             department=sessions[session_id]['known_condition']['department'][0],
@@ -236,7 +236,7 @@ async def generate_intake_response(request: PromptRequest):
                 'agent': create_scheduling_client(session_id),
                 'index': 0, 
                 'known_condition': structured_data, 
-                'task': 'schedule'
+                'task': 'first_visit_scheduling'
             }
         )
         response = dialog_postprocessing(response, department)

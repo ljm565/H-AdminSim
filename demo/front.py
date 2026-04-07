@@ -30,7 +30,7 @@ def initialize_session():
     if 'session_id' not in st.session_state:
         st.session_state.session_id = None
     if 'current_task' not in st.session_state:
-        st.session_state.current_task = 'intake'
+        st.session_state.current_task = 'first_visit_intake'
 
 
 # Reset session state
@@ -45,7 +45,7 @@ def reset_session():
         {'content': 'How can I help you?', 'type': 'bot'}
     ]
     st.session_state.session_id = None
-    st.session_state.current_task = 'intake'
+    st.session_state.current_task = 'first_visit_intake'
     st.success('Session has been reset.')
 
 
@@ -145,10 +145,10 @@ with col2:
                     },
                     st.session_state.current_task
                 )
-                if response.get('task', 'intake') == 'schedule':                    
+                if response.get('task', 'first_visit_intake') == 'first_visit_scheduling':
                     response = response.get('response', "No response field in the server's reply.")
                     st.session_state.chat_history.append({'content': str(response), 'type': 'bot'})
-                    st.session_state.current_task = 'schedule'
+                    st.session_state.current_task = 'first_visit_scheduling'
                 else:
                     response = response.get('response', "No response field in the server's reply.")
                     st.session_state.chat_history.append({'content': response, 'type': 'bot'})
