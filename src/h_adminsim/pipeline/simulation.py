@@ -3,6 +3,7 @@ import random
 import numpy as np
 from typing import Optional
 
+from h_adminsim.task import OutpatientTask
 from h_adminsim.task.first_visit_task import *
 from h_adminsim.task.fhir_manager import FHIRManager
 from h_adminsim.environment.hospital import HospitalEnvironment
@@ -51,7 +52,7 @@ class Simulator:
 
     def _init_task(self, 
                    intake_task: Optional[OutpatientFirstIntake] = None,
-                   scheduling_task: Optional[OutpatientFirstScheduling] = None) -> Tuple[list[FirstVisitOutpatientTask], list[str]]:
+                   scheduling_task: Optional[OutpatientFirstScheduling] = None) -> Tuple[list[OutpatientTask], list[str]]:
         """
         Initialize the task queue for first-visit outpatient workflow.
 
