@@ -61,7 +61,7 @@ def simulate(config, args, single_file=None):
             patient_vllm_endpoint=config.vllm_url if use_vllm else None,
             admin_staff_vllm_endpoint=config.vllm_url if use_vllm else None
         )
-        task[_task.name] = _task 
+        task[_task.name] = _task
     if 'first_visit_scheduling' in args.type:
         use_vllm = False if any(m in config.task_model.lower() for m in ['gpt', 'gemini']) else True
         _task = OutpatientFirstScheduling(

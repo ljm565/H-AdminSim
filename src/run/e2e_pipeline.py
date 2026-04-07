@@ -8,6 +8,7 @@ sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
 from h_adminsim import SupervisorAgent
 from h_adminsim.task.first_visit_task import *
+from h_adminsim.task.follow_up_visit_task import *
 from h_adminsim.task.fhir_manager import FHIRManager
 from h_adminsim.pipeline import DataGenerator, Simulator
 from h_adminsim.utils import log
@@ -46,7 +47,9 @@ def main(args):
 
 
     # Generate data for the simulation
-    data_generator = DataGenerator() if not d_config else DataGenerator(config=d_config)
+    data_synthesis_task = ['first_visit', 'follow_up_visit']
+    data_generator = DataGenerator(task=data_synthesis_task) if not d_config \
+        else DataGenerator(task=data_synthesis_task, config=d_config)
     output = data_generator.build(convert_to_fhir=True)
 
     if args.upload_data_to_fhir:
@@ -64,8 +67,8 @@ def main(args):
     os.makedirs(output_dir, exist_ok=True)
     yaml_save(os.path.join(output_dir, 'args.yaml'), s_config)
     
-    intake_task, scheduling_task = None, None
-    if 'intake' in args.type:
+    task = dict()
+    if 'first_visit_intake' in args.type:
         use_vllm = False if any(m in s_config.supervisor_model.lower() for m in ['gpt', 'gemini']) else True
         supervisor_agent = SupervisorAgent(
             target_task='first_outpatient_intake',
@@ -74,7 +77,7 @@ def main(args):
             vllm_endpoint = s_config.vllm_url if use_vllm else None
         )
         use_vllm = False if any(m in s_config.task_model.lower() for m in ['gpt', 'gemini']) else True
-        intake_task = OutpatientFirstIntake(
+        _task = OutpatientFirstIntake(
             patient_model=s_config.task_model,
             admin_staff_model=s_config.task_model,
             supervisor_agent=supervisor_agent if s_config.outpatient_intake.use_supervisor else None,
@@ -82,10 +85,10 @@ def main(args):
             patient_vllm_endpoint=s_config.vllm_url if use_vllm else None,
             admin_staff_vllm_endpoint=s_config.vllm_url if use_vllm else None
         )
-
-    if 'schedule' in args.type:
+        task[_task.name] = _task
+    if 'first_visit_scheduling' in args.type:
         use_vllm = False if any(m in s_config.task_model.lower() for m in ['gpt', 'gemini']) else True
-        scheduling_task = OutpatientFirstScheduling(
+        _task = OutpatientFirstScheduling(
             patient_model=s_config.task_model,
             admin_staff_model=s_config.task_model,
             schedule_cancellation_prob=s_config.schedule_cancellation_prob,
@@ -95,10 +98,22 @@ def main(args):
             patient_vllm_endpoint=s_config.vllm_url if use_vllm else None,
             admin_staff_vllm_endpoint=s_config.vllm_url if use_vllm else None
         )
-    
+        task[_task.name] = _task
+    if 'follow_up_visit_scheduling' in args.type:
+        use_vllm = False if any(m in s_config.task_model.lower() for m in ['gpt', 'gemini']) else True
+        _task = OutpatientFollowUpScheduling(
+            patient_model=s_config.task_model,
+            admin_staff_model=s_config.task_model,
+            fhir_integration=s_config.integration_with_fhir,
+            scheduling_strategy=s_config.schedule_task.scheduling_strategy,
+            patient_vllm_endpoint=s_config.vllm_url if use_vllm else None,
+            admin_staff_vllm_endpoint=s_config.vllm_url if use_vllm else None
+        )
+        task[_task.name] = _task
+
+    # Run simulations
     simulator = Simulator(
-        intake_task=intake_task,
-        scheduling_task=scheduling_task,
+        task=task,
         simulation_start_day_before=s_config.booking_days_before_simulation,
         fhir_integration=s_config.integration_with_fhir,
         fhir_url=s_config.fhir_url,
@@ -120,7 +135,7 @@ if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--data_config', type=str, required=False, default=None, help='Path to the data synthesis configuration file')
     parser.add_argument('--simulation_config', type=str, required=True, help='Path to the simulation configuration file')
-    parser.add_argument('--type', type=str, required=True, nargs='+', choices=['intake', 'schedule'], help='Task types you want to execute (you can specify multiple)')
+    parser.add_argument('--type', type=str, required=True, nargs='+', choices=['first_visit_intake', 'first_visit_scheduling', 'follow_up_visit_scheduling'], help='Task types you want to execute (you can specify multiple)')
     parser.add_argument('--resume', action='store_true', required=False, help='Continue the stopped processing')
     parser.add_argument('--verbose', action='store_true', required=False, help='Whether logging the each result or not')
     parser.add_argument('--upload_data_to_fhir', action='store_true', required=False, help='Whether to upload synthetic data to FHIR')
