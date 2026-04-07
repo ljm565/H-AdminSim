@@ -155,7 +155,8 @@ class DataGenerator:
                 else:
                     # Standalone mode -> generate hospital infra + follow-up patients from scratch
                     followup_synthesizer = FollowUpDataSynthesizer(self.config)
-                    self.data_save_dir = followup_synthesizer.save_dir 
+                    self.save_dir = followup_synthesizer.save_dir 
+                    log(f'Data saving directory: {colorstr(self.save_dir)}')
 
                 data = followup_synthesizer.synthesize(sanity_check=sanity_check)
                 log(f"Follow-up data synthesis completed successfully", color=True)

@@ -8,6 +8,7 @@ from typing import Tuple, Optional
 from collections import defaultdict
 from decimal import Decimal, getcontext
 
+from .data_synthesizer import DataSynthesizer
 from h_adminsim.task.schedule_assign import ScheduleAssigner
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.common_utils import *
@@ -21,7 +22,6 @@ from h_adminsim.utils.random_utils import (
     generate_random_id_number,
     generate_random_code_with_prob,    
 )
-from h_adminsim.tools.synthdat.data_synthesizer import DataSynthesizer
 
 
 
@@ -31,7 +31,6 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         getcontext().prec = 10
 
         if source_data_dir:
-            self.data_save_dir = source_data_dir
             self.source_data_files = sorted(get_files(source_data_dir, ext='json'))
             if not self.source_data_files:
                 raise FileNotFoundError(

@@ -1,6 +1,5 @@
 from typing import Optional
-from patientsim.patient import PatientAgent
-from patientsim.checker import CheckerAgent
+from patientsim import PatientAgent, CheckerAgent
 from patientsim.utils.common_utils import detect_op_termination
 
 from h_adminsim import IntakeAdminStaffAgent
