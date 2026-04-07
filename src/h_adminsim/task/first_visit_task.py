@@ -14,9 +14,11 @@ from h_adminsim import (
     IntakeAdminStaffAgent,
     SchedulingAdminStaffAgent,
 )
+from h_adminsim.environment import (
+    OPFVIntakeSimulation,
+    OPFVSchedulingSimulation
+)
 from h_adminsim.environment.hospital import HospitalEnvironment
-from h_adminsim.environment import OPIntakeSimulation as OPFVIntakeSimulation
-from h_adminsim.environment import OPScehdulingSimulation as OPFVScheduleSimulation
 from h_adminsim.tools.sanity_checker import SanityChecker
 from h_adminsim.tools import DataConverter, SchedulingRule
 from h_adminsim.registry import STATUS_CODES, PREFERENCE_PHRASE_PATIENT
@@ -437,7 +439,7 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
     def _init_simulation(self,
                          system_prompt_path: str,
                          environment: HospitalEnvironment,
-                         additional_patient_conditions: dict = {}) -> OPFVScheduleSimulation:
+                         additional_patient_conditions: dict = {}) -> OPFVSchedulingSimulation:
         """
         Initialize an outpatient first-visit intake and scheduling simulation.
 
@@ -459,7 +461,7 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
             additional_patient_conditions=additional_patient_conditions,
             temperature=0 if not 'gpt-5' in self.patient_model.lower() else 1
         )
-        sim_environment = OPFVScheduleSimulation(
+        sim_environment = OPFVSchedulingSimulation(
             patient_agent=patient_agent, 
             admin_staff_agent=self.admin_staff_agent, 
             metadata=self._metadata,
@@ -663,14 +665,14 @@ class OutpatientFirstScheduling(FirstVisitOutpatientTask):
             
 
     def automatic_waiting_list_update(self, 
-                                      sim_environment: OPFVScheduleSimulation,
+                                      sim_environment: OPFVSchedulingSimulation,
                                       environment: HospitalEnvironment,
                                       doctor_information: Optional[dict] = None) -> Tuple[dict, dict]:
         """
         Automatically update the waiting list by attempting to reschedule patients.
 
         Args:
-            sim_environment (OPFVScheduleSimulation): The simulation environment used for scheduling.
+            sim_environment (OPFVSchedulingSimulation): The simulation environment used for scheduling.
             environment (HospitalEnvironment): Hospital environment.
             doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s) involved, 
                                                            including availability and other relevant details. Defaults to None.

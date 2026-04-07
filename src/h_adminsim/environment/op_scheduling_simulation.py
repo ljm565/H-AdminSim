@@ -22,7 +22,7 @@ from h_adminsim.utils.common_utils import *
 
 
 
-class OPScehdulingSimulation:
+class OPFVSchedulingSimulation:
     def __init__(self,
                  patient_agent: PatientAgent,
                  admin_staff_agent: SchedulingAdminStaffAgent,
@@ -416,7 +416,7 @@ class OPScehdulingSimulation:
             # Post-processing
             ## Scheduling result
             if prediction['type'] == 'tool':
-                schedule = OPScehdulingSimulation.postprocessing(
+                schedule = OPFVSchedulingSimulation.postprocessing(
                     strategy='tool_calling',
                     data=prediction['result'],
                     filtered_doctor_information=filtered_doctor_information,
@@ -462,7 +462,7 @@ class OPScehdulingSimulation:
                 verbose=False,
                 **kwargs,
             )
-            schedule = OPScehdulingSimulation.postprocessing(
+            schedule = OPFVSchedulingSimulation.postprocessing(
                 strategy='reasoning',
                 data=schedule,
             )

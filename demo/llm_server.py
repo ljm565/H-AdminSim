@@ -17,7 +17,7 @@ from fastapi import FastAPI, HTTPException
 import patientsim.utils as pu
 
 from h_adminsim.registry.errors import ToolCallingError
-from h_adminsim.environment import OPScehdulingSimulation
+from h_adminsim.environment import OPFVSchedulingSimulation
 from h_adminsim.task.first_visit_task import OutpatientFirstIntake
 from h_adminsim.environment.hospital import HospitalEnvironment
 from h_adminsim import IntakeAdminStaffAgent, SchedulingAdminStaffAgent
@@ -116,7 +116,7 @@ def intake_dept_postprocessing(response: str):
 def scheduling_post_processing(response: dict, filtered_doctor_information: dict):
     ## Scheduling result
     if response['type'] == 'tool':
-        schedule = OPScehdulingSimulation.postprocessing(
+        schedule = OPFVSchedulingSimulation.postprocessing(
             strategy='tool_calling',
             data=response['result'],
             filtered_doctor_information=filtered_doctor_information,
@@ -302,7 +302,7 @@ async def generate_schedule_response(request: PromptRequest):
             verbose=False,
             **app_state['reasoning_kwargs'],
         )
-        schedule = OPScehdulingSimulation.postprocessing(
+        schedule = OPFVSchedulingSimulation.postprocessing(
             strategy='reasoning',
             data=schedule,
         )

@@ -11,7 +11,7 @@ from h_adminsim.utils.common_utils import preprocess_utterance
 
 
 
-class OPIntakeSimulation:
+class OPFVIntakeSimulation:
     def __init__(self, 
                  patient_agent: PatientAgent,
                  admin_staff_agent: IntakeAdminStaffAgent,
