@@ -154,7 +154,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                 _test['device_n'] = device_n
                 _test['devices'] = dict()
                 for i in range(device_n):
-                    device_name = f"{_test['code']}_{i}"
+                    device_name = f"{_test['code']}-{i}"
                     _test['devices'][device_name] = dict()
                     test_schedule = {
                         date: scheduler(

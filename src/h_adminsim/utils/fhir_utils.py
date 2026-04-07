@@ -102,17 +102,33 @@ def get_appointment_id(individual_id: str, date: str, start_time_segment_index: 
 
 
 
-def get_device_id(test_code: str) -> str:
+def get_device_id(hospital: str, device_id: str) -> str:
     """
     Make a Device ID from a test code.
 
     Args:
-        test_code (str): A test code (e.g., 'IMGAS-T01').
+        hospital (str): A hospital name.
+        device_id (str): A device ID (e.g., 'IMGAS-T01-0').
 
     Returns:
         str: A sanitized Device ID.
     """
-    return sanitize_id(test_code)
+    return sanitize_id(f'{hospital}-{device_id.lower()}')
+
+
+
+def get_healthcareservice_id(hospital: str, test_code: str) -> str:
+    """
+    Make a HealthcareService ID from a test code.
+
+    Args:
+        hospital (str): A hospital name.
+        test_code (str): A test code (e.g., 'IMGAS-T01').
+
+    Returns:
+        str: A sanitized HealthcareService ID.
+    """
+    return sanitize_id(f'{hospital}-{test_code.lower()}')
 
 
 

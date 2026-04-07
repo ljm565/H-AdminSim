@@ -243,49 +243,145 @@ class DataConverter:
         if output_dir:
             os.makedirs(os.path.join(output_dir, 'device'), exist_ok=True)
             save_dir = os.path.join(output_dir, 'device')
-
+        
+        hospital_name = data.get('metadata')['hospital_name']
         test_data = data['test']
         devices = list()
 
         for tests in test_data.values():
             for info in tests:
-                device_id = get_device_id(info['code'])
-                device_obj = {
-                    'resourceType': 'Device',
-                    'id': device_id,
-                    'status': 'active',
-                    'displayName': info['name'],
+                for device_name in info['devices'].keys():
+                    device_id = get_device_id(hospital_name, device_name)
+                    device_obj = {
+                        'resourceType': 'Device',
+                        'id': device_id,
+                        'status': 'active',
+                        'displayName': info['name'],
+                        'type': [
+                            {
+                                'coding': [{
+                                    'code': info['code'], 
+                                    'display': info['name']
+                                }],
+                                'text': info['name']
+                            }
+                        ],
+                        'property': [
+                            {
+                                'type': {'text': 'duration'},
+                                'valueQuantity': {'value': info['duration_hour'], 'unit': 'h'}
+                            },
+                            {
+                                'type': {'text': 'priority'},
+                                'valueString': PRIORITY_MAP['priority_to_code'][info['priority']]
+                            }
+                        ]
+                    }
+                    devices.append(device_obj)
+
+                    if save_dir:
+                        save_path = os.path.join(save_dir, f'{device_id}.fhir.json')
+                        if sanity_check:
+                            assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
+                        json_save_fast(save_path, device_obj)
+
+        return devices
+
+
+    @staticmethod
+    def data_to_healthcareservice(data: dict, output_dir: Optional[str] = None, sanity_check: bool = False) -> list[dict]:
+        """
+        Convert hospital test data into `HealthcareService` FHIR resources (one per test type).
+
+        Each HealthcareService represents a logical test type and references the physical Device
+        resources that can perform it (one-to-many via extensions).
+
+        Args:
+            data (dict): Synthetic hospital data containing test information.
+            output_dir (Optional[str], optional): Directory path to save the converted HealthcareService
+                                                  resources as `.fhir.json` files. If None, the resources
+                                                  are not saved to disk. Defaults to None.
+            sanity_check (bool, optional): If True, asserts that no duplicate files exist when saving.
+                                           Defaults to False.
+
+        Returns:
+            list[dict]: A list of converted FHIR HealthcareService resource objects.
+        """
+        save_dir = None
+        if output_dir:
+            os.makedirs(os.path.join(output_dir, 'healthcareservice'), exist_ok=True)
+            save_dir = os.path.join(output_dir, 'healthcareservice')
+
+        hospital_name = data.get('metadata')['hospital_name']
+        test_data = data['test']
+        code_to_test_name = {test['code']: test['name'] for _, tests in data.get('test', {}).items() for test in tests}
+        healthcareservices = list()
+
+        for tests in test_data.values():
+            for info in tests:
+                healthcareservice_id = get_healthcareservice_id(hospital_name, info['code'])
+                eligibility = [
+                    {
+                        "code": {
+                            "coding": [{"code": dep_code, "display": 'required'}],
+                            "text": code_to_test_name[dep_code]
+                        },
+                        "comment": f"{dep_code} required"
+                    } for dep_code in info['depends_on'] if dep_code in code_to_test_name
+                ] + [
+                    {
+                        "code": {
+                            "coding": [{"code": avd_code, "display": 'avoid'}],
+                            "text": code_to_test_name[avd_code]
+                        },
+                        "comment": f"Avoid {avd_code} in the same day"
+                    } for avd_code in info['avoid_same_day'] if avd_code in code_to_test_name
+                ]
+                healthcareservice_obj = {
+                    'resourceType': 'HealthcareService',
+                    'id': healthcareservice_id,
+                    'active': True,
                     'type': [
                         {
-                            'coding': [{
-                                'code': info['code'], 
-                                'display': info['name']
-                            }],
+                            'coding': [{'code': info['code'], 'display': info['name']}],
                             'text': info['name']
                         }
                     ],
-                    'extension': [
+                    'name': info['name'],
+                    'comment': info['description'],
+                    'characteristic': [
                         {
-                            'url': 'https://github.com/ljm565/H-AdminSim/blob/master/src/h_adminsim/assets/departments/department.json',
-                            'valueCode': PRIORITY_MAP['priority_to_code'][info['priority']],
+                            'coding': [{'code': 'duration_hour', 'display': str(info['duration_hour'])}],
+                            'text': 'duration_hour'
+                        },
+                        {
+                            'coding': [{'code': 'priority', 'display': PRIORITY_MAP['priority_to_code'][info['priority']]}],
+                            'text': 'priority'
+                        },
+                        {
+                            'coding': [{'code': 'result_hours', 'display': str(info['result_hours'])}],
+                            'text': 'result_hours'
                         }
                     ],
-                    'property': [
+                    'eligibility': eligibility,
+                    'serviceProvisionCode': [
                         {
-                            'type': {'text': 'duration'},
-                            'valueQuantity': {'value': info['duration_hour'], 'unit': 'h'}
+                            'coding': [{'code': get_device_id(hospital_name, device_name), 'display': device_name}],
+                            'text': device_name
                         }
-                    ]
+                        for device_name in info['devices'].keys()
+                    ],
+                    'appointmentRequired': True,
                 }
-                devices.append(device_obj)
+                healthcareservices.append(healthcareservice_obj)
 
                 if save_dir:
-                    save_path = os.path.join(save_dir, f'{device_id}.fhir.json')
+                    save_path = os.path.join(save_dir, f'{healthcareservice_id}.fhir.json')
                     if sanity_check:
                         assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
-                    json_save_fast(save_path, device_obj)
+                    json_save_fast(save_path, healthcareservice_obj)
 
-        return devices
+        return healthcareservices
 
 
     @staticmethod
@@ -349,25 +445,26 @@ class DataConverter:
         # Test information
         for tests in test_data.values():
             for info in tests:
-                device_id = get_device_id(info['code'])
-                schedule_id = get_schedule_id(device_id)
-                schedule_obj = {
-                    'resourceType': 'Schedule',
-                    'id': schedule_id,
-                    'active': True,
-                    'actor': [{'reference': f'Device/{device_id}'}],
-                    'planningHorizon': {'start': start, 'end': end}
-                }
-                schedules.append(schedule_obj)
+                for device_name in info['devices'].keys():
+                    device_id = get_device_id(hospital_name, device_name)
+                    schedule_id = get_schedule_id(device_id)
+                    schedule_obj = {
+                        'resourceType': 'Schedule',
+                        'id': schedule_id,
+                        'active': True,
+                        'actor': [{'reference': f'Device/{device_id}'}],
+                        'planningHorizon': {'start': start, 'end': end}
+                    }
+                    schedules.append(schedule_obj)
 
-                if save_dir:
-                    save_path = os.path.join(save_dir, f'{schedule_id}.fhir.json')
-                    if sanity_check:
-                        assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
-                    json_save_fast(
-                        save_path,
-                        schedule_obj
-                    )
+                    if save_dir:
+                        save_path = os.path.join(save_dir, f'{schedule_id}.fhir.json')
+                        if sanity_check:
+                            assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
+                        json_save_fast(
+                            save_path,
+                            schedule_obj
+                        )
         
         return schedules
 
@@ -471,61 +568,62 @@ class DataConverter:
         # Test fixed schedule
         for tests in test_data.values():
             for info in tests:
-                device_id = get_device_id(info['code'])
-                for date, schedules in info['schedule'].items():
-                    # Filtering fixed schedule
-                    fixed_schedule = []
-                    for schedule in schedules:
-                        fixed_schedule += convert_time_to_segment(start_hour, end_hour, interval_hour, schedule)
+                for device_name, device_info in info['devices'].items():
+                    device_id = get_device_id(hospital_name, device_name)
+                    for date, schedules in device_info['schedule'].items():
+                        # Filtering fixed schedule
+                        fixed_schedule = []
+                        for schedule in schedules:
+                            fixed_schedule += convert_time_to_segment(start_hour, end_hour, interval_hour, schedule)
 
-                    # Appointment available time segments
-                    free_schedule = sorted(list(set(entire_segments) - set(fixed_schedule)))
+                        # Appointment available time segments
+                        free_schedule = sorted(list(set(entire_segments) - set(fixed_schedule)))
 
-                    # Add slot as a `busy` status
-                    for seg in fixed_schedule:
-                        st, tr = convert_segment_to_time(start_hour, end_hour, interval_hour, [seg])
-                        slot_id = get_slot_id(device_id, date, seg)
-                        slot_obj = {
-                            'resourceType': 'Slot',
-                            'id': slot_id,
-                            'schedule': {'reference': f'Schedule/{get_schedule_id(device_id)}'},
-                            'status': 'busy',
-                            'start': get_iso_time(st, date, utc_offset),
-                            'end': get_iso_time(tr, date, utc_offset),
-                        }
-                        slots.append(slot_obj)
+                        # Add slot as a `busy` status
+                        for seg in fixed_schedule:
+                            st, tr = convert_segment_to_time(start_hour, end_hour, interval_hour, [seg])
+                            slot_id = get_slot_id(device_id, date, seg)
+                            slot_obj = {
+                                'resourceType': 'Slot',
+                                'id': slot_id,
+                                'schedule': {'reference': f'Schedule/{get_schedule_id(device_id)}'},
+                                'status': 'busy',
+                                'start': get_iso_time(st, date, utc_offset),
+                                'end': get_iso_time(tr, date, utc_offset),
+                            }
+                            slots.append(slot_obj)
 
-                        if save_dir:
-                            save_path = os.path.join(save_dir, f'{slot_id}.fhir.json')
-                            if sanity_check:
-                                assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
-                            json_save_fast(
-                                save_path,
-                                slot_obj
-                            )
-                    
-                    # Add slot as a `free` status
-                    for seg in free_schedule:
-                        slot_id = get_slot_id(device_id, date, seg)
-                        st, tr = convert_segment_to_time(start_hour, end_hour, interval_hour, [seg])
-                        slot_obj = {
-                            'resourceType': 'Slot',
-                            'id': slot_id,
-                            'schedule': {'reference': f'Schedule/{get_schedule_id(device_id)}'},
-                            'status': 'free',
-                            'start': get_iso_time(st, date, utc_offset),
-                            'end': get_iso_time(tr, date, utc_offset),
-                        }
-                        slots.append(slot_obj)
-                    
-                        if save_dir:
-                            save_path = os.path.join(save_dir, f'{slot_id}.fhir.json')
-                            if sanity_check:
-                                assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
-                            json_save_fast(
-                                save_path,
-                                slot_obj
-                            )
+                            if save_dir:
+                                save_path = os.path.join(save_dir, f'{slot_id}.fhir.json')
+                                if sanity_check:
+                                    assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
+                                json_save_fast(
+                                    save_path,
+                                    slot_obj
+                                )
+                        
+                        # Add slot as a `free` status
+                        for seg in free_schedule:
+                            slot_id = get_slot_id(device_id, date, seg)
+                            st, tr = convert_segment_to_time(start_hour, end_hour, interval_hour, [seg])
+                            slot_obj = {
+                                'resourceType': 'Slot',
+                                'id': slot_id,
+                                'schedule': {'reference': f'Schedule/{get_schedule_id(device_id)}'},
+                                'status': 'free',
+                                'start': get_iso_time(st, date, utc_offset),
+                                'end': get_iso_time(tr, date, utc_offset),
+                            }
+                            slots.append(slot_obj)
+                        
+                            if save_dir:
+                                save_path = os.path.join(save_dir, f'{slot_id}.fhir.json')
+                                if sanity_check:
+                                    assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
+                                json_save_fast(
+                                    save_path,
+                                    slot_obj
+                                )
 
         return slots
 
@@ -553,7 +651,6 @@ class DataConverter:
 
         hospital_name = data.get('metadata')['hospital_name']
         department_data = data.get('department')
-        test_name_to_code = {test['name']: test['code'] for _, tests in data.get('test', {}).items() for test in tests}
         country_code = data.get('metadata').get('country_code', 'KR')
         time_zone = data.get('metadata').get('timezone', None)
         utc_offset = get_utc_offset(country_code, time_zone)
@@ -612,7 +709,7 @@ class DataConverter:
                 required_tests = patient_values.get('required_tests', [])
                 for test in required_tests:
                     date = test['date']
-                    device_id = get_device_id(test_name_to_code[test['test_name']])
+                    device_id = get_device_id(hospital_name, test['device_name'])
                     schedule_time_range = test['schedule']
                     schedule_segments = convert_time_to_segment(start_hour, end_hour, interval_hour, schedule_time_range)
                     appointment_id = get_appointment_id(device_id, date, schedule_segments[0], schedule_segments[-1])
@@ -733,6 +830,7 @@ class DataConverter:
             practitioners = DataConverter.data_to_practitioner(data, output_dir, sanity_check)
             practitionerroles = DataConverter.data_to_practitionerrole(data, output_dir, sanity_check)
             devices = DataConverter.data_to_device(data, output_dir, sanity_check)
+            healthcareservices = DataConverter.data_to_healthcareservice(data, output_dir, sanity_check)
             schedules = DataConverter.data_to_schedule(data, output_dir, sanity_check)
             slots = DataConverter.data_to_slot(data, output_dir, sanity_check)
             patients = DataConverter.data_to_patient(data, output_dir, sanity_check)
@@ -742,6 +840,7 @@ class DataConverter:
                 practitioners=practitioners,
                 practitionerroles=practitionerroles,
                 devices=devices,
+                healthcareservices=healthcareservices,
                 schedules=schedules,
                 slots=slots,
                 patients=patients,
