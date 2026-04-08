@@ -74,7 +74,7 @@ class OutpatientFirstIntake(OutpatientTask):
         """
         if not self.use_supervisor:
             if not admin_staff_last_task_user_prompt_path:
-                prompt_file_name = 'intake_staff_task_user.txt'
+                prompt_file_name = 'opfv_intake_staff_task_user.txt'
                 file_path = resources.files("h_adminsim.assets.prompts").joinpath(prompt_file_name)
                 self.last_task_user_prompt = file_path.read_text()
             else:

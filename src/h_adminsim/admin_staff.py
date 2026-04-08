@@ -119,7 +119,7 @@ class IntakeAdminStaffAgent:
         """
         # Initialilze with the default system prompt
         if not system_prompt_path:
-            prompt_file_name = "intake_staff_system.txt"
+            prompt_file_name = "opfv_intake_staff_system.txt"
             file_path = resources.files("h_adminsim.assets.prompts").joinpath(prompt_file_name)
             system_prompt = file_path.read_text()
         

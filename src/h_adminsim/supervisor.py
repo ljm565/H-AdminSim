@@ -112,7 +112,7 @@ class SupervisorAgent:
         # Initialilze with the default system prompt
         if not system_prompt_path:
             if self.target_task == "first_visit_intake":
-                prompt_file_name = "intake_supervisor_system.txt"
+                prompt_file_name = "opfv_intake_supervisor_system.txt"
             file_path = resources.files("h_adminsim.assets.prompts").joinpath(prompt_file_name)
             system_prompt = file_path.read_text()
         
@@ -126,7 +126,7 @@ class SupervisorAgent:
         # Initialilze with the default user prompt
         if not user_prompt_path:
             if self.target_task == "first_visit_intake":
-                prompt_file_name = "intake_supervisor_user.txt"
+                prompt_file_name = "opfv_intake_supervisor_user.txt"
             file_path = resources.files("h_adminsim.assets.prompts").joinpath(prompt_file_name)
             user_prompt_template = file_path.read_text()
         

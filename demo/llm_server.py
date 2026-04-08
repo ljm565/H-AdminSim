@@ -152,7 +152,7 @@ async def lifespan(app: FastAPI):
     log('Backend starts up!', color=True)
     bridge_patientsim()
     hospital_file_path = resources.files("h_adminsim.assets.demo").joinpath('hospital.json')
-    intake_last_task_prompt_file_path = resources.files("h_adminsim.assets.prompts").joinpath('intake_staff_task_user.txt')
+    intake_last_task_prompt_file_path = resources.files("h_adminsim.assets.prompts").joinpath('opfv_intake_staff_task_user.txt')
     hospital_info = json_load(hospital_file_path)
     intake_last_task_user_prompt = intake_last_task_prompt_file_path.read_text()
     environment = HospitalEnvironment(hospital_info)

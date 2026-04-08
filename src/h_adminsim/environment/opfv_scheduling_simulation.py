@@ -72,7 +72,7 @@ class OPFVSchedulingSimulation:
         """
         # Initialilze with the default system prompt
         if not schedule_rejection_prompt_path:
-            prompt_file_name = "schedule_patient_rejected_system.txt"
+            prompt_file_name = "opfv_schedule_patient_rejected_system.txt"
             file_path = resources.files("h_adminsim.assets.prompts").joinpath(prompt_file_name)
             rejection_system_prompt_template = file_path.read_text()
         
