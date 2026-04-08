@@ -22,7 +22,7 @@ from h_adminsim.environment import (
 from h_adminsim.environment.hospital import HospitalEnvironment
 from h_adminsim.tools.sanity_checker import SanityChecker
 from h_adminsim.tools import DataConverter, SchedulingRule
-from h_adminsim.registry import STATUS_CODES, PREFERENCE_PHRASE_PATIENT
+from h_adminsim.registry import STATUS_CODES, OPFV_PREFERENCE_PHRASE_PATIENT
 from h_adminsim.utils import colorstr, log
 from h_adminsim.utils.fhir_utils import *
 from h_adminsim.utils.common_utils import *
@@ -755,8 +755,8 @@ class OutpatientFirstScheduling(OutpatientTask):
             'patient_intention': None,
         }
         preference = gt_data[0].get('preference')
-        preference_desc = PREFERENCE_PHRASE_PATIENT[preference] if preference != 'date' \
-                    else PREFERENCE_PHRASE_PATIENT[preference].format(date=gt_data[0].get('valid_from'))
+        preference_desc = OPFV_PREFERENCE_PHRASE_PATIENT[preference] if preference != 'date' \
+                    else OPFV_PREFERENCE_PHRASE_PATIENT[preference].format(date=gt_data[0].get('valid_from'))
         sim_environment = self._init_simulation(
             system_prompt_path=self.schedule_patient_system_prompt_path,
             environment=environment,

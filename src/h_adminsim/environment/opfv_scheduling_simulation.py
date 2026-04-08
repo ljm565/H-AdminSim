@@ -12,7 +12,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 
 from h_adminsim import SchedulingAdminStaffAgent
 from h_adminsim.registry.errors import ToolCallingError, ScheduleNotFoundError, SchedulingError
-from h_adminsim.registry import PREFERENCE_PHRASE_PATIENT, PREFERENCE_PHRASE_STAFF, STATUS_CODES
+from h_adminsim.registry import OPFV_PREFERENCE_PHRASE_PATIENT, OPFV_PREFERENCE_PHRASE_STAFF, STATUS_CODES
 from h_adminsim.environment.hospital import HospitalEnvironment
 from h_adminsim.utils import log, colorstr
 from h_adminsim.tools.callback import TokenUsageCallback
@@ -189,10 +189,10 @@ class OPFVSchedulingSimulation:
         """
         # Build new system prompts for rejection scenario
         preference = patient_condition.get('preference')
-        preference_desc = PREFERENCE_PHRASE_PATIENT[preference] if preference != 'date' \
-                else PREFERENCE_PHRASE_PATIENT[preference].format(date=patient_condition.get('valid_from'))
-        rejected_preference_desc = PREFERENCE_PHRASE_STAFF[rejected_preference] if rejected_preference != 'date' \
-                else PREFERENCE_PHRASE_STAFF[rejected_preference].format(date='a specific date')    
+        preference_desc = OPFV_PREFERENCE_PHRASE_PATIENT[preference] if preference != 'date' \
+                else OPFV_PREFERENCE_PHRASE_PATIENT[preference].format(date=patient_condition.get('valid_from'))
+        rejected_preference_desc = OPFV_PREFERENCE_PHRASE_STAFF[rejected_preference] if rejected_preference != 'date' \
+                else OPFV_PREFERENCE_PHRASE_STAFF[rejected_preference].format(date='a specific date')    
         system_prompt = self.rejection_system_prompt_template.format(
             preference=preference,
             preference_desc=preference_desc,
