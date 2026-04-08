@@ -1,5 +1,6 @@
 import os
 from tqdm import tqdm
+from copy import deepcopy
 from typing import Optional
 from decimal import getcontext
 from importlib import resources
@@ -42,7 +43,13 @@ class AgentDataBuilder:
         if symptom_file_path == None:
             symptom_file_path = str(resources.files("h_adminsim.assets.departments").joinpath("symptom.json"))
 
-        agent_data = {'metadata': data['metadata'], 'department': data['department'], 'doctor': data['doctor'], 'agent_data': []}
+        agent_data = {
+            'metadata': data['metadata'], 
+            'department': data['department'], 
+            'doctor': data['doctor'], 
+            'test': data['test'],
+            'agent_data': []
+        }
         
         for patient, patient_values in data['patient'].items():
             visit_type = patient_values['type']
@@ -55,7 +62,19 @@ class AgentDataBuilder:
                 symptom_file_path=symptom_file_path, 
                 ensure_unique_department='doctor' in patient_values['preference']
             )
-            gt_department = disease['department'] if isinstance(disease, dict) else [department]
+            
+            # Branch depends on the visit type
+            if isinstance(disease, dict) and visit_type == 'first_visit':
+                gt_department = disease['department'] if isinstance(disease, dict) else [department]
+                required_tests = None
+            else:
+                gt_department = [department]    # For follow up visit, the patient must have only one department
+                required_tests = deepcopy(patient_values['required_tests'])
+                for _test in required_tests:
+                    del _test['schedule']
+                    del _test['date']
+                    del _test['device_name']
+            
             gt = {
                 'visit_type': visit_type,
                 'patient': patient,
@@ -69,6 +88,7 @@ class AgentDataBuilder:
                 'valid_from': date if 'date' in preference else 'N/A',
                 'preference': preference,
                 'symptom_level': symptom_level,
+                'required_tests': required_tests,
             }
             agent = {
                 'visit_type': visit_type,
@@ -84,6 +104,7 @@ class AgentDataBuilder:
                     'valid_from': date if 'date' in preference else 'N/A',
                     'symptom_level': symptom_level,
                     'symptom': disease,
+                    'required_tests': required_tests,
                 }
             }
             agent_data['agent_data'].append((gt, agent))
