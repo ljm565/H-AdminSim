@@ -345,7 +345,7 @@ class OutpatientFirstScheduling(OutpatientTask):
         
         # Initialize scheduling methods and a staff agent
         self.admin_staff_agent = SchedulingAdminStaffAgent(
-            target_task='first_outpatient_scheduling',
+            target_task='first_visit_scheduling',
             model=self.admin_staff_model,
             use_vllm=self.admin_staff_use_vllm,
             vllm_endpoint=self.admin_staff_vllm_endpoint,

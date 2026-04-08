@@ -47,7 +47,7 @@ class SupervisorAgent:
         Initialize the environment with default settings.
         """
         assert self.target_task in ['first_visit_intake'], \
-            log(colorstr("red", f"Unsupported target task: {self.target_task}. Supported tasks are 'first_outpatient_intake' and 'first_outpatient_scheduling'."))
+            log(colorstr("red", f"Unsupported target task: {self.target_task}. Supported is `first_visit_intake`."))
 
 
     def _init_model(self,

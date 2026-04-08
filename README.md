@@ -269,7 +269,7 @@ intake_task = OutpatientFirstIntake(
 # 1.2. Role separation
 # Staff: dialogue handling, Supervisor: data collection and structuring
 supervisor_agent = SupervisorAgent(
-    target_task='first_outpatient_scheduling',
+    target_task='first_visit_intake',
     model='gemini-2.5-flash',
     api_key=${YOUR_API_KEY},  # You may set the API key here instead of using a .env file
 )
@@ -283,7 +283,7 @@ intake_task = OutpatientFirstIntake(
 
 # 1.3. Advanced usage: vLLM
 supervisor_agent = SupervisorAgent(
-    target_task='first_outpatient_scheduling',
+    target_task='first_visit_intake',
     model='meta-llama/Llama-3.3-70B-Instruct',
     use_vllm=True,              # Use a vLLM-hosted model as the supervisor
     vllm_endpoint='http://0.0.0.0:8000',  # vLLM server endpoint

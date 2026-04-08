@@ -71,7 +71,7 @@ def main(args):
     if 'first_visit_intake' in args.type:
         use_vllm = False if any(m in s_config.supervisor_model.lower() for m in ['gpt', 'gemini']) else True
         supervisor_agent = SupervisorAgent(
-            target_task='first_outpatient_intake',
+            target_task='first_visit_intake',
             model=s_config.supervisor_model,
             use_vllm=use_vllm,
             vllm_endpoint = s_config.vllm_url if use_vllm else None

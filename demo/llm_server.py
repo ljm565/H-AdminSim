@@ -90,7 +90,7 @@ def create_intake_client(session_id: str) -> IntakeAdminStaffAgent:
 
 def create_scheduling_client(session_id: str) -> SchedulingAdminStaffAgent:
     staff_agent = SchedulingAdminStaffAgent(
-        target_task='first_outpatient_scheduling',
+        target_task='first_visit_scheduling',
         model=app_state['model'],
         temperature=0 if 'gpt-5' not in app_state['model'].lower() else 1,
     )
