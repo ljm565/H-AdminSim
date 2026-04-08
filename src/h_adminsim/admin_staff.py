@@ -306,7 +306,7 @@ class SchedulingAdminStaffAgent:
         """
         # Initialilze with the default system prompt
         if not system_prompt_path:
-            prompt_file_name = 'schedule_staff_system.txt'
+            prompt_file_name = 'opfv_schedule_staff_system.txt'
             file_path = resources.files("h_adminsim.assets.prompts").joinpath(prompt_file_name)
             system_prompt = file_path.read_text()
         
@@ -319,7 +319,7 @@ class SchedulingAdminStaffAgent:
 
         # Initialilze with the default user prompt for scheduling task
         if not scheduling_user_prompt_path:
-            prompt_file_name = 'schedule_staff_reasoning.txt'
+            prompt_file_name = 'opfv_schedule_staff_reasoning.txt'
             file_path = resources.files("h_adminsim.assets.prompts").joinpath(prompt_file_name)
             scheduling_user_prompt_template = file_path.read_text()
         
@@ -332,7 +332,7 @@ class SchedulingAdminStaffAgent:
 
         # Initialilze with the default tool calling prompt
         if not tool_calling_prompt_path:
-            prompt_file_name = 'schedule_staff_tool_calling.txt'
+            prompt_file_name = 'opfv_schedule_staff_tool_calling.txt'
             file_path = resources.files("h_adminsim.assets.prompts").joinpath(prompt_file_name)
             tool_calling_prompt = file_path.read_text()
         
@@ -346,7 +346,7 @@ class SchedulingAdminStaffAgent:
         
         # Initialilze with the only scheduling tool calling prompt
         if not sc_tool_calling_prompt_path:
-            prompt_file_name = 'schedule_staff_sc_tool_calling.txt'
+            prompt_file_name = 'opfv_schedule_staff_sc_tool_calling.txt'
             file_path = resources.files("h_adminsim.assets.prompts").joinpath(prompt_file_name)
             sc_tool_calling_prompt = file_path.read_text()
         
