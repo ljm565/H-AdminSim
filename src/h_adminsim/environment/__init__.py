@@ -1,2 +1,3 @@
 from .opfv_intake_simulation import OPFVIntakeSimulation
 from .opfv_scheduling_simulation import OPFVSchedulingSimulation
+from .opfu_scheduling_simulation import OPFUSchedulingSimulation

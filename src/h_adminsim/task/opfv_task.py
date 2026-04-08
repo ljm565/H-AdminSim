@@ -365,9 +365,9 @@ class OutpatientFirstScheduling(OutpatientTask):
         self.scheduling_strategy = scheduling_strategy
         assert self.scheduling_strategy in ['reasoning', 'tool_calling'], \
             log('Scheduling strategy must be either `reasoning` or `tool_calling`.', 'error')
-        self.schedule_patient_system_prompt_path = str(resources.files("h_adminsim.assets.prompts").joinpath('schedule_patient_system.txt'))
-        self.cancel_patient_system_prompt_path = str(resources.files("h_adminsim.assets.prompts").joinpath('cancel_patient_system.txt'))
-        self.reschedule_patient_system_prompt_path = str(resources.files("h_adminsim.assets.prompts").joinpath('reschedule_patient_system.txt'))
+        self.schedule_patient_system_prompt_path = str(resources.files("h_adminsim.assets.prompts").joinpath('opfv_schedule_patient_system.txt'))
+        self.cancel_patient_system_prompt_path = str(resources.files("h_adminsim.assets.prompts").joinpath('opfv_cancel_patient_system.txt'))
+        self.reschedule_patient_system_prompt_path = str(resources.files("h_adminsim.assets.prompts").joinpath('opfv_reschedule_patient_system.txt'))
         self.patient_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.patient_model.lower() else {}
         self.staff_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.admin_staff_model.lower() else {}
 
