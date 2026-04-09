@@ -15,28 +15,8 @@
                     ],
                     "tests": [
                         {
-                            "name": "Upper GI Endoscopy",
-                            "code": "IMGAS-T01",
-                            "duration_hour": 0.5,
-                            "priority": 1,
-                            "result_hours": 24,
-                            "depends_on": [],
-                            "avoid_same_day": ["IMGAS-T02", "IMGAS-T06"],
-                            "description": "No food or drink for at least 8 hours before the procedure. Sedation will be used; arrange for a driver. Inform your doctor of any blood-thinning medications."
-                        },
-                        {
-                            "name": "Colonoscopy",
-                            "code": "IMGAS-T02",
-                            "duration_hour": 1.0,
-                            "priority": 1,
-                            "result_hours": 48,
-                            "depends_on": [],
-                            "avoid_same_day": ["IMGAS-T01", "IMGAS-T06"],
-                            "description": "Requires bowel preparation starting the day before. Follow the prescribed laxative instructions carefully. Sedation is used; arrange for a driver. No solid food the day before."
-                        },
-                        {
                             "name": "Abdominal Ultrasound",
-                            "code": "IMGAS-T03",
+                            "code": "IMGAS-T01",
                             "duration_hour": 0.5,
                             "priority": 0,
                             "result_hours": 3,
@@ -45,8 +25,8 @@
                             "description": "Fast for at least 6 hours before the exam. Water is allowed. Wear comfortable, loose clothing."
                         },
                         {
-                            "name": "Liver Elastography",
-                            "code": "IMGAS-T04",
+                            "name": "Liver Fibrosis Scan",
+                            "code": "IMGAS-T02",
                             "duration_hour": 0.25,
                             "priority": 0,
                             "result_hours": 2,
@@ -55,14 +35,34 @@
                             "description": "Fast for at least 2 hours before the exam. Avoid eating a large meal before the procedure."
                         },
                         {
-                            "name": "Helicobacter Pylori Breath Test",
-                            "code": "IMGAS-T05",
+                            "name": "Urea breath test (Helicobacter Pylori Breath Test)",
+                            "code": "IMGAS-T03",
                             "duration_hour": 0.5,
                             "priority": 0,
                             "result_hours": 3,
                             "depends_on": [],
-                            "avoid_same_day": ["IMGAS-T01"],
+                            "avoid_same_day": [],
                             "description": "No food, drink, or medication for at least 4 hours before the test. Avoid antibiotics and proton pump inhibitors for 4 weeks before testing. Do not smoke for 4 hours beforehand."
+                        },
+                        {
+                            "name": "Upper GI Endoscopy",
+                            "code": "IMGAS-T04",
+                            "duration_hour": 0.5,
+                            "priority": 1,
+                            "result_hours": 24,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "No food or drink for at least 8 hours before the procedure. Sedation will be used; arrange for a driver. Inform your doctor of any blood-thinning medications."
+                        },
+                        {
+                            "name": "Colonoscopy",
+                            "code": "IMGAS-T05",
+                            "duration_hour": 1.0,
+                            "priority": 1,
+                            "result_hours": 48,
+                            "depends_on": [],
+                            "avoid_same_day": ["IMGAS-T06"],
+                            "description": "Requires bowel preparation starting the day before. Follow the prescribed laxative instructions carefully. Sedation is used; arrange for a driver. No solid food the day before."
                         },
                         {
                             "name": "ERCP",
@@ -70,8 +70,8 @@
                             "duration_hour": 1.5,
                             "priority": 2,
                             "result_hours": 48,
-                            "depends_on": ["IMGAS-T01", "IMGAS-T03"],
-                            "avoid_same_day": ["IMGAS-T01", "IMGAS-T02"],
+                            "depends_on": ["IMGAS-T01"],
+                            "avoid_same_day": ["IMGAS-T05"],
                             "description": "Fast for at least 8 hours before the procedure. Sedation will be used; arrange for a driver. Inform your doctor of all current medications, especially blood thinners. Plan to rest for the remainder of the day."
                         }
                     ]
