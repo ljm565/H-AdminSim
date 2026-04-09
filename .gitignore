@@ -12,6 +12,7 @@ __pycache__/
 .vscode
 *claude*
 *CLAUDE*
+TEST_EXPLANATION.md
 
 # Shell scripts
 *.sh
