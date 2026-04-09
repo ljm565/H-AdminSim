@@ -161,13 +161,13 @@
                             "priority": 0,
                             "result_hours": 3,
                             "depends_on": [],
-                            "avoid_same_day": ["IMPUL-T06"],
+                            "avoid_same_day": ["IMPUL-T05"],
                             "description": "Avoid using bronchodilator inhalers for 4-6 hours before the test. Do not smoke for at least 4 hours beforehand. Wear loose, comfortable clothing. Avoid large meals for 2 hours before."
                         },
                         {
                             "name": "Chest CT Scan",
                             "code": "IMPUL-T02",
-                            "duration_hour": 0.5,
+                            "duration_hour": 0.25,
                             "priority": 0,
                             "result_hours": 6,
                             "depends_on": [],
@@ -175,18 +175,8 @@
                             "description": "No special food restriction. Inform your doctor if you are pregnant or have kidney problems, especially if contrast dye is used. Remove metal objects from the chest area."
                         },
                         {
-                            "name": "Bronchoscopy",
-                            "code": "IMPUL-T03",
-                            "duration_hour": 1.0,
-                            "priority": 2,
-                            "result_hours": 72,
-                            "depends_on": ["IMPUL-T01", "IMPUL-T02"],
-                            "avoid_same_day": ["IMPUL-T06", "IMPUL-T01"],
-                            "description": "Fast for at least 8 hours before the procedure. Sedation will be used; arrange for a driver. Inform your doctor of all blood-thinning medications. Do not eat or drink after the procedure until the throat numbness wears off."
-                        },
-                        {
                             "name": "Arterial Blood Gas Analysis",
-                            "code": "IMPUL-T04",
+                            "code": "IMPUL-T03",
                             "duration_hour": 0.25,
                             "priority": 0,
                             "result_hours": 2,
@@ -195,24 +185,34 @@
                             "description": "No special preparation required. Inform your doctor of any blood-thinning medications. Mild discomfort from the arterial puncture is expected. Apply pressure to the puncture site for at least 5 minutes after."
                         },
                         {
-                            "name": "Polysomnography Setup",
-                            "code": "IMPUL-T05",
-                            "duration_hour": 0.5,
-                            "priority": 1,
+                            "name": "Sputum Analysis",
+                            "code": "IMPUL-T04",
+                            "duration_hour": 0.25,
+                            "priority": 0,
                             "result_hours": 48,
-                            "depends_on": ["IMPUL-T01"],
-                            "avoid_same_day": ["IMPUL-T06", "IMPUL-T03"],
-                            "description": "Avoid caffeine and alcohol on the day of the setup. Do not nap during the day before the overnight study. Bring comfortable sleeping clothes. Wash your hair and do not apply hair products before the setup."
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "Provide a deep cough sputum sample, preferably in the early morning. Rinse your mouth with water before collection to reduce contamination. Avoid eating immediately before the test. Follow instructions carefully to ensure an adequate specimen is obtained."
                         },
                         {
                             "name": "Methacholine Challenge Test",
-                            "code": "IMPUL-T06",
+                            "code": "IMPUL-T05",
                             "duration_hour": 0.75,
                             "priority": 1,
                             "result_hours": 3,
                             "depends_on": ["IMPUL-T01"],
-                            "avoid_same_day": ["IMPUL-T01", "IMPUL-T03", "IMPUL-T05"],
+                            "avoid_same_day": ["IMPUL-T01", "IMPUL-T06"],
                             "description": "Avoid bronchodilator inhalers for 8 hours before the test. Do not smoke or exercise vigorously for 4 hours beforehand. The test involves inhaling increasing doses of methacholine to assess airway sensitivity. Bring a rescue inhaler."
+                        },
+                        {
+                            "name": "Bronchoscopy",
+                            "code": "IMPUL-T06",
+                            "duration_hour": 0.25,
+                            "priority": 2,
+                            "result_hours": 72,
+                            "depends_on": ["IMPUL-T02"],
+                            "avoid_same_day": ["IMPUL-T05"],
+                            "description": "Fast for at least 8 hours before the procedure. Sedation will be used; arrange for a driver. Inform your doctor of all blood-thinning medications. Do not eat or drink after the procedure until the throat numbness wears off."
                         }
                     ]
                 },
