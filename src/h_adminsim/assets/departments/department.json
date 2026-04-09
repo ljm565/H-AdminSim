@@ -105,33 +105,33 @@
                             "description": "No special preparation required. Avoid applying body lotion or powder to the chest area on the day of the test. Wear a two-piece outfit for easy access."
                         },
                         {
-                            "name": "Cardiac Stress Test",
-                            "code": "IMCAR-T03",
-                            "duration_hour": 1.0,
-                            "priority": 1,
-                            "result_hours": 6,
-                            "depends_on": ["IMCAR-T02"],
-                            "avoid_same_day": ["IMCAR-T06"],
-                            "description": "Wear comfortable clothing and walking shoes. Do not eat for 3 hours before the test. Avoid caffeine for 24 hours beforehand. Inform your doctor of all current heart medications."
-                        },
-                        {
                             "name": "24-hour Holter Monitor Setup",
-                            "code": "IMCAR-T04",
+                            "code": "IMCAR-T03",
                             "duration_hour": 0.25,
                             "priority": 0,
                             "result_hours": 48,
                             "depends_on": [],
-                            "avoid_same_day": ["IMCAR-T03"],
+                            "avoid_same_day": [],
                             "description": "Do not apply lotion, powder, or oil to the chest area. You will wear the monitor for 24 hours. Maintain your normal daily activities and keep a symptom diary. Avoid bathing or swimming while wearing the device."
+                        },
+                        {
+                            "name": "Cardiac Stress Test",
+                            "code": "IMCAR-T04",
+                            "duration_hour": 0.5,
+                            "priority": 1,
+                            "result_hours": 6,
+                            "depends_on": ["IMCAR-T02"],
+                            "avoid_same_day": [],
+                            "description": "Wear comfortable clothing and walking shoes. Do not eat for 3 hours before the test. Avoid caffeine for 24 hours beforehand. Inform your doctor of all current heart medications."
                         },
                         {
                             "name": "Coronary CT Angiography",
                             "code": "IMCAR-T05",
-                            "duration_hour": 0.75,
+                            "duration_hour": 0.5,
                             "priority": 1,
                             "result_hours": 12,
-                            "depends_on": ["IMCAR-T02"],
-                            "avoid_same_day": ["IMCAR-T06", "IMCAR-T03"],
+                            "depends_on": [],
+                            "avoid_same_day": [],
                             "description": "Fast for at least 4 hours before the exam. Avoid caffeine for 24 hours before. Inform your doctor if you have kidney problems or are allergic to contrast dye. Beta-blockers may be given to control heart rate."
                         },
                         {
@@ -140,8 +140,8 @@
                             "duration_hour": 1.0,
                             "priority": 2,
                             "result_hours": 36,
-                            "depends_on": ["IMCAR-T01", "IMCAR-T02"],
-                            "avoid_same_day": ["IMCAR-T03", "IMCAR-T05"],
+                            "depends_on": ["IMCAR-T02"],
+                            "avoid_same_day": [],
                             "description": "Remove all metal objects before the scan. Inform your doctor of any implanted metal devices (pacemaker, stents). No food restriction unless contrast is used (fast 4 hours). Inform staff if you are claustrophobic; the scan takes up to 1 hour."
                         }
                     ]
