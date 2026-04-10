@@ -33,6 +33,7 @@ dist/
 legacy/
 new/*
 demo/human_dialogs/*
+custom_test_data/*
 
 # Data and configuration folders
 data/

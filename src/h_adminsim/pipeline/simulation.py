@@ -29,6 +29,14 @@ class Simulator:
         self.task = self._init_task(task)
         self.random_seed = random_seed
 
+        if scheduling_task != None and self.fhir_integration != scheduling_task.fhir_integration:
+            raise ValueError(
+                    colorstr(
+                        "red",
+                        f"fhir_integration mismatch: expected {self.fhir_integration}, but got {scheduling_task.fhir_integration} in scheduling_task."
+                    )
+                )
+
 
     def __env_setup(self, random_seed: int, resume: bool):
         """

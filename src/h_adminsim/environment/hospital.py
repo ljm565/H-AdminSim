@@ -248,8 +248,10 @@ class HospitalEnvironment:
                 self.first_verbose_flag = False
             
             # Get doctors belonging to the department
+            hospital_id = self.HOSPITAL_NAME.replace('_', '')
             params={"specialty:text": department}
-            practitioner_roles = [resource['resource'] for resource in self.fhir_manager.read_all('PractitionerRole', params=params, verbose=False)]
+            practitioner_roles = [resource['resource'] for resource in self.fhir_manager.read_all('PractitionerRole', params=params, verbose=False)
+                                  if hospital_id in resource['resource']['id']]
 
             for practitioner_role in practitioner_roles:
                 doctor_name, doctor_schedule = __build_single_doctor_schedule(practitioner_role)
