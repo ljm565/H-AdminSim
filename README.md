@@ -15,6 +15,7 @@
 ## Recent updates 📣
 * *v1.2.3 (April 2026)*: Add support for custom department and disease-symptom data.
     * Added `--department_info_path` and `--disease_symptom_file_path` arguments to allow users to plug in custom department and disease-symptom data in standalone mode.
+    * Fixed minor bugs.
 * *v1.2.1, v1.2.2 (April 2026)*: Update license to Apache License 2.0.
 * *v1.2.0 (April 2026)*: Bug fixes and simulation improvements.
     * Added a generator-based function to enable streaming of simulation utterances.
@@ -553,14 +554,15 @@ This project is licensed under the Apache License 2.0.
 ## Citation
 For `H-AdminSim` and `PatientSim` outpatient simulation, please cite the following.
 ```
-@misc{lee2026hadminsimmultiagentsimulatorrealistic,
-      title={H-AdminSim: A Multi-Agent Simulator for Realistic Hospital Administrative Workflows with FHIR Integration}, 
-      author={Jun-Min Lee and Meong Hi Son and Edward Choi},
-      year={2026},
-      eprint={2602.05407},
-      archivePrefix={arXiv},
-      primaryClass={cs.AI},
-      url={https://arxiv.org/abs/2602.05407}, 
+@inproceedings{lee2026hadminsimmultiagentsimulatorrealistic,
+  title         = {H-AdminSim: A Multi-Agent Simulator for Realistic Hospital Administrative Workflows with FHIR Integration}, 
+  author        = {Jun-Min Lee and Meong Hi Son and Edward Choi},
+  booktitle     = {Proceedings of the Conference on Health, Inference, and Learning (CHIL)},
+  year          = {2026},
+  eprint        = {2602.05407},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.AI},
+  url           = {https://arxiv.org/abs/2602.05407}, 
 }
 ```
 
