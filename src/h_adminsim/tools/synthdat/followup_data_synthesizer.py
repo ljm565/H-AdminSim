@@ -40,7 +40,9 @@ class FollowUpDataSynthesizer(DataSynthesizer):
             self.source_data_files = []
 
 
-    def synthesize(self, sanity_check: bool = False) -> list[dict]:
+    def synthesize(self, 
+                   sanity_check: bool = False,
+                   department_info_path: Optional[str] = None) -> list[dict]:
         """
         Synthesize follow-up patients.
 
@@ -51,6 +53,9 @@ class FollowUpDataSynthesizer(DataSynthesizer):
 
         Args:
             sanity_check (bool, optional): Whether to validate generated data. Defaults to False.
+            department_info_path (Optional[str], optional): Path to a file containing department information. 
+                                                            Only available in standalone mode. If provided, it will be used to load names. 
+                                                            Defaults to None.
 
         Returns:
             list[dict]: List of hospital data dicts containing follow_up_visit patients.
@@ -64,7 +69,9 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                     hospital_data = json_load(data_file)
                     
                     # Make fixed schedule of tests
-                    hospital_data['test'] = FollowUpDataSynthesizer.generate_test_schedule(self.config, hospital_data)
+                    hospital_data['test'] = FollowUpDataSynthesizer.generate_test_schedule(
+                        self.config, hospital_data, department_info_path
+                    )
                     merged_data = FollowUpDataSynthesizer.generate_followup_patients(self.config, hospital_data)
 
                     if sanity_check:
@@ -83,11 +90,13 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                     desc='Synthesizing follow-up patient data (standalone)..', 
                     total=len(hospitals)
                 ):
-                    data = DataSynthesizer.define_hospital_info(self.config, hospital)
+                    data = DataSynthesizer.define_hospital_info(self.config, hospital, department_info_path)
                     hospital_data = to_dict(data)
                     
                     # Make fixed schedule of tests
-                    hospital_data['test'] = FollowUpDataSynthesizer.generate_test_schedule(self.config, hospital_data)
+                    hospital_data['test'] = FollowUpDataSynthesizer.generate_test_schedule(
+                        self.config, hospital_data, department_info_path
+                    )
                     merged_data = FollowUpDataSynthesizer.generate_followup_patients(self.config, hospital_data)
 
                     if sanity_check:
@@ -109,7 +118,9 @@ class FollowUpDataSynthesizer(DataSynthesizer):
     
 
     @staticmethod
-    def generate_test_schedule(config, hospital_data: dict) -> dict:
+    def generate_test_schedule(config, 
+                               hospital_data: dict,
+                               department_info_path: Optional[str] = None) -> dict:
         """
         Generate hospital test schedules and merge them into hospital data.
 
@@ -119,6 +130,8 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         Args:
             config: Configuration object with hospital_data.follow_up_visit settings.
             hospital_data (dict): Existing hospital data containing metadata and department dicts.
+            department_info_path (Optional[str], optional): Path to a file containing department information. 
+                                                            Defaults to None.
 
         Returns:
             dict: Hospital data with test schedules merged into the hospital data dict.
@@ -140,6 +153,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                 d,
                 fu_config.test_per_department.min,
                 fu_config.test_per_department.max,
+                department_info_path,
             ) for d in departments
         }
 

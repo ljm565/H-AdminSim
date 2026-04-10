@@ -13,6 +13,7 @@ __pycache__/
 *claude*
 *CLAUDE*
 TEST_EXPLANATION.md
+custom_test_data/
 
 # Shell scripts
 *.sh

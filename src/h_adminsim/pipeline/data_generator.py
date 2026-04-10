@@ -107,7 +107,9 @@ class DataGenerator:
               sanity_check: bool = True,
               convert_to_fhir: bool = False,
               build_agent_data: bool = True,
-              source_data_dir: Optional[str] = None) -> Information:
+              source_data_dir: Optional[str] = None,
+              department_info_path: Optional[str] = None,
+              symptom_file_path: Optional[str] = None) -> Information:
         """
         Build the complete data pipeline based on the configured task set.
 
@@ -121,6 +123,9 @@ class DataGenerator:
             build_agent_data (bool, optional): If True, generates agent simulation data. Defaults to True.
             source_data_dir (Optional[str], optional): Path to existing hospital data for follow-up synthesis.
                 If None, uses `self.save_dir / 'data'`. Defaults to None.
+            department_info_path (Optional[str], optional): Path to a file containing department information. If provided, it will be used to load names. 
+                                                            Defaults to None.
+            symptom_file_path (Optional[str], optional): Path to the symptom file used during agent construction. Defaults to None.
 
         Returns:
             Information:
@@ -135,7 +140,10 @@ class DataGenerator:
         # First-visit data synthesis
         if 'first_visit' in self.task:
             try:
-                data, _ = self.fv_synthesizer.synthesize(sanity_check=sanity_check)
+                data, _ = self.fv_synthesizer.synthesize(
+                    sanity_check=sanity_check,
+                    department_info_path=department_info_path,
+                )
                 log(f"Data synthesis completed successfully", color=True)
             except Exception:
                 log("Data synthesis failed.", level="error")
@@ -158,7 +166,10 @@ class DataGenerator:
                     self.save_dir = followup_synthesizer.save_dir 
                     log(f'Data saving directory: {colorstr(self.save_dir)}')
 
-                data = followup_synthesizer.synthesize(sanity_check=sanity_check)
+                data = followup_synthesizer.synthesize(
+                    sanity_check=sanity_check,
+                    department_info_path=department_info_path,
+                )
                 log(f"Follow-up data synthesis completed successfully", color=True)
             except Exception:
                 log("Follow-up data synthesis failed.", level="error")
@@ -178,7 +189,10 @@ class DataGenerator:
         if build_agent_data:
             builder = AgentDataBuilder(self.config)
             try:
-                agent_data_list = builder(self.save_dir / 'agent_data')
+                agent_data_list = builder(
+                    self.save_dir / 'agent_data',
+                    symptom_file_path,
+                )
                 log(f"Agent data generation completed successfully", color=True)
             except Exception:
                 log("Agent data generation failed.", level='error')

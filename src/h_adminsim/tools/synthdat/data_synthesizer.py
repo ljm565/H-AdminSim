@@ -36,13 +36,17 @@ class DataSynthesizer:
         
 
     @staticmethod
-    def define_hospital_info(config, hospital_name: str) -> Information:
+    def define_hospital_info(config, 
+                             hospital_name: str,
+                             department_info_path: Optional[str] = None) -> Information:
         """
         Define the synthetic hospital data, including its departments and doctors.
 
         Args:
             config: Configuration object containing hospital data settings.
             hospital_name (str): Name of the hospital to be defined.
+            department_info_path (Optional[str], optional): Path to a file containing department information. If provided, it will be used to load names. 
+                                                            Defaults to None.
 
         Returns:
             Information: Synthetic data about the hospital.
@@ -88,7 +92,7 @@ class DataSynthesizer:
 
         # Define detailed hospital department and doctoral information
         department_info, doctor_info = dict(), dict()
-        departments = DataSynthesizer.department_list_generator(department_n)
+        departments = DataSynthesizer.department_list_generator(department_n, file_path=department_info_path)
         doctors = DataSynthesizer.name_list_generator(doctor_n, prefix='Dr. ')   # Doctor names are unique across all departments
         for department_data, doc_n in zip(departments, doctor_n_per_department):
             department, dep_code = department_data
@@ -100,7 +104,7 @@ class DataSynthesizer:
             for _ in range(doc_n):
                 doctor = doctors.pop()
                 department_info[department]['doctor'].append(doctor)
-                specialty, spe_code = generate_random_specialty(department)
+                specialty, spe_code = generate_random_specialty(department, department_info_path)
                 capacity_per_hour = random.choice(doctor_capacity_per_hour_list)
                 working_days = random.randint(
                     config.hospital_data.working_days.min,

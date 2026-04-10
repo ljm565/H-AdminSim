@@ -27,7 +27,8 @@ class FirstVisitDataSynthesizer(DataSynthesizer):
 
     def synthesize(self,
                    return_obj: bool = False,
-                   sanity_check: bool = False) -> Tuple[list[Information], list[Hospital]]:
+                   sanity_check: bool = False,
+                   department_info_path: Optional[str] = None) -> Tuple[list[Information], list[Hospital]]:
         """
         Synthesize hospital data based on the configuration settings.
 
@@ -35,6 +36,8 @@ class FirstVisitDataSynthesizer(DataSynthesizer):
             return_obj (bool, optional): Whether to return the hospital data object.
             sanity_check (bool, optional): If you want to check whether the generated data are compatible with the `Hospital` object,
                                  you can use this option.
+            department_info_path (Optional[str], optional): Path to a file containing department information. If provided, it will be used to load names. 
+                                                            Defaults to None.
 
         Raises:
             e: Exception if data synthesis fails.
@@ -49,7 +52,7 @@ class FirstVisitDataSynthesizer(DataSynthesizer):
             all_data, all_hospitals = list(), list()
             hospitals = DataSynthesizer.hospital_list_generator(self.config.hospital_data.hospital_n)
             for i, hospital in tqdm(enumerate(hospitals), desc='Synthesizing data..', total=len(hospitals)):
-                data = DataSynthesizer.define_hospital_info(self.config, hospital)
+                data = DataSynthesizer.define_hospital_info(self.config, hospital, department_info_path)
                 data = FirstVisitDataSynthesizer.generate_first_visit_patients(self.config, data)
                 hospital_obj = convert_info_to_obj(data) if return_obj else None
                 if sanity_check:
