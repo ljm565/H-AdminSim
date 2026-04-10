@@ -13,6 +13,8 @@
 
 ---
 ## Recent updates 📣
+* *v1.2.3 (April 2026)*: Add support for custom department and disease-symptom data.
+    * Added `--department_info_path` and `--disease_symptom_file_path` arguments to allow users to plug in custom department and disease-symptom data in standalone mode.
 * *v1.2.1, v1.2.2 (April 2026)*: Update license to Apache License 2.0.
 * *v1.2.0 (April 2026)*: Bug fixes and simulation improvements.
     * Added a generator-based function to enable streaming of simulation utterances.
@@ -133,7 +135,6 @@ GOOGLE_API_KEY=${YOUR_GEMINI_API_KEY}
 
 ### 3. Simulation
 ```python
-from h_adminsim import AdminStaffAgent, SupervisorAgent
 from h_adminsim.pipeline import DataGenerator, Simulator
 from h_adminsim.task.agent_task import OutpatientFirstIntake, OutpatientFirstScheduling
 
@@ -193,6 +194,13 @@ data_generator.build()
 
 # 2.2. When you want the synthesized data returned along with its FHIR-converted version (optional)
 data_generator.build(convert_to_fhir=True)
+
+# 2.3. Using Custom Hospital Data
+# (For the expected file format, see the examples below.)
+data_generator.build(
+    department_info_path="department_info.json",
+    symptom_file_path="disease_symptom_pair.json",
+)
 
 # 2.3. When you want to upload the synthesized data to your own FHIR server (optional)
 # Provide your FHIR server URL
@@ -254,6 +262,93 @@ hospital_data:
         probs: [0.7, 0.3]                   # Probability distribution for symptom types
 ```
 </details>
+<details>
+<summary>Custom data examples</summary>
+
+* `department_info.json`
+>```json
+>{   
+>    "metadata": {
+>        "reference": "https://emergency.or.kr/bbs/general-notice/2513"
+>    },
+>    "specialty": {
+>        "internal medicine": {
+>            "code": "IM",
+>            "subspecialty": {
+>                "gastroenterology": {
+>                    "code": "IMGAS",
+>                    "field": [
+>                        "Hepatology",
+>                        "Pancreatobiliary Medicine",
+>                        "Inflammatory Bowel Disease"
+>                    ]
+>                },
+>                "cardiology": {
+>                    "code": "IMCAR",
+>                    "field": [
+>                        "Interventional Cardiology",
+>                        "Electrophysiology",
+>                        "Heart Failure and Transplantation"
+>                    ]
+>                }
+>            }
+>        
+>        }
+>    }
+>}
+>```
+* `disease_symptom_pair.json`
+<br>
+>It is recommended that this file contains disease-symptom pairs corresponding to the subspecialties defined in `department_info.json`.
+>```json
+>{
+>    "gastroenterology": [
+>        {
+>            "Acute cholecystitis": {
+>                "department": [
+>                    "gastroenterology"
+>                ],
+>                "symptom": [
+>                    "Sudden sharp pain in the upper right side of the abdomen that spreads towards the right shoulder",
+>                    "Tender abdomen",
+>                    "Worsening pain with deep breathing",
+>                    "Persistent pain",
+>                    "High temperature (fever)",
+>                    "Nausea and vomiting",
+>                    "Sweating",
+>                    "Loss of appetite",
+>                    "Yellowing of the skin and whites of the eyes (jaundice)",
+>                    "Bulge in the abdomen"
+>                ]
+>            }
+>        }
+>    ],
+>    "cardiology": [
+>        {
+>            "Abdominal aortic aneurysm": {
+>                "department": [
+>                    "cardiology"
+>                ],
+>                "symptom": [
+>                    "Pulsating feeling in the abdomen, usually near the belly button",
+>                    "Persistent back pain",
+>                    "Persistent abdominal pain",
+>                    "Sudden and severe pain in the abdomen (if ruptured)",
+>                    "Pain radiating down into the scrotum (in men, if ruptured)",
+>                    "Dizziness (if ruptured)",
+>                    "Sweaty and clammy skin (if ruptured)",
+>                    "Rapid heartbeat (tachycardia, if ruptured)",
+>                    "Shortness of breath (if ruptured)",
+>                    "Feeling faint (if ruptured)",
+>                    "Loss of consciousness (if ruptured)"
+>                ]
+>            }
+>        }
+>    ]
+>}
+>```
+</details>
+
 
 &nbsp;
 
@@ -275,7 +370,7 @@ intake_task = OutpatientFirstIntake(
 # 1.2. Role separation
 # Staff: dialogue handling, Supervisor: data collection and structuring
 supervisor_agent = SupervisorAgent(
-    target_task='first_outpatient_scheduling',
+    target_task='first_outpatient_intake',
     model='gemini-2.5-flash',
     api_key=${YOUR_API_KEY},  # You may set the API key here instead of using a .env file
 )
@@ -289,7 +384,7 @@ intake_task = OutpatientFirstIntake(
 
 # 1.3. Advanced usage: vLLM
 supervisor_agent = SupervisorAgent(
-    target_task='first_outpatient_scheduling',
+    target_task='first_outpatient_intake',
     model='meta-llama/Llama-3.3-70B-Instruct',
     use_vllm=True,              # Use a vLLM-hosted model as the supervisor
     vllm_endpoint='http://0.0.0.0:8000',  # vLLM server endpoint
@@ -309,7 +404,6 @@ intake_task = OutpatientFirstIntake(
 
 #### 2.2. Appointment Scheduling
 ```python
-from h_adminsim import AdminStaffAgent, SupervisorAgent
 from h_adminsim.task.agent_task import OutpatientFirstScheduling
 
 # 2. Appointment Scheduling
