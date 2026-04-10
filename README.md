@@ -1,11 +1,60 @@
 # H-AdminSim
 
 ---
-![PyPI - Python Version](https://img.shields.io/pypi/pyversions/h_adminsim)
-![PyPI Version](https://img.shields.io/pypi/v/h_adminsim)
-![Downloads](https://img.shields.io/pypi/dm/h_adminsim)
-![DOI](https://img.shields.io/badge/DOI-10.48550/arXiv.2602.05407-blue)
+[![DOI](https://img.shields.io/badge/DOI-10.48550/arXiv.2602.05407-red)](https://arxiv.org/abs/2602.05407)
+[![PyPI Version](https://img.shields.io/pypi/v/h_adminsim)](https://pypi.org/project/h-adminsim/)
+[![Downloads](https://img.shields.io/pypi/dm/h_adminsim)](https://pypi.org/project/h-adminsim/)
+
+* Paper: [H-AdminSim: A Multi-Agent Simulator for Realistic Hospital Administrative Workflows with FHIR Integration
+](https://arxiv.org/abs/2602.05407)
+* PyPI Package: https://pypi.org/project/h-adminsim/
+
+&nbsp;
+
 ---
+## Recent updates 📣
+* *v1.2.1 (April 2026)*: Update license to Apache License 2.0.
+* *v1.2.0 (April 2026)*: Bug fixes and simulation improvements.
+    * Added a generator-based function to enable streaming of simulation utterances.
+    * Improved the simulation code.
+    * Miscellaneous bug fixes.
+* *v1.1.0 (March 2026)*: Merge administrative simulation code from `patientsim` into `h-adminsim`.
+* *v1.0.5 (March 2026)*: Minor improvements.
+* *v1.0.4 (March 2026)*: Simulation improvements.
+* *v1.0.3 (February 2026)*: Update error exception codes for observable traceback.
+* *v1.0.2 (February 2026)*: Update dependencies for stable simulation.
+* *v1.0.1 (February 2026)*: H-AdminSim now supports concurrent simulation and open-source tool calling.
+* *v1.0.0 (February 2026)*: H-AdminSim package has been released.
+<!-- * *v0.7.2 (December 2025)*: Rule-based and tool calling-based scheduling logics have been supported.
+* *v0.7.1 (November 2025)*: Self-corrective feedback logic has been supported.
+* *v0.7.0 (October 2025)*: Simulation has been improved reflecting feedbacks from experts.
+* *v0.6.0 (September 2025)*: Simulation has been improved reflecting feedbacks from experts. -->
+<!-- * *August 2025 (v0.5.2)*: We has supported vLLM inference of the Hugging Face models.
+* *August 2025 (v0.5.1)*: Now you can easily set the virtual environment using Poetry.
+* *August 2025 (v0.5.0)*: We integrated the FHIR server to retrieve hospital information during hospital administration office agent simulation. -->
+<!-- * *July 2025 (v0.4.2)*: We have supported LangChain's JsonOutputParser funtion as well as naive LLM API methods.
+* *July 2025 (v0.4.1)*: Add functionality to schedule appointments based on the hospital's current time (the time the patient contacted for booking).
+* *July 2025 (v0.4.0)*: Added a hospital simulation environment to enable rescheduling based on patient priority, flexibility, and other constraints.
+* *July 2025 (v0.3.1)*: Added agent results evaluation codes.
+* *July 2025 (v0.3.0)*: This repository has supported Gemini- and GPT-based LLM agent task testing: 'department', 'schedule', 'fhir_resource', 'fhir_api'.
+* *June 2025 (v0.2.2)*: Added *PractitionerRole* resource type and function to make more realistic data.
+* *June 2025 (v0.2.1)*: Fixed *Appointment* resource type error and added function to show failed files during creating data to FHIR.
+* *June 2025 (v0.2.0)*: Added function to map synthetic data to some *workflow* resource types in FHIR.
+* *June 2025 (v0.1.2)*: The data synthesis speed has been improved, and a sanity check feature has been added during synthesis.
+* *June 2025 (v0.1.1)*: Added random patient data synthesizing codes and completed sanity check.
+* *June 2025 (v0.1.0)*: Added random hospital data synthesizing codes and completed sanity check.
+* *June 2025 (v0.0.5)*: Enhanced and fixed the FHIR manager operations.
+* *June 2025 (v0.0.4)*: Updated documents (environment setting, CRUD guides)
+* *June 2025 (v0.0.3)*: Now we has supported FHIR CRUD.
+* *June 2025 (v0.0.2)*: Created chat demo `README.md`.
+* *June 2025 (v0.0.1)*: Created chat demo codes using FastAPI communication. -->
+
+&nbsp;
+
+&nbsp;
+
+---
+
 
 ## Overview 📚
 H-AdminSim is an official Python package for simulating interactions between hospital administrative staff and first-visit outpatients using LLM agents.
@@ -14,8 +63,6 @@ It provides a standardized evaluation testbed for assessing LLM performance acro
 Large hospitals often handle 10,000+ outpatient encounters per day, and prior reports indicate limited specialization among administrative staff despite high workload.
 H-AdminSim is designed to help address these challenges by offering a realistic, reproducible simulation environment that supports future hospital automation and LLM-assisted administrative workflows.
 
-* Paper: https://arxiv.org/abs/2602.05407
-* PyPI Package: https://pypi.org/project/h-adminsim/
 
 &nbsp;
 
@@ -60,47 +107,6 @@ We provide optional support for integrating with FHIR, allowing the simulator to
 &nbsp;
 
 ---
-## Recent updates 📣
-* *v1.2.0 (April 2026)*: Bug fixes and simulation improvements.
-    * Added a generator-based function to enable streaming of simulation utterances.
-    * Improved the simulation code.
-    * Miscellaneous bug fixes.
-* *v1.1.0 (March 2026)*: Merge administrative simulation code from `patientsim` into `h-adminsim`.
-* *v1.0.5 (March 2026)*: Minor improvements.
-* *v1.0.4 (March 2026)*: Simulation improvements.
-* *v1.0.3 (February 2026)*: Update error exception codes for observable traceback.
-* *v1.0.2 (February 2026)*: Update dependencies for stable simulation.
-* *v1.0.1 (February 2026)*: H-AdminSim now supports concurrent simulation and open-source tool calling.
-* *v1.0.0 (February 2026)*: H-AdminSim package has been released.
-<!-- * *v0.7.2 (December 2025)*: Rule-based and tool calling-based scheduling logics have been supported.
-* *v0.7.1 (November 2025)*: Self-corrective feedback logic has been supported.
-* *v0.7.0 (October 2025)*: Simulation has been improved reflecting feedbacks from experts.
-* *v0.6.0 (September 2025)*: Simulation has been improved reflecting feedbacks from experts. -->
-<!-- * *August 2025 (v0.5.2)*: We has supported vLLM inference of the Hugging Face models.
-* *August 2025 (v0.5.1)*: Now you can easily set the virtual environment using Poetry.
-* *August 2025 (v0.5.0)*: We integrated the FHIR server to retrieve hospital information during hospital administration office agent simulation. -->
-<!-- * *July 2025 (v0.4.2)*: We have supported LangChain's JsonOutputParser funtion as well as naive LLM API methods.
-* *July 2025 (v0.4.1)*: Add functionality to schedule appointments based on the hospital's current time (the time the patient contacted for booking).
-* *July 2025 (v0.4.0)*: Added a hospital simulation environment to enable rescheduling based on patient priority, flexibility, and other constraints.
-* *July 2025 (v0.3.1)*: Added agent results evaluation codes.
-* *July 2025 (v0.3.0)*: This repository has supported Gemini- and GPT-based LLM agent task testing: 'department', 'schedule', 'fhir_resource', 'fhir_api'.
-* *June 2025 (v0.2.2)*: Added *PractitionerRole* resource type and function to make more realistic data.
-* *June 2025 (v0.2.1)*: Fixed *Appointment* resource type error and added function to show failed files during creating data to FHIR.
-* *June 2025 (v0.2.0)*: Added function to map synthetic data to some *workflow* resource types in FHIR.
-* *June 2025 (v0.1.2)*: The data synthesis speed has been improved, and a sanity check feature has been added during synthesis.
-* *June 2025 (v0.1.1)*: Added random patient data synthesizing codes and completed sanity check.
-* *June 2025 (v0.1.0)*: Added random hospital data synthesizing codes and completed sanity check.
-* *June 2025 (v0.0.5)*: Enhanced and fixed the FHIR manager operations.
-* *June 2025 (v0.0.4)*: Updated documents (environment setting, CRUD guides)
-* *June 2025 (v0.0.3)*: Now we has supported FHIR CRUD.
-* *June 2025 (v0.0.2)*: Created chat demo `README.md`.
-* *June 2025 (v0.0.1)*: Created chat demo codes using FastAPI communication. -->
-
-&nbsp;
-
-&nbsp;
-
----
 ## Quick Starts 🚀
 ### 1. Installation
 ```bash
@@ -120,7 +126,7 @@ Before using the LLM API, you need to provide the API key (or the required envir
 OPENAI_API_KEY=${YOUR_OPENAI_KEY}
 
 # For Gemini API
-GOOGLE_API_KEY=${YOUR_GEMINI_API_KEY"}
+GOOGLE_API_KEY=${YOUR_GEMINI_API_KEY}
 ```
 
 &nbsp;
@@ -437,6 +443,17 @@ simulator.run(
 &nbsp;
 
 &nbsp;
+
+
+
+---
+## License
+This project is licensed under the Apache License 2.0.
+
+&nbsp;
+
+&nbsp;
+
 
 ---
 ## Citation
