@@ -84,7 +84,9 @@ class DataGenerator:
     def build(self, 
               sanity_check: bool = True,
               convert_to_fhir: bool = False,
-              build_agent_data: bool = True) -> Information:
+              build_agent_data: bool = True,
+              department_info_path: Optional[str] = None,
+              symptom_file_path: Optional[str] = None) -> Information:
         """
         Build the complete information bundle for the administrative simulation pipeline.
 
@@ -94,6 +96,9 @@ class DataGenerator:
                                               in the configured output directory. Defaults to False.
             build_agent_data (bool, optional): If True, generates additional derived data required for agent-based
                                                simulations (e.g., patient profiles, department assignments, task inputs). Defaults to True.
+            department_info_path (Optional[str], optional): Path to a file containing department information. If provided, it will be used to load names. 
+                                                            Defaults to None.
+            symptom_file_path (Optional[str], optional): Path to the symptom file used during agent construction. Defaults to None.
 
         Raises:
             Exception: Propagates any exception encountered during:
@@ -110,7 +115,10 @@ class DataGenerator:
         """
         # Data generator
         try:
-            data, hospital_obj = self.data_synthesizer.synthesize(sanity_check=sanity_check)
+            data, hospital_obj = self.data_synthesizer.synthesize(
+                sanity_check=sanity_check,
+                department_info_path=department_info_path,
+            )
             log(f"Data synthesis completed successfully", color=True)
         except Exception:
             log("Data synthesis failed.", level="error")
@@ -132,7 +140,10 @@ class DataGenerator:
         if build_agent_data:
             builder = AgentDataBuilder(self.config)
             try:
-                agent_data_list = builder(self.save_dir / 'agent_data')
+                agent_data_list = builder(
+                    self.save_dir / 'agent_data',
+                    symptom_file_path,
+                )
                 log(f"Agent data generation completed successfully", color=True)
             except Exception:
                 log("Agent data generation failed.", level='error')

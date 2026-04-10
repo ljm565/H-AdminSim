@@ -37,7 +37,8 @@ class DataSynthesizer:
     
     def synthesize(self,
                    return_obj: bool = False,
-                   sanity_check: bool = False) -> Tuple[list[Information], list[Hospital]]:
+                   sanity_check: bool = False,
+                   department_info_path: Optional[str] = None) -> Tuple[list[Information], list[Hospital]]:
         """
         Synthesize hospital data based on the configuration settings.
 
@@ -45,6 +46,8 @@ class DataSynthesizer:
             return_obj (bool, optional): Whether to return the hospital data object.
             sanity_check (bool, optional): If you want to check whether the generated data are compatible with the `Hospital` object,
                                  you can use this option.
+            department_info_path (Optional[str], optional): Path to a file containing department information. If provided, it will be used to load names. 
+                                                            Defaults to None.
 
         Raises:
             e: Exception if data synthesis fails.
@@ -59,7 +62,7 @@ class DataSynthesizer:
             all_data, all_hospitals = list(), list()
             hospitals = DataSynthesizer.hospital_list_generator(self.config.hospital_data.hospital_n)
             for i, hospital in tqdm(enumerate(hospitals), desc='Synthesizing data..', total=len(hospitals)):
-                data = DataSynthesizer.define_hospital_info(self.config, hospital)
+                data = DataSynthesizer.define_hospital_info(self.config, hospital, department_info_path)
                 hospital_obj = convert_info_to_obj(data) if return_obj else None
                 if sanity_check:
                     new_data = convert_obj_to_info(hospital_obj)
@@ -76,13 +79,17 @@ class DataSynthesizer:
 
 
     @staticmethod
-    def define_hospital_info(config, hospital_name: str) -> Information:
+    def define_hospital_info(config, 
+                             hospital_name: str, 
+                             department_info_path: Optional[str] = None) -> Information:
         """
         Define the synthetic hospital data, including its departments and doctors.
 
         Args:
             config: Configuration object containing hospital data settings.
             hospital_name (str): Name of the hospital to be defined.
+            department_info_path (Optional[str], optional): Path to a file containing department information. If provided, it will be used to load names. 
+                                                            Defaults to None.
 
         Returns:
             Information: Synthetic data about the hospital.
@@ -129,7 +136,7 @@ class DataSynthesizer:
 
         # Define detailed hospital department, doctoral, and patient information
         department_info, doctor_info, patient_info = dict(), dict(), dict()
-        departments = DataSynthesizer.department_list_generator(department_n)
+        departments = DataSynthesizer.department_list_generator(department_n, file_path=department_info_path)
         doctors = DataSynthesizer.name_list_generator(doctor_n, prefix='Dr. ')   # Doctor names are unique across all departments
         for department_data, doc_n in zip(departments, doctor_n_per_department):
             department, dep_code = department_data
@@ -141,7 +148,7 @@ class DataSynthesizer:
             for _ in range(doc_n):
                 doctor = doctors.pop()
                 department_info[department]['doctor'].append(doctor)
-                specialty, spe_code = generate_random_specialty(department)
+                specialty, spe_code = generate_random_specialty(department, department_info_path)
                 capacity_per_hour = random.choice(doctor_capacity_per_hour_list)
                 working_days = random.randint(
                     config.hospital_data.working_days.min,

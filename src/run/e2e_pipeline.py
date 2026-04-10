@@ -47,7 +47,11 @@ def main(args):
 
     # Generate data for the simulation
     data_generator = DataGenerator() if not d_config else DataGenerator(config=d_config)
-    output = data_generator.build(convert_to_fhir=True)
+    output = data_generator.build(
+        convert_to_fhir=True,
+        department_info_path=args.department_info_path,
+        symptom_file_path=args.disease_symptom_file_path,
+    )
 
     if args.upload_data_to_fhir:
         data_generator.upload_to_fhir(
@@ -124,6 +128,10 @@ if __name__ == '__main__':
     parser.add_argument('--resume', action='store_true', required=False, help='Continue the stopped processing')
     parser.add_argument('--verbose', action='store_true', required=False, help='Whether logging the each result or not')
     parser.add_argument('--upload_data_to_fhir', action='store_true', required=False, help='Whether to upload synthetic data to FHIR')
+    parser.add_argument('--department_info_path', type=str, required=False, default=None,
+        help='Path to the custom department information file. Recommend to use together with --disease_symptom_file_path.')
+    parser.add_argument('--disease_symptom_file_path', type=str, required=False, default=None,
+        help='Path to the custom disease-symptom mapping file. Recommend to use together with --department_info_path.')
     args = parser.parse_args()
 
     main(args)
