@@ -3,7 +3,7 @@
 ---
 [![DOI](https://img.shields.io/badge/DOI-10.48550/arXiv.2602.05407-red)](https://arxiv.org/abs/2602.05407)
 [![PyPI Version](https://img.shields.io/pypi/v/h-adminsim)](https://pypi.org/project/h-adminsim/)
-[![Downloads](https://img.shields.io/pypi/dm/h-adminsim)](https://pypi.org/project/h-adminsim/)
+[![Downloads](https://img.shields.io/pypi/dm/h-adminsim?cacheSeconds=86400)](https://pypi.org/project/h-adminsim/)
 
 * Paper: [H-AdminSim: A Multi-Agent Simulator for Realistic Hospital Administrative Workflows with FHIR Integration
 ](https://arxiv.org/abs/2602.05407)
@@ -13,7 +13,7 @@
 
 ---
 ## Recent updates 📣
-* *v1.2.1 (April 2026)*: Update license to Apache License 2.0.
+* *v1.2.1, v1.2.2 (April 2026)*: Update license to Apache License 2.0.
 * *v1.2.0 (April 2026)*: Bug fixes and simulation improvements.
     * Added a generator-based function to enable streaming of simulation utterances.
     * Improved the simulation code.
