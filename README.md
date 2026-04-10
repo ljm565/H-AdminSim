@@ -13,7 +13,7 @@
 
 ---
 ## Recent updates 📣
-* *v1.2.1 (April 2026)*: Update license to Apache License 2.0.
+* *v1.2.1, v1.2.2 (April 2026)*: Update license to Apache License 2.0.
 * *v1.2.0 (April 2026)*: Bug fixes and simulation improvements.
     * Added a generator-based function to enable streaming of simulation utterances.
     * Improved the simulation code.
