@@ -18,9 +18,6 @@
     * Fixed minor bugs.
 * *v1.2.1, v1.2.2 (April 2026)*: Update license to Apache License 2.0.
 * *v1.2.0 (April 2026)*: Bug fixes and simulation improvements.
-    * Added a generator-based function to enable streaming of simulation utterances.
-    * Improved the simulation code.
-    * Miscellaneous bug fixes.
 * *v1.1.0 (March 2026)*: Merge administrative simulation code from `patientsim` into `h-adminsim`.
 * *v1.0.5 (March 2026)*: Minor improvements.
 * *v1.0.4 (March 2026)*: Simulation improvements.
