@@ -372,6 +372,7 @@ class OPScehdulingSimulation:
                    doctor_information: Optional[dict] = None, 
                    reschedule_flag: bool = False,
                    chat_history: list = [],
+                   reasoning_max_tries: int = 0,
                    **kwargs) -> dict:
         """
         Make an appointment between the doctor and the patient.
@@ -459,16 +460,24 @@ class OPScehdulingSimulation:
                 DAY=self._DAY,
                 DOCTOR=json.dumps(filtered_doctor_information, indent=2),
             )
-            schedule = self.admin_staff_agent(
-                user_prompt,
-                using_multi_turn=False,
-                verbose=False,
-                **kwargs,
-            )
-            schedule = OPScehdulingSimulation.postprocessing(
-                strategy='reasoning',
-                data=schedule,
-            )
+
+            tries = 0
+            while 1:
+                schedule = self.admin_staff_agent(
+                    user_prompt,
+                    using_multi_turn=False,
+                    verbose=False,
+                    **kwargs,
+                )
+                schedule = OPScehdulingSimulation.postprocessing(
+                    strategy='reasoning',
+                    data=schedule,
+                )
+                if isinstance(schedule, dict) or tries >= reasoning_max_tries:
+                    break
+                else:
+                    tries += 1
+
             prediction = {
                 'type': 'tool',
                 'result': schedule,
@@ -643,6 +652,7 @@ class OPScehdulingSimulation:
                             verbose: bool = False,
                             max_inferences: int = 5,
                             natural_express: bool = True,
+                            reasoning_max_tries: int = 0,
                             patient_kwargs: dict = {},
                             staff_kwargs: dict = {},
                             **kwargs) -> Tuple[dict, dict, dict]:
@@ -657,6 +667,7 @@ class OPScehdulingSimulation:
             verbose (bool, optional): Whether to log detailed simulation outputs. Defaults to False.
             max_inferences (int, optional): Maximum number of dialogue turns.
             natural_express: (bool, optional): Whether express new schedule as natural or not. Defaults to True.
+            reasoning_max_tries (int, optional): Reasoning fallback maximum number of retries. Defaults to 0.
             patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent.
             staff_kwargs (dict, optional): Additional keyword arguments passed to the staff scheduling function.
             **kwargs: Shared keyword arguments passed to both agents.
@@ -724,6 +735,7 @@ class OPScehdulingSimulation:
                     staff_known_data,
                     doctor_information,
                     chat_history=self._to_lc_history('scheduling'),
+                    reasoning_max_tries=reasoning_max_tries,
                     callback=staff_token_callback,
                     **merged_staff_kwargs
                 )
@@ -1195,6 +1207,7 @@ class OPScehdulingSimulation:
                                    verbose: bool = False,
                                    max_inferences: int = 5,
                                    natural_express: bool = True,
+                                   reasoning_max_tries: int = 3,
                                    patient_kwargs: dict = {},
                                    staff_kwargs: dict = {},
                                    **kwargs):
@@ -1208,7 +1221,8 @@ class OPScehdulingSimulation:
                                                            including availability and other relevant details. Defaults to None.
             verbose (bool, optional): Whether to log detailed simulation outputs. Defaults to False.
             max_inferences (int, optional): Maximum number of dialogue turns.
-            natural_express: (bool, optional): Whether express new schedule as natural or not. Defaults to True.
+            natural_express (bool, optional): Whether express new schedule as natural or not. Defaults to True.
+            reasoning_max_tries (int, optional): Reasoning fallback maximum number of retries. Defaults to 3.
             patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent.
             staff_kwargs (dict, optional): Additional keyword arguments passed to the staff scheduling function.
             **kwargs: Shared keyword arguments passed to both agents.
@@ -1273,6 +1287,7 @@ class OPScehdulingSimulation:
                     staff_known_data,
                     doctor_information,
                     chat_history=self._to_lc_history('scheduling'),
+                    reasoning_max_tries=reasoning_max_tries,
                     callback=staff_token_callback,
                     **merged_staff_kwargs
                 )
