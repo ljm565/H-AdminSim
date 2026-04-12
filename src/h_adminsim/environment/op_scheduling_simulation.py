@@ -1252,10 +1252,12 @@ class OPScehdulingSimulation:
             tries = 0
             while 1:
                 # Obtain response from patient
-                patient_response = self.patient_agent(
+                patient_response = run_with_retry(
+                    self.patient_agent,
                     self.dialog_history['scheduling'][-1]["content"],
                     using_multi_turn=True,
                     verbose=False,
+                    max_retries=5,
                     **merged_patient_kwargs,
                 )
                 self.dialog_history['scheduling'].append({"role": "Patient", "content": patient_response})
@@ -1265,7 +1267,8 @@ class OPScehdulingSimulation:
                 
                 # Scheduling from staff
                 staff_known_data.update({'patient_intention': patient_response})
-                staff_response = self.scheduling(
+                staff_response = run_with_retry(
+                    self.scheduling,
                     client,
                     staff_known_data,
                     doctor_information,
@@ -1338,13 +1341,14 @@ class OPScehdulingSimulation:
                     self.update_patient_system_prompt(
                         new_system_prompt=self.patient_satisfaction_system_prompt
                     )
-                    patient_response = self.patient_agent(
+                    patient_response = run_with_retry(
+                        self.patient_agent,
                         self.natural_end_phrase.format(schedule=self.dialog_history['scheduling'][-1]['content']),
                         using_multi_turn=True,
                         verbose=False,
+                        max_retries=5,
                         **merged_patient_kwargs,
                     )
-                
                 else:
                     patient_response = self.end_phrase
 
