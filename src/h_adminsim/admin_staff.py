@@ -342,7 +342,10 @@ class SchedulingAdminStaffAgent:
 
         # Initialilze with the default tool calling prompt
         if not tool_calling_prompt_path:
-            prompt_file_name = 'opfv_schedule_staff_tool_calling.txt'
+            if self.target_task == 'first_visit_scheduling':
+                prompt_file_name = 'opfv_schedule_staff_tool_calling.txt'
+            elif self.target_task == 'follow_up_visit_scheduling':
+                prompt_file_name = 'opfu_schedule_staff_tool_calling.txt'
             file_path = resources.files("h_adminsim.assets.prompts").joinpath(prompt_file_name)
             tool_calling_prompt = file_path.read_text()
         
