@@ -752,12 +752,12 @@ class OPScehdulingSimulation:
                         if natural_express:
                             _schedule = pred_schedule['schedule']
                             _doctor = list(_schedule.keys())[0]
-                            date, st, tr = _schedule[_doctor]['date'], _schedule[_doctor]['start'], _schedule[_doctor]['end']
+                            _date, _st, _tr = _schedule[_doctor]['date'], _schedule[_doctor]['start'], _schedule[_doctor]['end']
                             _format = random.choice(self.admin_staff_agent.staff_natural_suggestion) \
                                 if isinstance(self.admin_staff_agent.staff_natural_suggestion, list) \
                                     else self.admin_staff_agent.staff_natural_suggestion
                             response = _format.format(
-                                doctor=_doctor, date=date, start=st, end=tr
+                                doctor=_doctor, date=_date, start=_st, end=_tr
                             )
                         else:
                             response = self.admin_staff_agent.staff_suggestion.format(schedule=pred_schedule)
@@ -802,8 +802,11 @@ class OPScehdulingSimulation:
 
             # Preference rejection logic
             ## Rejection case
+            _schedule = pred_schedule['schedule']
+            _doctor = list(_schedule.keys())[0]
+            _date = _schedule[_doctor]['date']
             if random.random() < preference_reject_prob and i != len(gt_data) - 1 and \
-                gt_data[i+1]['preferred_doctor'] != list(pred_schedule['schedule'].keys())[0]:  # Avoid overlap with next preferred doctor
+                gt_data[i+1]['preferred_doctor'] != _doctor and gt_data[i+1]['valid_from'] != _date:  # Avoid overlap with next preferred doctor or next preferred date
                 preference_reject_prob *= self.preference_rejection_prob_decay
             ## Non-rejection case
             else:
@@ -1323,8 +1326,11 @@ class OPScehdulingSimulation:
             
             # Preference rejection logic
             ## Rejection case
+            _schedule = pred_schedule['schedule']
+            _doctor = list(_schedule.keys())[0]
+            _date = _schedule[_doctor]['date']
             if random.random() < preference_reject_prob and i != len(gt_data) - 1 and \
-                gt_data[i+1]['preferred_doctor'] != list(pred_schedule['schedule'].keys())[0]:  # Avoid overlap with next preferred doctor
+                gt_data[i+1]['preferred_doctor'] != _doctor and gt_data[i+1]['valid_from'] != _date:  # Avoid overlap with next preferred doctor or next preferred date
                 preference_reject_prob *= self.preference_rejection_prob_decay
             ## Non-rejection case
             else:
