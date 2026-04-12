@@ -220,7 +220,8 @@ async def generate_intake_response(request: PromptRequest):
         department = patient_info.pop('department')
         
         # Ensure the department name
-        department = 'rheumatology' if department == 'rheumatory' else department
+        department = 'rheumatology' if department.lower() == 'rheumatory' else department
+        department = 'pulmonary' if department.lower() == 'pulmonology' else department
         for _dept in app_state['departments']:
             if _dept in department:
                 department = _dept

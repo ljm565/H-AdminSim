@@ -1323,7 +1323,8 @@ class OPScehdulingSimulation:
             
             # Preference rejection logic
             ## Rejection case
-            if random.random() < preference_reject_prob and i != len(gt_data) - 1:
+            if random.random() < preference_reject_prob and i != len(gt_data) - 1 and \
+                gt_data[i+1]['preferred_doctor'] != list(pred_schedule['schedule'].keys())[0]:  # Avoid overlap with next preferred doctor
                 preference_reject_prob *= self.preference_rejection_prob_decay
             ## Non-rejection case
             else:
