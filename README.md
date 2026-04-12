@@ -13,9 +13,13 @@
 
 ---
 ## Recent updates 📣
+* *v1.2.4 (April 2026)*: Improved scheduling simulation for more realistic behavior.
+    * Added option for more natural patient end phrases.
+    * Enhanced preference rejection for more realistic simulation.
+    * Improved scheduling simulation stability.
 * *v1.2.3 (April 2026)*: Add support for custom department and disease-symptom data.
-    * Added `--department_info_path` and `--disease_symptom_file_path` arguments to allow users to plug in custom department and disease-symptom data in standalone mode.
-    * Fixed minor bugs.
+    <!-- * Added `--department_info_path` and `--disease_symptom_file_path` arguments to allow users to plug in custom department and disease-symptom data in standalone mode.
+    * Fixed minor bugs. -->
 * *v1.2.1, v1.2.2 (April 2026)*: Update license to Apache License 2.0.
 * *v1.2.0 (April 2026)*: Bug fixes and simulation improvements.
 * *v1.1.0 (March 2026)*: Merge administrative simulation code from `patientsim` into `h-adminsim`.
@@ -459,7 +463,6 @@ scheduling_task = OutpatientFirstScheduling(
     scheduling_strategy='tool-calling',    # Currently, we do not support tool-calling from vLLM
     fhir_integration=False,
     patient_vllm_endpoint='http://0.0.0.0:8000',
-    
 )
 ##############################################################
 ```

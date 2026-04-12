@@ -49,14 +49,16 @@ class OPFVSchedulingSimulation:
         self.preference_rejection_prob = preference_rejection_prob
         self.preference_rejection_prob_decay = preference_rejection_prob_decay
         self.fhir_integration = fhir_integration
-        self.rejection_system_prompt_template = self._init_prompt(schedule_rejection_prompt_path)
+        self._init_prompt(schedule_rejection_prompt_path)
         self.sanity_checker = sanity_checker
         self.rules = SchedulingRule(metadata, department_data, self.environment, self.fhir_integration)
+        self.natural_end_phrase = "{schedule}\nYou must respond with satisfaction to this suggested schedule in 5 words or fewer. Ensure the response conveys only satisfaction and no dissatisfaction, and ends with a thank-you nuance."
         self.end_phrase = "Thank you."
+        self.patient_satisfaction_system_prompt = "You are a patient looking to schedule an appointment. Assume that the latest schedule proposed by the hospital administrative staff is satisfactory."
         self._init_history()
 
     
-    def _init_prompt(self, schedule_rejection_prompt_path: Optional[str] = None) -> str:
+    def _init_prompt(self, schedule_rejection_prompt_path: Optional[str] = None):
         """
         Initialize the schedule rejection system prompt for the administration staff agent.
 
@@ -66,23 +68,19 @@ class OPFVSchedulingSimulation:
 
         Raises:
             FileNotFoundError: If the specified system prompt file does not exist.
-        
-        Returns:
-            str: Schedule rejection prompt template.
         """
         # Initialilze with the default system prompt
         if not schedule_rejection_prompt_path:
             prompt_file_name = "opfv_schedule_patient_rejected_system.txt"
             file_path = resources.files("h_adminsim.assets.prompts").joinpath(prompt_file_name)
-            rejection_system_prompt_template = file_path.read_text()
+            self.rejection_system_prompt_template = file_path.read_text()
         
         # User can specify a custom system prompt
         else:
             if not os.path.exists(schedule_rejection_prompt_path):
                 raise FileNotFoundError(colorstr("red", f"System prompt file not found: {schedule_rejection_prompt_path}"))
             with open(schedule_rejection_prompt_path, 'r') as f:
-                rejection_system_prompt_template = f.read()
-        return rejection_system_prompt_template
+                self.rejection_system_prompt_template = f.read()
 
 
     def _init_agents(self, verbose: bool = True):
@@ -176,30 +174,35 @@ class OPFVSchedulingSimulation:
             return {'schedule': {doctor: {'date': date, 'start': st_hour, 'end': tr_hour}}}
 
 
-    def update_patient_preference_system_prompt(self, 
-                                                patient_condition: dict,
-                                                rejected_preference: str):
+    def update_patient_system_prompt(self, 
+                                     patient_condition: Optional[dict] = None,
+                                     rejected_preference: Optional[str] = None,
+                                     new_system_prompt: Optional[str] = None):
         """
-        Update a system prompt of the patient agent for proposed schedule rejection scenario.
+        Update a system prompt of the patient agent for proposed schedule rejection scenario etc.
 
         Args:
-            patient_condition (dict): Patient ground-truth condition including current preference.
-            rejected_preference (str): The scheduling preference proposed by the staff agent in the previous turn
-                                       that the patient must explicitly reject.
+            patient_condition (Optional[dict], optional): Patient ground-truth condition including current preference.
+            rejected_preference (Optional[str], optional): The scheduling preference proposed by the staff agent in the previous turn
+                                                           that the patient must explicitly reject.
+            new_system_prompt (Optional[str], optional): New system prompt to be updated.
         """
+        if patient_condition is not None and rejected_preference is not None:
         # Build new system prompts for rejection scenario
-        preference = patient_condition.get('preference')
-        preference_desc = OPFV_PREFERENCE_PHRASE_PATIENT[preference] if preference != 'date' \
-                else OPFV_PREFERENCE_PHRASE_PATIENT[preference].format(date=patient_condition.get('valid_from'))
-        rejected_preference_desc = OPFV_PREFERENCE_PHRASE_STAFF[rejected_preference] if rejected_preference != 'date' \
-                else OPFV_PREFERENCE_PHRASE_STAFF[rejected_preference].format(date='a specific date')    
-        system_prompt = self.rejection_system_prompt_template.format(
-            preference=preference,
-            preference_desc=preference_desc,
-            preferred_doctor=patient_condition['preferred_doctor'],
-            rejected_preference=rejected_preference_desc,
-            personality=self.patient_agent.personality,
-        )
+            preference = patient_condition.get('preference')
+            preference_desc = OPFV_PREFERENCE_PHRASE_PATIENT[preference] if preference != 'date' \
+                    else OPFV_PREFERENCE_PHRASE_PATIENT[preference].format(date=patient_condition.get('valid_from'))
+            rejected_preference_desc = OPFV_PREFERENCE_PHRASE_STAFF[rejected_preference] if rejected_preference != 'date' \
+                    else OPFV_PREFERENCE_PHRASE_STAFF[rejected_preference].format(date='a specific date')    
+            system_prompt = self.rejection_system_prompt_template.format(
+                preference=preference,
+                preference_desc=preference_desc,
+                preferred_doctor=patient_condition['preferred_doctor'],
+                rejected_preference=rejected_preference_desc,
+                personality=self.patient_agent.personality,
+            )
+        else:
+            system_prompt = new_system_prompt
 
         # Update new system prompts for rejection scenario
         self.patient_agent.system_prompt = system_prompt
@@ -369,6 +372,7 @@ class OPFVSchedulingSimulation:
                    doctor_information: Optional[dict] = None, 
                    reschedule_flag: bool = False,
                    chat_history: list = [],
+                   reasoning_max_tries: int = 0,
                    **kwargs) -> dict:
         """
         Make an appointment between the doctor and the patient.
@@ -456,16 +460,24 @@ class OPFVSchedulingSimulation:
                 DAY=self._DAY,
                 DOCTOR=json.dumps(filtered_doctor_information, indent=2),
             )
-            schedule = self.admin_staff_agent(
-                user_prompt,
-                using_multi_turn=False,
-                verbose=False,
-                **kwargs,
-            )
-            schedule = OPFVSchedulingSimulation.postprocessing(
-                strategy='reasoning',
-                data=schedule,
-            )
+
+            tries = 0
+            while 1:
+                schedule = self.admin_staff_agent(
+                    user_prompt,
+                    using_multi_turn=False,
+                    verbose=False,
+                    **kwargs,
+                )
+                schedule = OPFVSchedulingSimulation.postprocessing(
+                    strategy='reasoning',
+                    data=schedule,
+                )
+                if isinstance(schedule, dict) or tries >= reasoning_max_tries:
+                    break
+                else:
+                    tries += 1
+
             prediction = {
                 'type': 'tool',
                 'result': schedule,
@@ -639,6 +651,8 @@ class OPFVSchedulingSimulation:
                             doctor_information: Optional[dict] = None,
                             verbose: bool = False,
                             max_inferences: int = 5,
+                            natural_express: bool = True,
+                            reasoning_max_tries: int = 0,
                             patient_kwargs: dict = {},
                             staff_kwargs: dict = {},
                             **kwargs) -> Tuple[dict, dict, dict]:
@@ -652,6 +666,8 @@ class OPFVSchedulingSimulation:
                                                            including availability and other relevant details. Defaults to None.
             verbose (bool, optional): Whether to log detailed simulation outputs. Defaults to False.
             max_inferences (int, optional): Maximum number of dialogue turns.
+            natural_express: (bool, optional): Whether express new schedule as natural or not. Defaults to True.
+            reasoning_max_tries (int, optional): Reasoning fallback maximum number of retries. Defaults to 0.
             patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent.
             staff_kwargs (dict, optional): Additional keyword arguments passed to the staff scheduling function.
             **kwargs: Shared keyword arguments passed to both agents.
@@ -693,7 +709,7 @@ class OPFVSchedulingSimulation:
         for i, gt_patient_condition in enumerate(gt_data):
             # For the rejection scenario
             if i != 0:
-                self.update_patient_preference_system_prompt(
+                self.update_patient_system_prompt(
                     patient_condition=gt_patient_condition,
                     rejected_preference=gt_data[i-1]['preference']
                 )
@@ -719,6 +735,7 @@ class OPFVSchedulingSimulation:
                     staff_known_data,
                     doctor_information,
                     chat_history=self._to_lc_history('scheduling'),
+                    reasoning_max_tries=reasoning_max_tries,
                     callback=staff_token_callback,
                     **merged_staff_kwargs
                 )
@@ -729,7 +746,7 @@ class OPFVSchedulingSimulation:
                         if k not in staff_token_stats:
                             staff_token_stats[k] = deepcopy(v)
                         else:
-                            staff_token_stats[k].extend(v)  # 두 번째~: extend
+                            staff_token_stats[k].extend(v)
                 
                 # Clarification message
                 if staff_response['type'] == 'text':
@@ -741,7 +758,27 @@ class OPFVSchedulingSimulation:
                 # Tool calling result
                 elif staff_response['type'] == 'tool':
                     pred_schedule = staff_response['result']
-                    response = self.admin_staff_agent.staff_suggestion.format(schedule=pred_schedule)
+                    
+                    # Response formatting
+                    try:
+                        if natural_express:
+                            _schedule = pred_schedule['schedule']
+                            _doctor = list(_schedule.keys())[0]
+                            _date, _st, _tr = _schedule[_doctor]['date'], _schedule[_doctor]['start'], _schedule[_doctor]['end']
+                            _format = random.choice(self.admin_staff_agent.staff_natural_suggestion) \
+                                if isinstance(self.admin_staff_agent.staff_natural_suggestion, list) \
+                                    else self.admin_staff_agent.staff_natural_suggestion
+                            response = _format.format(
+                                doctor=_doctor, date=_date, start=_st, end=_tr
+                            )
+                        else:
+                            response = self.admin_staff_agent.staff_suggestion.format(schedule=pred_schedule)
+                    except:
+                        try:
+                            response = self.admin_staff_agent.staff_suggestion.format(schedule=pred_schedule)
+                        except:
+                            response = str(pred_schedule)
+                    
                     self.dialog_history['scheduling'].append({"role": "Staff", "content": response})
                     role = f"{colorstr('blue', 'Staff')}"
                     log(f"{role:<25}: {response}")
@@ -777,13 +814,33 @@ class OPFVSchedulingSimulation:
 
             # Preference rejection logic
             ## Rejection case
-            if random.random() < preference_reject_prob and i != len(gt_data) - 1:
+            _schedule = pred_schedule['schedule']
+            _doctor = list(_schedule.keys())[0]
+            _date = _schedule[_doctor]['date']
+            if random.random() < preference_reject_prob and i != len(gt_data) - 1 and \
+                gt_data[i+1]['preferred_doctor'] != _doctor and gt_data[i+1]['valid_from'] != _date:  # Avoid overlap with next preferred doctor or next preferred date
                 preference_reject_prob *= self.preference_rejection_prob_decay
             ## Non-rejection case
             else:
-                self.dialog_history['scheduling'].append({"role": "Patient", "content": self.end_phrase})
+                if natural_express:
+                    self.update_patient_system_prompt(
+                        new_system_prompt=self.patient_satisfaction_system_prompt
+                    )
+                    patient_response = self.patient_agent(
+                        self.natural_end_phrase.format(schedule=self.dialog_history['scheduling'][-1]['content']),
+                        using_multi_turn=True,
+                        verbose=False,
+                        **merged_patient_kwargs,
+                    )
+                    patient_token_stats = self.patient_agent.client.token_usages
+                
+                else:
+                    patient_response = self.end_phrase
+
+                self.dialog_history['scheduling'].append({"role": "Patient", "content": patient_response})
                 role = f"{colorstr('green', 'Patient')} ({gt_data[i]['preference']})"
-                log(f"{role:<25}: {self.end_phrase}")
+                log(f"{role:<25}: {patient_response}")
+                
                 break
 
         # Oranize the result
@@ -1149,6 +1206,8 @@ class OPFVSchedulingSimulation:
                                    doctor_information: Optional[dict] = None,
                                    verbose: bool = False,
                                    max_inferences: int = 5,
+                                   natural_express: bool = True,
+                                   reasoning_max_tries: int = 3,
                                    patient_kwargs: dict = {},
                                    staff_kwargs: dict = {},
                                    **kwargs):
@@ -1162,6 +1221,8 @@ class OPFVSchedulingSimulation:
                                                            including availability and other relevant details. Defaults to None.
             verbose (bool, optional): Whether to log detailed simulation outputs. Defaults to False.
             max_inferences (int, optional): Maximum number of dialogue turns.
+            natural_express (bool, optional): Whether express new schedule as natural or not. Defaults to True.
+            reasoning_max_tries (int, optional): Reasoning fallback maximum number of retries. Defaults to 3.
             patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent.
             staff_kwargs (dict, optional): Additional keyword arguments passed to the staff scheduling function.
             **kwargs: Shared keyword arguments passed to both agents.
@@ -1197,7 +1258,7 @@ class OPFVSchedulingSimulation:
         for i, gt_patient_condition in enumerate(gt_data):
             # For the rejection scenario
             if i != 0:
-                self.update_patient_preference_system_prompt(
+                self.update_patient_system_prompt(
                     patient_condition=gt_patient_condition,
                     rejected_preference=gt_data[i-1]['preference']
                 )
@@ -1205,10 +1266,12 @@ class OPFVSchedulingSimulation:
             tries = 0
             while 1:
                 # Obtain response from patient
-                patient_response = self.patient_agent(
+                patient_response = run_with_retry(
+                    self.patient_agent,
                     self.dialog_history['scheduling'][-1]["content"],
                     using_multi_turn=True,
                     verbose=False,
+                    max_retries=5,
                     **merged_patient_kwargs,
                 )
                 self.dialog_history['scheduling'].append({"role": "Patient", "content": patient_response})
@@ -1218,11 +1281,13 @@ class OPFVSchedulingSimulation:
                 
                 # Scheduling from staff
                 staff_known_data.update({'patient_intention': patient_response})
-                staff_response = self.scheduling(
+                staff_response = run_with_retry(
+                    self.scheduling,
                     client,
                     staff_known_data,
                     doctor_information,
                     chat_history=self._to_lc_history('scheduling'),
+                    reasoning_max_tries=reasoning_max_tries,
                     callback=staff_token_callback,
                     **merged_staff_kwargs
                 )
@@ -1246,7 +1311,27 @@ class OPFVSchedulingSimulation:
                 # Tool calling result
                 elif staff_response['type'] == 'tool':
                     pred_schedule = staff_response['result']
-                    response = self.admin_staff_agent.staff_suggestion.format(schedule=pred_schedule)
+                    
+                    # Response formatting
+                    try:
+                        if natural_express:
+                            _schedule = pred_schedule['schedule']
+                            _doctor = list(_schedule.keys())[0]
+                            date, st, tr = _schedule[_doctor]['date'], _schedule[_doctor]['start'], _schedule[_doctor]['end']
+                            _format = random.choice(self.admin_staff_agent.staff_natural_suggestion) \
+                                if isinstance(self.admin_staff_agent.staff_natural_suggestion, list) \
+                                    else self.admin_staff_agent.staff_natural_suggestion
+                            response = _format.format(
+                                doctor=_doctor, date=date, start=st, end=tr
+                            )
+                        else:
+                            response = self.admin_staff_agent.staff_suggestion.format(schedule=pred_schedule)
+                    except:
+                        try:
+                            response = self.admin_staff_agent.staff_suggestion.format(schedule=pred_schedule)
+                        except:
+                            response = str(pred_schedule)
+                    
                     self.dialog_history['scheduling'].append({"role": "Staff", "content": response})
                     role = f"{colorstr('blue', 'Staff')}"
                     log(f"{role:<25}: {response}")
@@ -1259,12 +1344,31 @@ class OPFVSchedulingSimulation:
             
             # Preference rejection logic
             ## Rejection case
-            if random.random() < preference_reject_prob and i != len(gt_data) - 1:
+            _schedule = pred_schedule['schedule']
+            _doctor = list(_schedule.keys())[0]
+            _date = _schedule[_doctor]['date']
+            if random.random() < preference_reject_prob and i != len(gt_data) - 1 and \
+                gt_data[i+1]['preferred_doctor'] != _doctor and gt_data[i+1]['valid_from'] != _date:  # Avoid overlap with next preferred doctor or next preferred date
                 preference_reject_prob *= self.preference_rejection_prob_decay
             ## Non-rejection case
             else:
-                self.dialog_history['scheduling'].append({"role": "Patient", "content": self.end_phrase})
+                if natural_express:
+                    self.update_patient_system_prompt(
+                        new_system_prompt=self.patient_satisfaction_system_prompt
+                    )
+                    patient_response = run_with_retry(
+                        self.patient_agent,
+                        self.natural_end_phrase.format(schedule=self.dialog_history['scheduling'][-1]['content']),
+                        using_multi_turn=True,
+                        verbose=False,
+                        max_retries=5,
+                        **merged_patient_kwargs,
+                    )
+                else:
+                    patient_response = self.end_phrase
+
+                self.dialog_history['scheduling'].append({"role": "Patient", "content": patient_response})
                 role = f"{colorstr('green', 'Patient')} ({gt_data[i]['preference']})"
-                log(f"{role:<25}: {self.end_phrase}")
-                yield 'Patient', preprocess_utterance(self.end_phrase), None
+                log(f"{role:<25}: {patient_response}")
+                yield 'Patient', preprocess_utterance(patient_response), None
                 break
