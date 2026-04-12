@@ -424,5 +424,5 @@ def scheduling_tool_calling(client: AgentExecutor,
         return {"type": "tool", "result": tool_output, "raw": response, "token": token_usage}
 
     # No tool call happened
-    text = response.get("output") or ""
+    text = response.get("output") or "Could you tell me one more again?"
     return {"type": "text", "result": text, "raw": response, "token": token_usage}

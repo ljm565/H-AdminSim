@@ -249,6 +249,16 @@ class SchedulingAdminStaffAgent:
         self.general_staff_greet = kwargs.get('general_staff_greet', "How can I help you?")
         self.staff_greet = kwargs.get('staff_greet', "How would you like to schedule the appointment?")
         self.staff_suggestion = kwargs.get('staff_suggestion', "How about this schedule: {schedule}")
+        self.staff_natural_suggestion = kwargs.get(
+            'staff_suggestion', 
+            [
+                "Can I schedule an appointment with {doctor} on {date} from {start} to {end}?",
+                "Could I book an appointment with {doctor} on {date} from {start} to {end}?",
+                "Is it possible to schedule an appointment with {doctor} on {date} from {start} to {end}?",
+                "Would it be okay to set up an appointment with {doctor} on {date} from {start} to {end}?",
+                "Can we arrange an appointment with {doctor} on {date} from {start} to {end}?",
+            ]
+        )
         
         # Set random seed for reproducibility
         if self.random_seed:
