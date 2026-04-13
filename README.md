@@ -301,7 +301,6 @@ hospital_data:
 >}
 >```
 * `disease_symptom_pair.json`
-<br>
 >It is recommended that this file contains disease-symptom pairs corresponding to the subspecialties defined in `department_info.json`.
 
 >```json
