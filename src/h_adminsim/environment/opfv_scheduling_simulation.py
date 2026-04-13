@@ -52,9 +52,35 @@ class OPFVSchedulingSimulation:
         self._init_prompt(schedule_rejection_prompt_path)
         self.sanity_checker = sanity_checker
         self.rules = SchedulingRule(metadata, department_data, self.environment, self.fhir_integration)
-        self.natural_end_phrase = "{schedule}\nYou must respond with satisfaction to this suggested schedule in 5 words or fewer. Ensure the response conveys only satisfaction and no dissatisfaction, and ends with a thank-you nuance."
+        
+        # Additional prompts for streaming scheduling simulation
+        self.patient_satisfaction_system_prompt = (
+            "You are a patient looking to schedule an appointment. "
+            "Assume that the latest schedule proposed by the hospital administrative staff is satisfactory."
+        )
+        self.natural_end_phrase = (
+            "{schedule}\n"
+            "Respond to this suggested schedule, ending with a thank-you nuance.\n"
+            "- If the conversation history shows that the same schedule was previously proposed and you rejected it, "
+            "respond with resigned understanding that this is likely the earliest available "
+            "(e.g., 'Oh, this must be the earliest available. Alright, thank you.'), keeping it under 15 words.\n"
+            "- Otherwise, respond with plain satisfaction in 5 words or fewer, "
+            "conveying only satisfaction and no dissatisfaction."
+        )
+        self.patient_evaluation_system_prompt = (
+            "You are a patient evaluating whether the proposed appointment meets your scheduling preference. "
+            "Your preference is for a specific {preference}: {preferred_condition}."
+        )
+        self.patient_schedule_evaluation_phrase = (
+            "{schedule}\n"
+            "Evaluate whether this appointment meets your {preference} preference ({preferred_condition}).\n"
+            "- If your preference is 'doctor': accept if the appointment is with {preferred_condition}.\n"
+            "- If your preference is 'date': accept if the appointment date is on or after {preferred_condition}.\n"
+            "If acceptable, respond with brief acceptance (5 words or fewer) ending with a thank-you, "
+            "and include '#ACCEPT' at the very end. "
+            "Otherwise, briefly express dissatisfaction and state what you need instead."
+        )
         self.end_phrase = "Thank you."
-        self.patient_satisfaction_system_prompt = "You are a patient looking to schedule an appointment. Assume that the latest schedule proposed by the hospital administrative staff is satisfactory."
         self._init_history()
 
     
@@ -1350,25 +1376,111 @@ class OPFVSchedulingSimulation:
             if random.random() < preference_reject_prob and i != len(gt_data) - 1 and \
                 gt_data[i+1]['preferred_doctor'] != _doctor and gt_data[i+1]['valid_from'] != _date:  # Avoid overlap with next preferred doctor or next preferred date
                 preference_reject_prob *= self.preference_rejection_prob_decay
+            
             ## Non-rejection case
             else:
                 if natural_express:
-                    self.update_patient_system_prompt(
-                        new_system_prompt=self.patient_satisfaction_system_prompt
-                    )
-                    patient_response = run_with_retry(
-                        self.patient_agent,
-                        self.natural_end_phrase.format(schedule=self.dialog_history['scheduling'][-1]['content']),
-                        using_multi_turn=True,
-                        verbose=False,
-                        max_retries=5,
-                        **merged_patient_kwargs,
-                    )
+                    final_preference = gt_patient_condition.get('preference')
+                    final_preferred_condition = gt_patient_condition.get('valid_from') if final_preference == 'date' \
+                        else gt_patient_condition.get('preferred_doctor')
+
+                    if final_preference.lower() == 'asap':
+                        self.update_patient_system_prompt(
+                            new_system_prompt=self.patient_satisfaction_system_prompt
+                        )
+                        patient_response = run_with_retry(
+                            self.patient_agent,
+                            self.natural_end_phrase.format(schedule=self.dialog_history['scheduling'][-1]['content']),
+                            using_multi_turn=True,
+                            verbose=False,
+                            max_retries=5,
+                            **merged_patient_kwargs,
+                        )
+                        self.dialog_history['scheduling'].append({"role": "Patient", "content": patient_response})
+                        role = f"{colorstr('green', 'Patient')} ({gt_data[i]['preference']})"
+                        log(f"{role:<25}: {patient_response}")
+                        yield 'Patient', preprocess_utterance(patient_response), None
+
+                    else:
+                        # doctor or date preference - evaluate with retry
+                        accept_tries = 0
+                        while accept_tries <= max_inferences:
+                            self.update_patient_system_prompt(
+                                new_system_prompt=self.patient_evaluation_system_prompt.format(
+                                    preference=final_preference,
+                                    preferred_condition=final_preferred_condition
+                                )
+                            )
+                            eval_phrase = self.patient_schedule_evaluation_phrase.format(
+                                schedule=self.dialog_history['scheduling'][-1]['content'],
+                                preference=final_preference,
+                                preferred_condition=final_preferred_condition
+                            )
+
+                            patient_response = run_with_retry(
+                                self.patient_agent,
+                                eval_phrase,
+                                using_multi_turn=True,
+                                verbose=False,
+                                max_retries=5,
+                                **merged_patient_kwargs,
+                            )
+
+                            self.dialog_history['scheduling'].append({"role": "Patient", "content": patient_response})
+                            role = f"{colorstr('green', 'Patient')} ({gt_data[i]['preference']})"
+                            log(f"{role:<25}: {patient_response}")
+                            yield 'Patient', preprocess_utterance(patient_response), None
+
+                            if '#ACCEPT' in patient_response:
+                                break
+
+                            # Not accepted - retry tool calling
+                            staff_known_data.update({'patient_intention': patient_response})
+                            staff_response = run_with_retry(
+                                self.scheduling,
+                                client,
+                                staff_known_data,
+                                doctor_information,
+                                chat_history=self._to_lc_history('scheduling'),
+                                reasoning_max_tries=reasoning_max_tries,
+                                callback=staff_token_callback,
+                                **merged_staff_kwargs
+                            )
+                            if staff_response['type'] == 'tool':
+                                pred_schedule = staff_response['result']
+                                _schedule = pred_schedule['schedule']
+                                _doctor = list(_schedule.keys())[0]
+                                _date = _schedule[_doctor]['date']
+                                try:
+                                    date, st, tr = _schedule[_doctor]['date'], _schedule[_doctor]['start'], _schedule[_doctor]['end']
+                                    _format = random.choice(self.admin_staff_agent.staff_natural_suggestion) \
+                                        if isinstance(self.admin_staff_agent.staff_natural_suggestion, list) \
+                                            else self.admin_staff_agent.staff_natural_suggestion
+                                    response = _format.format(doctor=_doctor, date=date, start=st, end=tr)
+                                except:
+                                    try:
+                                        response = self.admin_staff_agent.staff_suggestion.format(schedule=pred_schedule)
+                                    except:
+                                        response = str(pred_schedule)
+                                self.dialog_history['scheduling'].append({"role": "Staff", "content": response})
+                                role = f"{colorstr('blue', 'Staff')}"
+                                log(f"{role:<25}: {response}")
+                                yield 'Staff', preprocess_utterance(response), pred_schedule
+                            
+                            elif staff_response['type'] == 'text':
+                                response = staff_response['result']
+                                self.dialog_history['scheduling'].append({"role": "Staff", "content": response})
+                                role = f"{colorstr('blue', 'Staff')}"
+                                log(f"{role:<25}: {response}")
+                                yield 'Staff', preprocess_utterance(response), None
+
+                            accept_tries += 1
+
                 else:
                     patient_response = self.end_phrase
+                    self.dialog_history['scheduling'].append({"role": "Patient", "content": patient_response})
+                    role = f"{colorstr('green', 'Patient')} ({gt_data[i]['preference']})"
+                    log(f"{role:<25}: {patient_response}")
+                    yield 'Patient', preprocess_utterance(patient_response), None
 
-                self.dialog_history['scheduling'].append({"role": "Patient", "content": patient_response})
-                role = f"{colorstr('green', 'Patient')} ({gt_data[i]['preference']})"
-                log(f"{role:<25}: {patient_response}")
-                yield 'Patient', preprocess_utterance(patient_response), None
                 break

@@ -4,7 +4,7 @@ from patientsim.utils.common_utils import detect_op_termination
 
 from h_adminsim import IntakeAdminStaffAgent
 from h_adminsim.utils import log, colorstr
-from h_adminsim.utils.common_utils import preprocess_utterance
+from h_adminsim.utils.common_utils import run_with_retry, preprocess_utterance
 
 
 
@@ -187,7 +187,8 @@ class OPFVIntakeSimulation:
             progress = int(((inference_idx + 1) / self.max_inferences) * 100)
 
             # Obtain response from patient
-            patient_response = self.patient_agent(
+            patient_response = run_with_retry(
+                self.patient_agent,
                 user_prompt=dialog_history[-1]["content"],
                 using_multi_turn=True,
                 verbose=verbose,
@@ -199,7 +200,8 @@ class OPFVIntakeSimulation:
             yield 'Patient', preprocess_utterance(patient_response)
 
             # Obtain response from staff
-            staff_response = self.admin_staff_agent(
+            staff_response = run_with_retry(
+                self.admin_staff_agent,
                 user_prompt=dialog_history[-1]["content"] + "\nThis is the final turn. Now, you must provide your top5 differential diagnosis." \
                     if inference_idx == self.max_inferences - 1 else dialog_history[-1]["content"],
                 using_multi_turn=True,

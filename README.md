@@ -7,13 +7,14 @@
 
 * Paper: [H-AdminSim: A Multi-Agent Simulator for Realistic Hospital Administrative Workflows with FHIR Integration
 ](https://arxiv.org/abs/2602.05407)
+* Project Page: https://ljm565.github.io/h_adminsim_project/
 * PyPI Package: https://pypi.org/project/h-adminsim/
 
 &nbsp;
 
 ---
 ## Recent updates 📣
-* *v1.2.4 (April 2026)*: Improved scheduling simulation for more realistic behavior.
+* *v1.2.4, v1.2.5 (April 2026)*: Improved scheduling simulation for more realistic behavior.
     * Added option for more natural patient end phrases.
     * Enhanced preference rejection for more realistic simulation.
     * Improved scheduling simulation stability.
