@@ -7,6 +7,7 @@
 
 * Paper: [H-AdminSim: A Multi-Agent Simulator for Realistic Hospital Administrative Workflows with FHIR Integration
 ](https://arxiv.org/abs/2602.05407)
+* Project Page: https://ljm565.github.io/h_adminsim_project/
 * PyPI Package: https://pypi.org/project/h-adminsim/
 
 &nbsp;

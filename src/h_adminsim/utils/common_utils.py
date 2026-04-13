@@ -686,6 +686,17 @@ def preprocess_utterance(utterance: str) -> str:
     Returns:
         str: Pre-processed utterance string.
     """
+    if "#ACCEPT" in utterance:
+        utterance = utterance.replace("#ACCEPT", "")
+        utterance = ' '.join(utterance.split())
+
+        if not utterance:
+            return 'Thanks.'
+        
+        if utterance[-1] not in "!.?":
+            utterance += "."
+        return utterance
+    
     return ' '.join(utterance.split())
 
 
