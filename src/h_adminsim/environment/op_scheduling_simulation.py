@@ -59,8 +59,13 @@ class OPScehdulingSimulation:
             "Assume that the latest schedule proposed by the hospital administrative staff is satisfactory."
         )
         self.natural_end_phrase = (
-            "{schedule}\nYou must respond with satisfaction to this suggested schedule in 5 words or fewer. "
-            "Ensure the response conveys only satisfaction and no dissatisfaction, and ends with a thank-you nuance."
+            "{schedule}\n"
+            "Respond to this suggested schedule, ending with a thank-you nuance.\n"
+            "- If the conversation history shows that the same schedule was previously proposed and you rejected it, "
+            "respond with resigned understanding that this is likely the earliest available "
+            "(e.g., 'Oh, this must be the earliest available. Alright, thank you.'), keeping it under 15 words.\n"
+            "- Otherwise, respond with plain satisfaction in 5 words or fewer, "
+            "conveying only satisfaction and no dissatisfaction."
         )
         self.patient_evaluation_system_prompt = (
             "You are a patient evaluating whether the proposed appointment meets your scheduling preference. "
