@@ -133,6 +133,9 @@ class Simulator:
                     fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].append(pred['schedule'])
                     fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].sort()
         
+        for task, patients in done_patients.items():
+            log(f"{task:<20}: {colorstr(len(patients))} patient(s) resumed")
+        
         return agent_simulation_data, agent_results, done_patients
 
     

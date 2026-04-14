@@ -14,7 +14,7 @@
 
 ---
 ## Recent updates 📣
-* *v1.2.4, v1.2.5 (April 2026)*: Improved scheduling simulation for more realistic behavior.
+* *v1.2.4&mdash;v1.2.6 (April 2026)*: Improved scheduling simulation for more realistic behavior.
     * Added option for more natural patient end phrases.
     * Enhanced preference rejection for more realistic simulation.
     * Improved scheduling simulation stability.
@@ -184,8 +184,8 @@ from h_adminsim.pipeline import DataGenerator
 # 1. Generator Initialization
 # 1.1. Default usaage
 data_generator = DataGenerator()    # Default: primary care
-# data_generator = DateGenerator(level='secondary') # For secondary care
-# data_generator = DateGenerator(level='tertiary')  # For tertiary care
+# data_generator = DataGenerator(care_level='secondary') # For secondary care
+# data_generator = DataGenerator(care_level='tertiary')  # For tertiary care
 
 # 1.2. You can synthesize data with your own configuration
 data_generator = DataGenerator(config='data_config.yaml')
@@ -301,8 +301,8 @@ hospital_data:
 >}
 >```
 * `disease_symptom_pair.json`
-<br>
 >It is recommended that this file contains disease-symptom pairs corresponding to the subspecialties defined in `department_info.json`.
+
 >```json
 >{
 >    "gastroenterology": [
