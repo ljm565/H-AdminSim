@@ -57,7 +57,7 @@
                         {
                             "name": "Colonoscopy",
                             "code": "IMGAS-T05",
-                            "duration_hour": 1.0,
+                            "duration_hour": 2.5,
                             "priority": 1,
                             "result_hours": 48,
                             "depends_on": [],
@@ -97,7 +97,7 @@
                         {
                             "name": "Electrocardiogram",
                             "code": "IMCAR-T02",
-                            "duration_hour": 0.25,
+                            "duration_hour": 0.05,
                             "priority": 0,
                             "result_hours": 1,
                             "depends_on": [],
@@ -177,7 +177,7 @@
                         {
                             "name": "Arterial Blood Gas Analysis",
                             "code": "IMPUL-T03",
-                            "duration_hour": 0.25,
+                            "duration_hour": 0.5,
                             "priority": 0,
                             "result_hours": 2,
                             "depends_on": [],
@@ -207,7 +207,7 @@
                         {
                             "name": "Bronchoscopy",
                             "code": "IMPUL-T06",
-                            "duration_hour": 0.25,
+                            "duration_hour": 0.5,
                             "priority": 2,
                             "result_hours": 72,
                             "depends_on": ["IMPUL-T02"],
@@ -235,8 +235,28 @@
                             "description": "No special preparation required. Wear clothing with easy access to the neck area. Remove any necklaces or neck jewelry before the exam."
                         },
                         {
-                            "name": "Thyroid Fine Needle Aspiration",
+                            "name": "Bone Densitometry",
                             "code": "IMEND-T02",
+                            "duration_hour": 0.1,
+                            "priority": 0,
+                            "result_hours": 6,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "No special preparation required. Wear comfortable clothing without metal zippers or buttons. Inform your doctor if you have had a recent CT scan or nuclear medicine test using contrast or radiotracer."
+                        },
+                        {
+                            "name": "HbA1c Blood Test",
+                            "code": "IMEND-T03",
+                            "duration_hour": 0.1,
+                            "priority": 0,
+                            "result_hours": 6,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "No fasting required. A simple blood draw from your arm. Results reflect average blood sugar over the past 2-3 months."
+                        },
+                        {
+                            "name": "Thyroid Fine Needle Aspiration",
+                            "code": "IMEND-T04",
                             "duration_hour": 0.5,
                             "priority": 1,
                             "result_hours": 120,
@@ -246,33 +266,13 @@
                         },
                         {
                             "name": "Oral Glucose Tolerance Test",
-                            "code": "IMEND-T03",
+                            "code": "IMEND-T05",
                             "duration_hour": 2.0,
                             "priority": 1,
                             "result_hours": 6,
-                            "depends_on": [],
-                            "avoid_same_day": [],
+                            "depends_on": ["IMEND-T03"],
+                            "avoid_same_day": ["IMEND-T03"],
                             "description": "Fast for at least 8-10 hours before the test. Water is allowed. The test takes 2 hours with blood drawn at multiple time points. Avoid strenuous exercise the day before. Bring a light snack for after the test."
-                        },
-                        {
-                            "name": "Bone Densitometry",
-                            "code": "IMEND-T04",
-                            "duration_hour": 0.25,
-                            "priority": 0,
-                            "result_hours": 6,
-                            "depends_on": [],
-                            "avoid_same_day": [],
-                            "description": "No special preparation required. Wear comfortable clothing without metal zippers or buttons. Inform your doctor if you have had a recent CT scan or nuclear medicine test using contrast or radiotracer."
-                        },
-                        {
-                            "name": "HbA1c Blood Test",
-                            "code": "IMEND-T05",
-                            "duration_hour": 0.25,
-                            "priority": 0,
-                            "result_hours": 6,
-                            "depends_on": [],
-                            "avoid_same_day": [],
-                            "description": "No fasting required. A simple blood draw from your arm. Results reflect average blood sugar over the past 2-3 months."
                         },
                         {
                             "name": "Adrenal CT Scan",
