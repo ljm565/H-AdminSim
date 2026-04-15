@@ -375,39 +375,9 @@
                             "description": "No fasting required. A simple blood draw from your arm. Results include counts of red blood cells, white blood cells, and platelets."
                         },
                         {
-                            "name": "Bone Marrow Biopsy",
-                            "code": "IMHEM-T02",
-                            "duration_hour": 1.0,
-                            "priority": 2,
-                            "result_hours": 96,
-                            "depends_on": ["IMHEM-T01", "IMHEM-T05", "IMHEM-T06"],
-                            "avoid_same_day": ["IMHEM-T03", "IMHEM-T04"],
-                            "description": "Avoid blood-thinning medications for several days before if medically safe. Local anesthesia will be used; the procedure is performed on the back of the hip bone. Plan to rest for the remainder of the day. Some soreness is expected for several days."
-                        },
-                        {
-                            "name": "CT Scan with Contrast",
-                            "code": "IMHEM-T03",
-                            "duration_hour": 0.75,
-                            "priority": 1,
-                            "result_hours": 12,
-                            "depends_on": ["IMHEM-T01"],
-                            "avoid_same_day": ["IMHEM-T04", "IMHEM-T02"],
-                            "description": "Fast for 4 hours before the exam. Inform your doctor of any contrast dye allergies or kidney problems. Drink plenty of fluids after the exam to help clear the contrast dye."
-                        },
-                        {
-                            "name": "PET-CT Scan",
-                            "code": "IMHEM-T04",
-                            "duration_hour": 2.0,
-                            "priority": 1,
-                            "result_hours": 36,
-                            "depends_on": ["IMHEM-T01"],
-                            "avoid_same_day": ["IMHEM-T03", "IMHEM-T02"],
-                            "description": "Fast for at least 6 hours before the exam. Avoid strenuous exercise for 24 hours before. Blood glucose will be measured before the scan; the exam may be postponed if glucose is too high. Rest quietly for 1 hour after the radiotracer injection before imaging begins."
-                        },
-                        {
                             "name": "Peripheral Blood Smear",
-                            "code": "IMHEM-T05",
-                            "duration_hour": 0.25,
+                            "code": "IMHEM-T02",
+                            "duration_hour": 0.1,
                             "priority": 0,
                             "result_hours": 3,
                             "depends_on": [],
@@ -415,14 +385,44 @@
                             "description": "No fasting required. A small blood sample will be taken from a fingertip or vein. The sample is examined under a microscope to assess blood cell shape and appearance."
                         },
                         {
-                            "name": "Coagulation Panel",
-                            "code": "IMHEM-T06",
-                            "duration_hour": 0.25,
+                            "name": "Prothrombin Time",
+                            "code": "IMHEM-T03",
+                            "duration_hour": 0.1,
                             "priority": 0,
                             "result_hours": 3,
                             "depends_on": [],
                             "avoid_same_day": [],
                             "description": "No fasting required. Inform your doctor of any blood-thinning medications you are currently taking, as these will affect results."
+                        },
+                        {
+                            "name": "CT Scan with Contrast",
+                            "code": "IMHEM-T04",
+                            "duration_hour": 0.25,
+                            "priority": 1,
+                            "result_hours": 12,
+                            "depends_on": [],
+                            "avoid_same_day": ["IMHEM-T05", "IMHEM-T06"],
+                            "description": "Fast for 4 hours before the exam. Inform your doctor of any contrast dye allergies or kidney problems. Drink plenty of fluids after the exam to help clear the contrast dye."
+                        },
+                        {
+                            "name": "PET-CT Scan",
+                            "code": "IMHEM-T05",
+                            "duration_hour": 2.0,
+                            "priority": 1,
+                            "result_hours": 36,
+                            "depends_on": [],
+                            "avoid_same_day": ["IMHEM-T04", "IMHEM-T06"],
+                            "description": "Fast for at least 6 hours before the exam. Avoid strenuous exercise for 24 hours before. Blood glucose will be measured before the scan; the exam may be postponed if glucose is too high. Rest quietly for 1 hour after the radiotracer injection before imaging begins."
+                        },
+                        {
+                            "name": "Bone Marrow Biopsy",
+                            "code": "IMHEM-T06",
+                            "duration_hour": 0.5,
+                            "priority": 2,
+                            "result_hours": 96,
+                            "depends_on": ["IMHEM-T01"],
+                            "avoid_same_day": ["IMHEM-T04", "IMHEM-T05"],
+                            "description": "Avoid blood-thinning medications for several days before if medically safe. Local anesthesia will be used; the procedure is performed on the back of the hip bone. Plan to rest for the remainder of the day. Some soreness is expected for several days."
                         }
                     ]
                 },
