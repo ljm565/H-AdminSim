@@ -307,7 +307,7 @@
                         {
                             "name": "24-hour Urine Collection Analysis",
                             "code": "IMNEP-T02",
-                            "duration_hour": 0.25,
+                            "duration_hour": 24,
                             "priority": 0,
                             "result_hours": 48,
                             "depends_on": [],
@@ -315,19 +315,9 @@
                             "description": "Collect all urine produced over a full 24-hour period in the provided container. Keep the container refrigerated throughout collection. Discard the first morning urine, then collect all subsequent urine until the same time next morning."
                         },
                         {
-                            "name": "Renal Biopsy",
-                            "code": "IMNEP-T03",
-                            "duration_hour": 1.0,
-                            "priority": 2,
-                            "result_hours": 120,
-                            "depends_on": ["IMNEP-T01", "IMNEP-T04"],
-                            "avoid_same_day": ["IMNEP-T06"],
-                            "description": "Avoid blood-thinning medications for several days before if medically safe. Fast for 8 hours beforehand. The procedure uses local anesthesia and ultrasound guidance. Plan to rest for 4-6 hours after and avoid strenuous activity for 1 week."
-                        },
-                        {
                             "name": "GFR Measurement",
-                            "code": "IMNEP-T04",
-                            "duration_hour": 0.5,
+                            "code": "IMNEP-T03",
+                            "duration_hour": 0.1,
                             "priority": 0,
                             "result_hours": 6,
                             "depends_on": [],
@@ -336,23 +326,33 @@
                         },
                         {
                             "name": "Dialysis Access Evaluation",
-                            "code": "IMNEP-T05",
-                            "duration_hour": 0.5,
+                            "code": "IMNEP-T04",
+                            "duration_hour": 1.0,
                             "priority": 1,
                             "result_hours": 6,
-                            "depends_on": ["IMNEP-T04"],
+                            "depends_on": ["IMNEP-T03"],
                             "avoid_same_day": [],
                             "description": "No special preparation required. Wear loose clothing with easy access to both arms. Inform your doctor of any previous arm surgeries or vascular procedures."
                         },
                         {
                             "name": "Renal CT Angiography",
-                            "code": "IMNEP-T06",
-                            "duration_hour": 0.75,
+                            "code": "IMNEP-T05",
+                            "duration_hour": 0.5,
                             "priority": 1,
                             "result_hours": 12,
-                            "depends_on": ["IMNEP-T01", "IMNEP-T04"],
-                            "avoid_same_day": ["IMNEP-T03"],
+                            "depends_on": ["IMNEP-T01", "IMNEP-T03"],
+                            "avoid_same_day": ["IMNEP-T06"],
                             "description": "Fast for 4 hours if contrast dye is used. Inform your doctor of any kidney problems or contrast dye allergies. Drink plenty of fluids before and after the exam to protect the kidneys."
+                        },
+                        {
+                            "name": "Renal Biopsy",
+                            "code": "IMNEP-T06",
+                            "duration_hour": 1.0,
+                            "priority": 2,
+                            "result_hours": 120,
+                            "depends_on": ["IMNEP-T01", "IMNEP-T03"],
+                            "avoid_same_day": ["IMNEP-T05"],
+                            "description": "Avoid blood-thinning medications for several days before if medically safe. Fast for 8 hours beforehand. The procedure uses local anesthesia and ultrasound guidance. Plan to rest for 4-6 hours after and avoid strenuous activity for 1 week."
                         }
                     ]
                 },
