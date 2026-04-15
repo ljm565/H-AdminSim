@@ -307,7 +307,7 @@
                         {
                             "name": "24-hour Urine Collection Analysis",
                             "code": "IMNEP-T02",
-                            "duration_hour": 24,
+                            "duration_hour": 24.0,
                             "priority": 0,
                             "result_hours": 48,
                             "depends_on": [],
@@ -447,7 +447,7 @@
                         {
                             "name": "Chest X-ray",
                             "code": "IMINF-T02",
-                            "duration_hour": 0.25,
+                            "duration_hour": 0.1,
                             "priority": 0,
                             "result_hours": 3,
                             "depends_on": [],
@@ -455,19 +455,9 @@
                             "description": "No special preparation required. Remove metal objects from the chest and neck area. Inform your doctor if you are pregnant."
                         },
                         {
-                            "name": "Lumbar Puncture",
-                            "code": "IMINF-T03",
-                            "duration_hour": 0.75,
-                            "priority": 1,
-                            "result_hours": 48,
-                            "depends_on": ["IMINF-T02"],
-                            "avoid_same_day": [],
-                            "description": "Inform your doctor of any blood-thinning medications. Local anesthesia will be used. You will need to lie flat for 1-2 hours after the procedure. Arrange for someone to take you home. Drink plenty of fluids to prevent headache after the procedure."
-                        },
-                        {
                             "name": "HIV Viral Load Test",
-                            "code": "IMINF-T04",
-                            "duration_hour": 0.25,
+                            "code": "IMINF-T03",
+                            "duration_hour": 0.1,
                             "priority": 0,
                             "result_hours": 60,
                             "depends_on": [],
@@ -476,8 +466,8 @@
                         },
                         {
                             "name": "Tuberculosis Skin Test",
-                            "code": "IMINF-T05",
-                            "duration_hour": 0.25,
+                            "code": "IMINF-T04",
+                            "duration_hour": 0.1,
                             "priority": 0,
                             "result_hours": 72,
                             "depends_on": [],
@@ -486,13 +476,23 @@
                         },
                         {
                             "name": "Wound Culture and Sensitivity",
-                            "code": "IMINF-T06",
+                            "code": "IMINF-T05",
                             "duration_hour": 0.25,
                             "priority": 0,
                             "result_hours": 60,
                             "depends_on": [],
                             "avoid_same_day": [],
                             "description": "No special preparation required. The wound area will be cleaned and a swab taken before applying new dressings or antibiotics. Inform your doctor of any antibiotics you are currently taking."
+                        },
+                        {
+                            "name": "Lumbar Puncture",
+                            "code": "IMINF-T06",
+                            "duration_hour": 0.5,
+                            "priority": 1,
+                            "result_hours": 48,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "Inform your doctor of any blood-thinning medications. Local anesthesia will be used. You will need to lie flat for 1-2 hours after the procedure. Arrange for someone to take you home. Drink plenty of fluids to prevent headache after the procedure."
                         }
                     ]
                 },
@@ -525,18 +525,8 @@
                             "description": "No fasting required. A blood sample will be drawn. You may continue taking antihistamines before this test as they do not affect blood test results."
                         },
                         {
-                            "name": "Patch Test",
-                            "code": "IMALL-T03",
-                            "duration_hour": 0.5,
-                            "priority": 1,
-                            "result_hours": 72,
-                            "depends_on": ["IMALL-T01"],
-                            "avoid_same_day": ["IMALL-T01", "IMALL-T05", "IMALL-T06"],
-                            "description": "Avoid showering or getting the test area wet for 48 hours after application. Do not apply creams or lotions to your back before the test. Return after 48 hours and again at 72-96 hours to have results read. Avoid sun exposure to the test area."
-                        },
-                        {
                             "name": "Spirometry",
-                            "code": "IMALL-T04",
+                            "code": "IMALL-T03",
                             "duration_hour": 0.5,
                             "priority": 0,
                             "result_hours": 2,
@@ -545,13 +535,23 @@
                             "description": "Avoid bronchodilator inhalers for 4-6 hours before the test. Do not smoke for at least 4 hours beforehand. Wear loose, comfortable clothing. Avoid large meals for 2 hours before the test."
                         },
                         {
+                            "name": "Patch Test",
+                            "code": "IMALL-T04",
+                            "duration_hour": 0.5,
+                            "priority": 1,
+                            "result_hours": 72,
+                            "depends_on": [],
+                            "avoid_same_day": ["IMALL-T05", "IMALL-T06"],
+                            "description": "Avoid showering or getting the test area wet for 48 hours after application. Do not apply creams or lotions to your back before the test. Return after 48 hours and again at 72-96 hours to have results read. Avoid sun exposure to the test area."
+                        },
+                        {
                             "name": "Oral Food Challenge",
                             "code": "IMALL-T05",
                             "duration_hour": 2.0,
                             "priority": 2,
                             "result_hours": 3,
-                            "depends_on": ["IMALL-T01", "IMALL-T02"],
-                            "avoid_same_day": ["IMALL-T01", "IMALL-T03", "IMALL-T06"],
+                            "depends_on": [["IMALL-T01", "IMALL-T02"]],
+                            "avoid_same_day": ["IMALL-T01", "IMALL-T04", "IMALL-T06"],
                             "description": "Fast for 2 hours before the challenge. Avoid antihistamines for 3-7 days before. The procedure involves supervised ingestion of the suspected food in gradually increasing amounts. Emergency medication will be available on-site. Do not come alone; bring a companion."
                         },
                         {
@@ -560,8 +560,8 @@
                             "duration_hour": 1.5,
                             "priority": 2,
                             "result_hours": 3,
-                            "depends_on": ["IMALL-T01", "IMALL-T02", "IMALL-T04"],
-                            "avoid_same_day": ["IMALL-T01", "IMALL-T03", "IMALL-T05"],
+                            "depends_on": [["IMALL-T01", "IMALL-T02"]],
+                            "avoid_same_day": ["IMALL-T01", "IMALL-T04", "IMALL-T05"],
                             "description": "Avoid antihistamines and the suspected drug for the period specified by your doctor. Do not come alone; bring a companion. Emergency medication will be on-site. The procedure involves gradually administered doses of the drug under close medical supervision."
                         }
                     ]
