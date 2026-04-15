@@ -488,7 +488,7 @@
                             "name": "Lumbar Puncture",
                             "code": "IMINF-T06",
                             "duration_hour": 0.5,
-                            "priority": 1,
+                            "priority": 2,
                             "result_hours": 48,
                             "depends_on": [],
                             "avoid_same_day": [],
@@ -577,7 +577,7 @@
                         {
                             "name": "Rheumatoid Factor and Anti-CCP Test",
                             "code": "IMRHE-T01",
-                            "duration_hour": 0.25,
+                            "duration_hour": 0.1,
                             "priority": 0,
                             "result_hours": 36,
                             "depends_on": [],
@@ -585,19 +585,9 @@
                             "description": "No fasting required. A blood sample will be drawn from your arm. Results help diagnose rheumatoid arthritis and other autoimmune conditions."
                         },
                         {
-                            "name": "Joint Ultrasound",
-                            "code": "IMRHE-T02",
-                            "duration_hour": 0.5,
-                            "priority": 1,
-                            "result_hours": 3,
-                            "depends_on": ["IMRHE-T03"],
-                            "avoid_same_day": [],
-                            "description": "No special preparation required. Wear comfortable clothing with easy access to the affected joint. Inform your doctor which joints are most symptomatic."
-                        },
-                        {
                             "name": "Joint X-ray",
-                            "code": "IMRHE-T03",
-                            "duration_hour": 0.25,
+                            "code": "IMRHE-T02",
+                            "duration_hour": 0.1,
                             "priority": 0,
                             "result_hours": 3,
                             "depends_on": [],
@@ -605,19 +595,9 @@
                             "description": "No special preparation required. Inform your doctor if you are pregnant. Remove jewelry or metal objects near the joint to be imaged."
                         },
                         {
-                            "name": "MRI of Joints",
-                            "code": "IMRHE-T04",
-                            "duration_hour": 1.0,
-                            "priority": 2,
-                            "result_hours": 36,
-                            "depends_on": ["IMRHE-T03", "IMRHE-T01"],
-                            "avoid_same_day": [],
-                            "description": "Remove all metal objects before the scan. Inform your doctor of any implanted metal devices or claustrophobia. No fasting required unless contrast is used (fast 4 hours). The scan takes up to 1 hour; you must lie still throughout."
-                        },
-                        {
                             "name": "ANA Panel",
-                            "code": "IMRHE-T05",
-                            "duration_hour": 0.25,
+                            "code": "IMRHE-T03",
+                            "duration_hour": 0.1,
                             "priority": 0,
                             "result_hours": 36,
                             "depends_on": [],
@@ -625,13 +605,33 @@
                             "description": "No fasting required. A blood sample will be drawn. Results screen for antinuclear antibodies associated with autoimmune diseases such as lupus."
                         },
                         {
-                            "name": "Synovial Fluid Analysis",
-                            "code": "IMRHE-T06",
+                            "name": "Joint Ultrasound",
+                            "code": "IMRHE-T04",
+                            "duration_hour": 0.5,
+                            "priority": 1,
+                            "result_hours": 3,
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "No special preparation required. Wear comfortable clothing with easy access to the affected joint. Inform your doctor which joints are most symptomatic."
+                        },
+                        {
+                            "name": "MRI of Joints",
+                            "code": "IMRHE-T05",
                             "duration_hour": 0.5,
                             "priority": 1,
                             "result_hours": 36,
-                            "depends_on": ["IMRHE-T03", "IMRHE-T02"],
-                            "avoid_same_day": ["IMRHE-T04"],
+                            "depends_on": [],
+                            "avoid_same_day": [],
+                            "description": "Remove all metal objects before the scan. Inform your doctor of any implanted metal devices or claustrophobia. No fasting required unless contrast is used (fast 4 hours). The scan takes up to 1 hour; you must lie still throughout."
+                        },
+                        {
+                            "name": "Synovial Fluid Analysis",
+                            "code": "IMRHE-T06",
+                            "duration_hour": 0.25,
+                            "priority": 2,
+                            "result_hours": 36,
+                            "depends_on": [],
+                            "avoid_same_day": [],
                             "description": "Inform your doctor of any blood-thinning medications. Local anesthesia is used at the puncture site. Avoid strenuous activity involving the affected joint for 24 hours after the procedure. Ice can be applied to reduce swelling."
                         }
                     ]
