@@ -284,8 +284,9 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         for dept, test_list in fixed_test_schedule.items():
             for single_test in test_list:
                 for device_name, device_info in single_test['devices'].items():
-                    key = (single_test['priority'], single_test['code'], dept ,device_name)
+                    key = (single_test['priority'], single_test['code'], dept, device_name)
                     test_duration_segments = max(1, math.ceil(Decimal(str(single_test['duration_hour'])) / Decimal(str(interval_hour))))
+                    
                     # Initialize
                     if key not in vacant_test_schedules:
                         vacant_test_schedules[key] = {
@@ -295,6 +296,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                             'schedule': [],
                             'remain_n': 0,
                         }
+                    
                     for date, schedules in device_info['schedule'].items():
                         schedule_segments_flat = list()
                         for time_range in schedules:
@@ -483,8 +485,8 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                         else:
                             available_segs = []
 
-                    slot = FollowUpDataSynthesizer._find_contiguous_slot(available_segs, duration)
-                    if slot is not None:
+                    all_slots = FollowUpDataSynthesizer._find_all_contiguous_slots(available_segs, duration)
+                    for slot in all_slots:
                         slot_time = list(convert_segment_to_time(start_hour, end_hour, interval_hour, slot))
                         valid_slots.append((_date, slot_time))
 
@@ -566,8 +568,10 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                 if 'tests' in v2
             }
         
-        all_tests = registry.DEPARTMENT_TESTS[department]
+        all_tests = deepcopy(registry.DEPARTMENT_TESTS[department])
         code_to_test = {t['code']: t for t in all_tests}
+        for test in all_tests:
+            test['depends_on'] = [dep if isinstance(dep, str) else random.choice(dep) for dep in test['depends_on']]
 
         def _transitive_closure(code: str) -> set:
             """Return the full set of codes required by code (including itself)."""
@@ -622,23 +626,24 @@ class FollowUpDataSynthesizer(DataSynthesizer):
 
 
     @staticmethod
-    def _find_contiguous_slot(available_segments: list[int],
-                              required_size: int) -> Optional[list[int]]:
+    def _find_all_contiguous_slots(available_segments: list[int],
+                                   required_size: int) -> list[list[int]]:
         """
-        Find a contiguous block of the required size from available segments.
+        Enumerate all possible contiguous slots of the required size from available segments.
 
         Args:
-            available_segments (list[int]): Sorted list of available segment indices.
+            available_segments (list[int]): List of available segment indices.
             required_size (int): Number of contiguous segments needed.
 
         Returns:
-            Optional[list[int]]: A list of contiguous segment indices, or None if not found.
+            list[list[int]]: All possible contiguous segment blocks of `required_size`.
+                             Empty list if no block fits.
         """
         if len(available_segments) < required_size:
-            return None
+            return []
 
         available_sorted = sorted(available_segments)
-        candidates = []
+        blocks = []
 
         current_block = [available_sorted[0]]
         for i in range(1, len(available_sorted)):
@@ -646,18 +651,16 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                 current_block.append(available_sorted[i])
             else:
                 if len(current_block) >= required_size:
-                    candidates.append(current_block)
+                    blocks.append(current_block)
                 current_block = [available_sorted[i]]
         if len(current_block) >= required_size:
-            candidates.append(current_block)
+            blocks.append(current_block)
 
-        if not candidates:
-            return None
-
-        block = random.choice(candidates)
-        max_start = len(block) - required_size
-        start_idx = random.randint(0, max_start)
-        return block[start_idx:start_idx + required_size]
+        slots = []
+        for block in blocks:
+            for start in range(len(block) - required_size + 1):
+                slots.append(block[start:start + required_size])
+        return slots
 
 
     @staticmethod
