@@ -140,7 +140,7 @@
                             "duration_hour": 1.0,
                             "priority": 2,
                             "result_hours": 36,
-                            "depends_on": ["IMCAR-T02"],
+                            "depends_on": ["IMCAR-T01"],
                             "avoid_same_day": [],
                             "description": "Remove all metal objects before the scan. Inform your doctor of any implanted metal devices (pacemaker, stents). No food restriction unless contrast is used (fast 4 hours). Inform staff if you are claustrophobic; the scan takes up to 1 hour."
                         }
@@ -271,7 +271,7 @@
                             "priority": 1,
                             "result_hours": 6,
                             "depends_on": ["IMEND-T03"],
-                            "avoid_same_day": ["IMEND-T03"],
+                            "avoid_same_day": [],
                             "description": "Fast for at least 8-10 hours before the test. Water is allowed. The test takes 2 hours with blood drawn at multiple time points. Avoid strenuous exercise the day before. Bring a light snack for after the test."
                         },
                         {
@@ -511,7 +511,7 @@
                             "priority": 0,
                             "result_hours": 1,
                             "depends_on": [],
-                            "avoid_same_day": ["IMALL-T05", "IMALL-T06"],
+                            "avoid_same_day": [],
                             "description": "Avoid antihistamines for at least 3-7 days before the test (check with your doctor for the specific duration). Do not apply creams or lotions to the test area. Wear short-sleeved clothing. Bring a list of all current medications."
                         },
                         {
@@ -551,7 +551,7 @@
                             "priority": 2,
                             "result_hours": 3,
                             "depends_on": [["IMALL-T01", "IMALL-T02"]],
-                            "avoid_same_day": ["IMALL-T01", "IMALL-T04", "IMALL-T06"],
+                            "avoid_same_day": ["IMALL-T04", "IMALL-T06"],
                             "description": "Fast for 2 hours before the challenge. Avoid antihistamines for 3-7 days before. The procedure involves supervised ingestion of the suspected food in gradually increasing amounts. Emergency medication will be available on-site. Do not come alone; bring a companion."
                         },
                         {
@@ -561,7 +561,7 @@
                             "priority": 2,
                             "result_hours": 3,
                             "depends_on": [["IMALL-T01", "IMALL-T02"]],
-                            "avoid_same_day": ["IMALL-T01", "IMALL-T04", "IMALL-T05"],
+                            "avoid_same_day": ["IMALL-T04", "IMALL-T05"],
                             "description": "Avoid antihistamines and the suspected drug for the period specified by your doctor. Do not come alone; bring a companion. Emergency medication will be on-site. The procedure involves gradually administered doses of the drug under close medical supervision."
                         }
                     ]
