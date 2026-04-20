@@ -662,25 +662,17 @@ class OutpatientFirstScheduling(OutpatientTask):
         fhir_patient, fhir_appointment = None, None
         if status and self.fhir_integration:
             if patient_information is not None:
-                fhir_patient = DataConverter.data_to_patient(
-                    {
-                        'metadata': deepcopy(self._metadata),
-                        'department': deepcopy(self._department_data),
-                        'patient': {
-                            prediction['patient']: {
-                                'department': prediction['department'], 
-                                'gender': patient_information['gender'],
-                                'telecom': [{'system': 'phone', 'value': patient_information['phone_number'], 'use': 'mobile'}],
-                                'birthDate': personal_id_to_birth_date(patient_information['personal_id']),
-                                'identifier': [{'value': patient_information['personal_id'], 'use': 'official'}],
-                                'address': [{'type': 'postal', 'text': patient_information['address'], 'use': 'home'}],
-                            }
-                        }
-                    }
-                )[0]
-            fhir_appointment = DataConverter.get_fhir_appointment(data={'metadata': deepcopy(self._metadata),
-                                                                        'department': deepcopy(self._department_data),
-                                                                        'information': deepcopy(prediction)})
+                fhir_patient = self.get_patient_fhir_resource(
+                    self._metadata,
+                    self._department_data,
+                    patient_information,
+                    prediction
+                )
+            fhir_appointment = self.get_appointment_fhir_resource(
+                self._metadata,
+                self._department_data,
+                prediction,
+            )
             
         environment.update_env(
             status=status, 

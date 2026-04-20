@@ -806,6 +806,7 @@ class DataConverter:
                     'department': department,
                     'patient': {
                         info.get('patient'): {
+                            'visit_type': info.get('visit_type'),
                             'department': info.get('department'),
                             'attending_physician': info.get('attending_physician'),
                             'date': info.get('date'),

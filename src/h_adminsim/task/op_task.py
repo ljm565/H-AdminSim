@@ -1,6 +1,9 @@
+from copy import deepcopy
 from typing import Tuple, Optional
+from h_adminsim.tools import DataConverter
 
 from h_adminsim.utils import log
+from h_adminsim.utils.common_utils import personal_id_to_birth_date
 
 
 
@@ -66,3 +69,65 @@ class OutpatientTask:
         else:
             assert vllm_endpoint is not None, log('VLLM endpoint must be provided for non-Gemini/GPT models.', 'error')
             return model, vllm_endpoint, True
+        
+    
+    def get_patient_fhir_resource(self, 
+                                  metadata: dict,
+                                  department_data: dict,
+                                  patient_data: dict,
+                                  schedule_data: dict) -> dict:
+        """
+        Generate a FHIR Patient resource based on the provided patient information.
+
+        Args:
+            metadata (dict): Hospital metadata information.
+            department_data (dict): Hospital department information.
+            patient_data (dict): Patient-specific information.
+            schedule_data (dict): Scheduling information for the patient.
+
+        Returns:
+            dict: The generated FHIR Patient resource.
+        """
+        fhir_patient = DataConverter.data_to_patient(
+            {
+                'metadata': deepcopy(metadata),
+                'department': deepcopy(department_data),
+                'patient': {
+                    patient_data['name']: {
+                        'department': schedule_data['department'], 
+                        'gender': patient_data['gender'],
+                        'telecom': [{'system': 'phone', 'value': patient_data['phone_number'], 'use': 'mobile'}],
+                        'birthDate': personal_id_to_birth_date(patient_data['personal_id']),
+                        'identifier': [{'value': patient_data['personal_id'], 'use': 'official'}],
+                        'address': [{'type': 'postal', 'text': patient_data['address'], 'use': 'home'}],
+                    }
+                }
+            }
+        )[0]
+        return fhir_patient
+    
+
+    def get_appointment_fhir_resource(self,
+                                      metadata: dict,
+                                      department_data: dict,
+                                      schedule_data: dict) -> dict:
+        """
+        Generate a FHIR Appointment resource based on the provided scheduling information.
+
+        Args:
+            metadata (dict): Hospital metadata information.
+            department_data (dict): Hospital department information.
+            schedule_data (dict): Scheduling information for the patient.
+        
+        Returns:
+            dict: The generated FHIR Appointment resource.
+        """
+        fhir_appointment = DataConverter.get_fhir_appointment(
+            data={
+                'metadata': deepcopy(metadata),
+                'department': deepcopy(department_data),
+                'information': deepcopy(schedule_data)
+            }
+        )
+        return fhir_appointment
+                                      

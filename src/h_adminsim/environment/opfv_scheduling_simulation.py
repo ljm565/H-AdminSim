@@ -301,6 +301,7 @@ class OPFVSchedulingSimulation:
         if compare_iso_time(old_iso_time, new_iso_time):
             self.rules.cancel_schedule(idx, doctor_information, original_schedule)
             final_schedule = {
+                'visit_type': 'first_visit',
                 'patient': original_schedule['patient'],
                 'attending_physician': pred_doctor_name,
                 'department': original_schedule['department'],
@@ -313,6 +314,7 @@ class OPFVSchedulingSimulation:
                 'preference': original_schedule.get('preference'),
                 'preferred_doctor': original_schedule.get('preferred_doctor'),
                 'valid_from': original_schedule.get('valid_from'),
+                'test': None,
                 'last_updated_time': self.environment.current_time
             }
             return final_schedule
@@ -619,7 +621,7 @@ class OPFVSchedulingSimulation:
                 prediction['result']['new_schedule'] = new_schedule
 
                 # Sanity check
-                ## No GT case
+                ## When GT exists
                 if self.sanity_checker is not None:
                     status, status_code = self.sanity_checker.schedule_check(
                         prediction=new_schedule,
@@ -884,6 +886,7 @@ class OPFVSchedulingSimulation:
                 pred_doctor_name = list(pred_schedule['schedule'].keys())[0]
                 schedule = pred_schedule['schedule'][pred_doctor_name]
                 prediction = {
+                    'visit_type': 'first_visit',
                     'patient': staff_known_data['patient'],
                     'attending_physician': pred_doctor_name,
                     'department': staff_known_data['department'],
@@ -893,6 +896,7 @@ class OPFVSchedulingSimulation:
                     'preference': gt_data[i].get('preference'),
                     'preferred_doctor': gt_data[i].get('preferred_doctor'),
                     'valid_from': gt_data[i].get('valid_from'),
+                    'test': None,
                     'last_updated_time': self.environment.current_time
                 }
                 result_dict['pred'] = [prediction]
