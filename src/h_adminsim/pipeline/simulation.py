@@ -29,14 +29,6 @@ class Simulator:
         self.task = self._init_task(task)
         self.random_seed = random_seed
 
-        if scheduling_task != None and self.fhir_integration != scheduling_task.fhir_integration:
-            raise ValueError(
-                    colorstr(
-                        "red",
-                        f"fhir_integration mismatch: expected {self.fhir_integration}, but got {scheduling_task.fhir_integration} in scheduling_task."
-                    )
-                )
-
 
     def __env_setup(self, random_seed: int, resume: bool):
         """
@@ -74,9 +66,13 @@ class Simulator:
         if 'first_visit_scheduling' in task:
             assert isinstance(task['first_visit_scheduling'], OutpatientFirstScheduling), \
                 log("Wrong type of `first_visit_scheduling` task.", level='error')
+            assert self.fhir_integration == task['first_visit_scheduling'].fhir_integration, \
+                log("FHIR integration setting mismatch between Simulator and `first_visit_scheduling` task.", level='error')
         if 'follow_up_visit_scheduling' in task:
             assert isinstance(task['follow_up_visit_scheduling'], OutpatientFollowUpScheduling), \
                 log("Wrong type of `follow_up_visit_scheduling` task.", level='error')
+            assert self.fhir_integration == task['follow_up_visit_scheduling'].fhir_integration, \
+                log("FHIR integration setting mismatch between Simulator and `follow_up_visit_scheduling` task.", level='error')
         
         return task
     
