@@ -140,7 +140,7 @@ class FirstVisitDataSynthesizer(DataSynthesizer):
                     )
                     birth_date = generate_random_date()
                     patient_info[patient] = {
-                        'type': visit_type,
+                        'visit_type': visit_type,
                         'department': department,
                         'attending_physician': doctor,
                         'date': date,

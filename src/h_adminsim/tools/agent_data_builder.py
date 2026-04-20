@@ -52,7 +52,7 @@ class AgentDataBuilder:
         }
         
         for patient, patient_values in data['patient'].items():
-            visit_type = patient_values['type']
+            visit_type = patient_values['visit_type']
             doctor, department, date = patient_values['attending_physician'], patient_values['department'], patient_values['date']
             gender, telecom, birth_date, identifier, address = \
                 patient_values['gender'], patient_values['telecom'], patient_values['birthDate'], patient_values['identifier'], patient_values['address']

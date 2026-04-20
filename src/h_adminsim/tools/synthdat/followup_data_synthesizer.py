@@ -500,7 +500,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                 date, appointment = None, None
             
             follow_up_patient_info[name] = {
-                'type': visit_type,
+                'visit_type': visit_type,
                 'department': department,
                 'attending_physician': doctor,
                 'date': date,
@@ -675,14 +675,14 @@ class FollowUpDataSynthesizer(DataSynthesizer):
             AssertionError: If validation fails.
         """
         for patient_name, pdata in merged_data['patient'].items():
-            assert pdata.get('type') in ('first_visit', 'follow_up_visit'), \
+            assert pdata.get('visit_type') in ('first_visit', 'follow_up_visit'), \
                 colorstr('red', f'Patient {patient_name} has invalid type: {pdata.get("type")}')
             assert pdata['department'] in merged_data['department'], \
                 colorstr('red', f'Patient {patient_name} has invalid department {pdata["department"]}')
             assert pdata['attending_physician'] in merged_data['doctor'], \
                 colorstr('red', f'Patient {patient_name} has invalid physician {pdata["attending_physician"]}')
 
-            if pdata['type'] == 'follow_up_visit':
+            if pdata['visit_type'] == 'follow_up_visit':
                 assert len(pdata['required_tests']) > 0, \
                     colorstr('red', f'Follow-up patient {patient_name} has no required tests')
                 for test in pdata['required_tests']:

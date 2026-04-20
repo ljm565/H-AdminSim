@@ -685,7 +685,7 @@ class DataConverter:
             ]
 
             # First visit: only appointment with physician
-            if patient_values['type'] == 'first_visit':
+            if patient_values['visit_type'] == 'first_visit':
                 # Appointment
                 date = patient_values['date']
                 schedule_time_range = patient_values['schedule']
@@ -712,7 +712,7 @@ class DataConverter:
                     )
 
             # Follow-up visit: appointment with physician + tests
-            elif patient_values['type'] == 'follow_up_visit':
+            elif patient_values['visit_type'] == 'follow_up_visit':
                 # Tests
                 required_tests = patient_values.get('required_tests', [])
                 for test in required_tests:
@@ -768,7 +768,7 @@ class DataConverter:
                         )
 
             else:
-                raise ValueError(log(f"Invalid patient type: {patient_values['type']}", "error"))
+                raise ValueError(log(f"Invalid patient type: {patient_values['visit_type']}", "error"))
                  
         return appointments
 
