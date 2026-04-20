@@ -47,7 +47,7 @@ class AgentDataBuilder:
             'metadata': data['metadata'], 
             'department': data['department'], 
             'doctor': data['doctor'], 
-            'test': data['test'],
+            'test': data.get('test'),
             'agent_data': []
         }
         

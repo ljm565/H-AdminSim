@@ -179,7 +179,10 @@ class DataGenerator:
         if convert_to_fhir:
             converter = DataConverter(self.config)
             try:
-                all_resource_list = converter(self.save_dir / 'fhir_data', sanity_check)
+                all_resource_list = converter(
+                    self.save_dir / 'fhir_data', 
+                    sanity_check
+                )
                 log(f"Data FHIR conversion completed successfully", color=True)
             except Exception:
                 log("Data FHIR conversion failed.", level='error')
