@@ -278,6 +278,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         tests_max = min(fu_config.test_per_department.max, fu_config.tests_per_patient.max)
         cross_dept_prob = fu_config.cross_department_test_prob
         include_consultation = fu_config.get('include_consultation', True)
+        code_to_test = {t['code']: t['name'] for test_list in fixed_test_schedule.values() for t in test_list}
 
         # Collect vacant test schedules
         vacant_test_schedules = {}
@@ -373,6 +374,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
 
                     chosen_idx, chosen_slot = random.choice(valid_slots)
                     combination.append({
+                        'name': code_to_test[test_code],
                         'priority': priority,
                         'test_code': test_code,
                         'department': dept,

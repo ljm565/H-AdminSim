@@ -247,6 +247,7 @@ class SchedulingAdminStaffAgent:
         self.temperature = kwargs.get('temperature', 0.2)   # For various responses. If you want deterministic responses, set it to 0.
         self.general_greet = kwargs.get('general_greet', "How can I help you?")
         self.appn_greet = kwargs.get('appn_greet', "How would you like to schedule the appointment?")
+        self.test_greet = kwargs.get('test_greet', "How would you like to schedule the test?")
         self.schedule_suggestion = kwargs.get('schedule_suggestion', "How about this schedule: {schedule}")
         self.natural_schedule_suggestion = kwargs.get(
             'natural_schedule_suggestion', 
