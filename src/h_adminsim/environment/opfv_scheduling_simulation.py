@@ -11,7 +11,7 @@ from langchain.agents import AgentExecutor
 from langchain_core.messages import HumanMessage, AIMessage
 
 from h_adminsim import SchedulingAdminStaffAgent
-from h_adminsim.registry.errors import ToolCallingError, ScheduleNotFoundError, SchedulingError
+from h_adminsim.registry.errors import ToolCallingError, DataNotFoundError, SchedulingError
 from h_adminsim.registry import OPFV_PREFERENCE_PHRASE_PATIENT, OPFV_PREFERENCE_PHRASE_STAFF, STATUS_CODES
 from h_adminsim.environment.hospital import HospitalEnvironment
 from h_adminsim.utils import log, colorstr
@@ -727,7 +727,7 @@ class OPFVSchedulingSimulation:
         merged_staff_kwargs = {**staff_kwargs, **kwargs}
         
         # Start conversation
-        staff_greet = self.admin_staff_agent.staff_greet
+        staff_greet = self.admin_staff_agent.appn_greet
         self.dialog_history['scheduling'].append({"role": "Staff", "content": staff_greet})
         role = f"{colorstr('blue', 'Staff')}"
         log(f"{role:<25}: {staff_greet}")
@@ -793,17 +793,17 @@ class OPFVSchedulingSimulation:
                             _schedule = pred_schedule['schedule']
                             _doctor = list(_schedule.keys())[0]
                             _date, _st, _tr = _schedule[_doctor]['date'], _schedule[_doctor]['start'], _schedule[_doctor]['end']
-                            _format = random.choice(self.admin_staff_agent.staff_natural_suggestion) \
-                                if isinstance(self.admin_staff_agent.staff_natural_suggestion, list) \
-                                    else self.admin_staff_agent.staff_natural_suggestion
+                            _format = random.choice(self.admin_staff_agent.natural_schedule_suggestion) \
+                                if isinstance(self.admin_staff_agent.natural_schedule_suggestion, list) \
+                                    else self.admin_staff_agent.natural_schedule_suggestion
                             response = _format.format(
                                 doctor=_doctor, date=_date, start=_st, end=_tr
                             )
                         else:
-                            response = self.admin_staff_agent.staff_suggestion.format(schedule=pred_schedule)
+                            response = self.admin_staff_agent.schedule_suggestion.format(schedule=pred_schedule)
                     except:
                         try:
-                            response = self.admin_staff_agent.staff_suggestion.format(schedule=pred_schedule)
+                            response = self.admin_staff_agent.schedule_suggestion.format(schedule=pred_schedule)
                         except:
                             response = str(pred_schedule)
                     
@@ -933,7 +933,7 @@ class OPFVSchedulingSimulation:
             **kwargs: Additional keyword arguments passed to the patient and staff agent.
 
         Raises:
-            ScheduleNotFoundError: Schedule not found error.
+            DataNotFoundError: Schedule not found error.
 
         Returns:
             Tuple[dict, dict]: Updated doctor information and a result dictionary after cancellation.
@@ -956,7 +956,7 @@ class OPFVSchedulingSimulation:
         merged_patient_kwargs = {**patient_kwargs, **kwargs}
 
         # Start conversation
-        staff_greet = self.admin_staff_agent.general_staff_greet
+        staff_greet = self.admin_staff_agent.general_greet
         self.dialog_history['cancel'].append({"role": "Staff", "content": staff_greet})
         role = f"{colorstr('blue', 'Staff')}"
         log(f"{role:<25}: {staff_greet}")
@@ -1014,7 +1014,7 @@ class OPFVSchedulingSimulation:
                     
                     # Fail to identify the schedule
                     else:
-                        raise ScheduleNotFoundError(colorstr("red", "Error: Schedule not found error."))
+                        raise DataNotFoundError(colorstr("red", "Error: Schedule not found error."))
                 
             # The case without any determination during the simulation
             if not len(result_dict['gt']):
@@ -1027,7 +1027,7 @@ class OPFVSchedulingSimulation:
                 }
                 
         # Requested schedule indentification error
-        except ScheduleNotFoundError:
+        except DataNotFoundError:
             result_dict['dialog'].append(preprocess_dialog(self.dialog_history['cancel']))
 
         # Tool calling error
@@ -1080,7 +1080,7 @@ class OPFVSchedulingSimulation:
 
         Raises:
             TypeError: If the return type from the rescheduling method is unexpected.
-            ScheduleNotFoundError: Schedule not found error.
+            DataNotFoundError: Schedule not found error.
             SchedulingError: Scheduling error.
             
         Returns:
@@ -1105,7 +1105,7 @@ class OPFVSchedulingSimulation:
         merged_staff_kwargs = {**staff_kwargs, **kwargs}
 
         # Start conversation
-        staff_greet = self.admin_staff_agent.general_staff_greet
+        staff_greet = self.admin_staff_agent.general_greet
         self.dialog_history['reschedule'].append({"role": "Staff", "content": staff_greet})
         role = f"{colorstr('blue', 'Staff')}"
         log(f"{role:<25}: {staff_greet}")
@@ -1144,7 +1144,7 @@ class OPFVSchedulingSimulation:
                     # Fail to identify the schedule
                     if staff_response['tmp_flag'] == 'retrieve':
                         result_dict = staff_response['result']['result_dict']
-                        raise ScheduleNotFoundError(colorstr("red", "Error: Schedule not found error."))
+                        raise DataNotFoundError(colorstr("red", "Error: Schedule not found error."))
                     
                     # Scheduling failure case
                     elif staff_response['tmp_flag'] == 'schedule':
@@ -1196,7 +1196,7 @@ class OPFVSchedulingSimulation:
                 }
 
         # Requested schedule indentification error
-        except ScheduleNotFoundError:
+        except DataNotFoundError:
             result_dict['dialog'].append(preprocess_dialog(self.dialog_history['reschedule']))
         
         # Scheduling Error:
@@ -1277,7 +1277,7 @@ class OPFVSchedulingSimulation:
         merged_staff_kwargs = {**staff_kwargs, **kwargs}
         
         # Start conversation
-        staff_greet = self.admin_staff_agent.staff_greet
+        staff_greet = self.admin_staff_agent.appn_greet
         self.dialog_history['scheduling'].append({"role": "Staff", "content": staff_greet})
         role = f"{colorstr('blue', 'Staff')}"
         log(f"{role:<25}: {staff_greet}")
@@ -1347,17 +1347,17 @@ class OPFVSchedulingSimulation:
                             _schedule = pred_schedule['schedule']
                             _doctor = list(_schedule.keys())[0]
                             date, st, tr = _schedule[_doctor]['date'], _schedule[_doctor]['start'], _schedule[_doctor]['end']
-                            _format = random.choice(self.admin_staff_agent.staff_natural_suggestion) \
-                                if isinstance(self.admin_staff_agent.staff_natural_suggestion, list) \
-                                    else self.admin_staff_agent.staff_natural_suggestion
+                            _format = random.choice(self.admin_staff_agent.natural_schedule_suggestion) \
+                                if isinstance(self.admin_staff_agent.natural_schedule_suggestion, list) \
+                                    else self.admin_staff_agent.natural_schedule_suggestion
                             response = _format.format(
                                 doctor=_doctor, date=date, start=st, end=tr
                             )
                         else:
-                            response = self.admin_staff_agent.staff_suggestion.format(schedule=pred_schedule)
+                            response = self.admin_staff_agent.schedule_suggestion.format(schedule=pred_schedule)
                     except:
                         try:
-                            response = self.admin_staff_agent.staff_suggestion.format(schedule=pred_schedule)
+                            response = self.admin_staff_agent.schedule_suggestion.format(schedule=pred_schedule)
                         except:
                             response = str(pred_schedule)
                     
@@ -1456,13 +1456,13 @@ class OPFVSchedulingSimulation:
                                 _date = _schedule[_doctor]['date']
                                 try:
                                     date, st, tr = _schedule[_doctor]['date'], _schedule[_doctor]['start'], _schedule[_doctor]['end']
-                                    _format = random.choice(self.admin_staff_agent.staff_natural_suggestion) \
-                                        if isinstance(self.admin_staff_agent.staff_natural_suggestion, list) \
-                                            else self.admin_staff_agent.staff_natural_suggestion
+                                    _format = random.choice(self.admin_staff_agent.natural_schedule_suggestion) \
+                                        if isinstance(self.admin_staff_agent.natural_schedule_suggestion, list) \
+                                            else self.admin_staff_agent.natural_schedule_suggestion
                                     response = _format.format(doctor=_doctor, date=date, start=st, end=tr)
                                 except:
                                     try:
-                                        response = self.admin_staff_agent.staff_suggestion.format(schedule=pred_schedule)
+                                        response = self.admin_staff_agent.schedule_suggestion.format(schedule=pred_schedule)
                                     except:
                                         response = str(pred_schedule)
                                 self.dialog_history['scheduling'].append({"role": "Staff", "content": response})

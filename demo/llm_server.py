@@ -319,7 +319,7 @@ async def generate_schedule_response(request: PromptRequest):
         sessions[session_id]['schedule_dialog_history'].append({"role": "Staff", "content": response})
     elif response['type'] == 'tool':
         pred_schedule = response['result']
-        response = agent.staff_suggestion.format(schedule=pred_schedule)
+        response = agent.schedule_suggestion.format(schedule=pred_schedule)
         sessions[session_id]['schedule_dialog_history'].append({"role": "Staff", "content": response})
     
     return {'response': response, 'session_id': session_id, 'task': sessions[session_id]['task']}

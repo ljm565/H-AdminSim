@@ -38,8 +38,8 @@ class ToolCallingError(Exception):
         self.message = message
 
 
-class ScheduleNotFoundError(Exception):
-    error_code = "SCHEDULE_NOT_FOUND_ERROR"
+class DataNotFoundError(Exception):
+    error_code = "DATA_NOT_FOUND_ERROR"
 
     def __init__(self, message: str):
         super().__init__(message)

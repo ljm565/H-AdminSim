@@ -155,7 +155,11 @@ class SchedulingRule:
         return list(candidate_schedules)
     
 
-    def find_idx(self, patient_schedule_list: list[dict], patient_name: str, doctor_name: str, date: str) -> int:
+    def find_idx(self, 
+                 patient_schedule_list: list[dict], 
+                 patient_name: str, 
+                 doctor_name: str, 
+                 date: Optional[str] = None) -> int:
         """
         Identify the index of the appointment corresponding to the patient's request
         (e.g., cancellation or modification) from the patient's schedule list.
@@ -165,16 +169,17 @@ class SchedulingRule:
                                                 Each item contains appointment details such as doctor name, date, and time.
             patient_name (str): Name of the patient making the request.
             doctor_name (str): Name of the doctor associated with the target appointment.
-            date (str): Date of the target appointment (YYYY-MM-DD).
+            date (Optional[str], optional): Date of the target appointment (YYYY-MM-DD). Defaults to None.
 
         Returns:
             int: The index of the appointment that matches the patient's request.
         """
         for idx, patient_schedule in enumerate(patient_schedule_list):
-            if patient_schedule['status'] == 'scheduled' and \
-                patient_schedule['patient'].lower() == patient_name.lower() and \
-                    patient_schedule['attending_physician'].lower() == doctor_name.lower() \
-                        and patient_schedule['date'] == date:
+            if ((patient_schedule['visit_type'] == 'first_visit' and patient_schedule['status'] == 'scheduled') or \
+                    patient_schedule['visit_type'] == 'follow_up_visit') and \
+                        patient_schedule['patient'].lower() == patient_name.lower() and \
+                            patient_schedule['attending_physician'].lower() == doctor_name.lower() and \
+                                (date is None or patient_schedule['date'] == date):
                 return idx
         return -1
 
@@ -384,9 +389,56 @@ def create_tools(rule: SchedulingRule,
 
         return {'original_schedule': original_schedule, 'result_dict': result_dict}
     
+
+    @tool
+    def retrieve_patient_tests(patient_name: str, doctor_name: str) -> dict:
+        """
+        Retrieve the list of tests required for a patient based on their scheduled appointment.
+
+        Args:
+            patient_name (str): Name of the patient.
+            doctor_name (str): Name of the doctor for the scheduled appointment.
+        
+        Returns:
+            dict: A dictionary containing the list of required tests for the patient.
+        """
+        log(f'[TOOL CALL] retrieve_patient_tests | patient_name={patient_name}, doctor_name={doctor_name}', color=True)
+        result_dict, test_list = init_result_dict(), None
+        prefix = 'Dr.'
+        if prefix not in doctor_name:
+            doctor_name = f'{prefix} {doctor_name}'
+        index = rule.find_idx(patient_schedule_list, patient_name, doctor_name)
+
+        # Update result_dict
+        if gt_idx is None:
+            result_dict['gt'].append({'test_retrieve': None})
+            result_dict['pred'].append({'test_retrieve': index})
+            result_dict['status'].append(None)
+            result_dict['status_code'].append(None)
+        else:
+            status = True if index == gt_idx else False
+            status_code = STATUS_CODES['correct'] if index == gt_idx else STATUS_CODES['test_retrieve']['identify']
+            result_dict['gt'].append({'test_retrieve': gt_idx})
+            result_dict['pred'].append({'test_retrieve': index})
+            result_dict['status'].append(status)
+            result_dict['status_code'].append(status_code)
+        
+        if gt_idx is None or status:
+            test_list = patient_schedule_list[index]['test']
+
+        return {'test_list': test_list, 'result_dict': result_dict}
+    
+
     if only_schedule_tool:
         return [physician_filter_tool, date_filter_tool, get_all_time_tool]
-    return [physician_filter_tool, date_filter_tool, get_all_time_tool, cancel_tool, reschedule_tool]
+    return [
+        physician_filter_tool, 
+        date_filter_tool, 
+        get_all_time_tool, 
+        cancel_tool, 
+        reschedule_tool,
+        retrieve_patient_tests,
+    ]
 
 
 

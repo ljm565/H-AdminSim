@@ -225,13 +225,12 @@ class SchedulingAdminStaffAgent:
         )
         
         # Initialize prompt
-        self.system_prompt, self.scheduling_user_prompt_template, self.tool_calling_prompt, self.sc_tool_calling_prompt = \
-            self._init_prompt(
-                system_prompt_path=system_prompt_path, 
-                scheduling_user_prompt_path=scheduling_user_prompt_path,
-                tool_calling_prompt_path=tool_calling_prompt_path,
-                sc_tool_calling_prompt_path=sc_tool_calling_prompt_path,
-            )
+        self._init_prompt(
+            system_prompt_path=system_prompt_path, 
+            scheduling_user_prompt_path=scheduling_user_prompt_path,
+            tool_calling_prompt_path=tool_calling_prompt_path,
+            sc_tool_calling_prompt_path=sc_tool_calling_prompt_path,
+        )
         
         if log_verbose:
             log("Scheduling adminStaffAgent initialized successfully", color=True)
@@ -246,17 +245,28 @@ class SchedulingAdminStaffAgent:
 
         self.random_seed = kwargs.get('random_seed', None)
         self.temperature = kwargs.get('temperature', 0.2)   # For various responses. If you want deterministic responses, set it to 0.
-        self.general_staff_greet = kwargs.get('general_staff_greet', "How can I help you?")
-        self.staff_greet = kwargs.get('staff_greet', "How would you like to schedule the appointment?")
-        self.staff_suggestion = kwargs.get('staff_suggestion', "How about this schedule: {schedule}")
-        self.staff_natural_suggestion = kwargs.get(
-            'staff_suggestion', 
+        self.general_greet = kwargs.get('general_greet', "How can I help you?")
+        self.appn_greet = kwargs.get('appn_greet', "How would you like to schedule the appointment?")
+        self.schedule_suggestion = kwargs.get('schedule_suggestion', "How about this schedule: {schedule}")
+        self.natural_schedule_suggestion = kwargs.get(
+            'natural_schedule_suggestion', 
             [
                 "Can I schedule an appointment with {doctor} on {date} from {start} to {end}?",
                 "Could I book an appointment with {doctor} on {date} from {start} to {end}?",
                 "Is it possible to schedule an appointment with {doctor} on {date} from {start} to {end}?",
                 "Would it be okay to set up an appointment with {doctor} on {date} from {start} to {end}?",
                 "Can we arrange an appointment with {doctor} on {date} from {start} to {end}?",
+            ]
+        )
+        self.test_explanation = kwargs.get('test_explanation', "You should take {test_len} test(s): {test_list}.")
+        self.natural_test_explanation = kwargs.get(
+            'natural_test_explanation',
+            [
+                "Before your appointment, you'll need to take {test_len} test(s): {test_list}.",
+                "You are scheduled to receive {test_len} test(s) prior to the visit, which are: {test_list}.",
+                "Please note that {test_len} test(s) will be required beforehand: {test_list}.",
+                "Ahead of your appointment, we'll need to conduct {test_len} test(s): {test_list}.",
+                "There are {test_len} test(s) you will need to complete before the appointment: {test_list}.",
             ]
         )
         
@@ -308,70 +318,71 @@ class SchedulingAdminStaffAgent:
                                                                    If not provided, the default user prompt will be used. Defaults to None.
             tool_calling_prompt_path (Optional[str], optional): Path to a custom tool calling prompt file. 
                                                                 If not provided, the default tool calling prompt will be used. Defaults to None.
+            sc_tool_calling_prompt_path (Optional[str], optional): Path to a custom scheduling tool calling prompt file. 
+                                                                If not provided, the default scheduling tool calling prompt will be used. Defaults to None.
+
         Raises:
             FileNotFoundError: If the specified system prompt file does not exist.
-
-        Returns:
-            Tuple[str, str, str, str]: The system prompt, user prompt templates, tool calling prompt, and the only scheduling tool calling prompt.
         """
         # Initialilze with the default system prompt
         if not system_prompt_path:
-            prompt_file_name = 'opfv_schedule_staff_system.txt'
+            if self.target_task == 'first_visit_scheduling':
+                prompt_file_name = 'opfv_schedule_staff_system.txt'
+            elif self.target_task == 'follow_up_visit_scheduling':
+                prompt_file_name = 'opfu_schedule_staff_system.txt'
             file_path = resources.files("h_adminsim.assets.prompts").joinpath(prompt_file_name)
-            system_prompt = file_path.read_text()
+            self.system_prompt = file_path.read_text()
         
         # User can specify a custom system prompt
         else:
             if not os.path.exists(system_prompt_path):
                 raise FileNotFoundError(colorstr("red", f"System prompt file not found: {system_prompt_path}"))
             with open(system_prompt_path, 'r') as f:
-                system_prompt = f.read()
+                self.system_prompt = f.read()
 
         # Initialilze with the default user prompt for scheduling task
         if not scheduling_user_prompt_path:
-            prompt_file_name = 'opfv_schedule_staff_reasoning.txt'
+            # TODO: Add reasoning-based scheduling prompt in OPFU case
+            if self.target_task == 'first_visit_scheduling':
+                prompt_file_name = 'opfv_schedule_staff_reasoning.txt'
+            elif self.target_task == 'follow_up_visit_scheduling':
+                prompt_file_name = 'opfu_schedule_staff_reasoning.txt'
             file_path = resources.files("h_adminsim.assets.prompts").joinpath(prompt_file_name)
-            scheduling_user_prompt_template = file_path.read_text()
+            self.scheduling_user_prompt_template = file_path.read_text()
         
         # User can specify a custom user prompt
         else:
             if not os.path.exists(scheduling_user_prompt_path):
                 raise FileNotFoundError(colorstr("red", f"User prompt file not found: {scheduling_user_prompt_path}"))
             with open(scheduling_user_prompt_path, 'r') as f:
-                scheduling_user_prompt_template = f.read()
+                self.scheduling_user_prompt_template = f.read()
 
         # Initialilze with the default tool calling prompt
         if not tool_calling_prompt_path:
-            if self.target_task == 'first_visit_scheduling':
-                prompt_file_name = 'opfv_schedule_staff_tool_calling.txt'
-            elif self.target_task == 'follow_up_visit_scheduling':
-                prompt_file_name = 'opfu_schedule_staff_tool_calling.txt'
+            prompt_file_name = 'opfvfu_schedule_staff_tool_calling.txt'
             file_path = resources.files("h_adminsim.assets.prompts").joinpath(prompt_file_name)
-            tool_calling_prompt = file_path.read_text()
+            self.tool_calling_prompt = file_path.read_text()
         
         # User can specify a custom tool calling prompt
         else:
             if not os.path.exists(tool_calling_prompt_path):
                 raise FileNotFoundError(colorstr("red", f"User prompt file not found: {tool_calling_prompt_path}"))
-            else:
-                with open(tool_calling_prompt_path, 'r') as f:
-                    tool_calling_prompt = f.read()
+            with open(tool_calling_prompt_path, 'r') as f:
+                self.tool_calling_prompt = f.read()
         
         # Initialilze with the only scheduling tool calling prompt
         if not sc_tool_calling_prompt_path:
+            # TODO: Add sc-tool calling prompt in OPFU case
             prompt_file_name = 'opfv_schedule_staff_sc_tool_calling.txt'
             file_path = resources.files("h_adminsim.assets.prompts").joinpath(prompt_file_name)
-            sc_tool_calling_prompt = file_path.read_text()
+            self.sc_tool_calling_prompt = file_path.read_text()
         
         # User can specify a custom scheduling tool calling prompt
         else:
             if not os.path.exists(sc_tool_calling_prompt_path):
                 raise FileNotFoundError(colorstr("red", f"User prompt file not found: {sc_tool_calling_prompt_path}"))
-            else:
-                with open(sc_tool_calling_prompt_path, 'r') as f:
-                    sc_tool_calling_prompt = f.read()
-
-        return system_prompt, scheduling_user_prompt_template, tool_calling_prompt, sc_tool_calling_prompt
+            with open(sc_tool_calling_prompt_path, 'r') as f:
+                self.sc_tool_calling_prompt = f.read()
     
 
     def reset_history(self, verbose: bool = True):
