@@ -666,7 +666,7 @@ class OutpatientFirstScheduling(OutpatientTask):
                     self._metadata,
                     self._department_data,
                     patient_information,
-                    prediction
+                    prediction['department']
                 )
             fhir_appointment = self.get_appointment_fhir_resource(
                 self._metadata,

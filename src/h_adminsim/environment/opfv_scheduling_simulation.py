@@ -1091,7 +1091,6 @@ class OPFVSchedulingSimulation:
             assert doctor_information is not None, log(f"Doctor information must be provided if you don't use FHIR.", level="error")
 
         # Initialize agents and result dictionary
-        self._branch = False
         result_dict = init_result_dict()
         self._init_agents(verbose=verbose)
         patient_schedules = self.environment.patient_schedules if patient_schedules is None else patient_schedules

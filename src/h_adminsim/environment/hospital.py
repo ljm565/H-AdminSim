@@ -60,6 +60,7 @@ class HospitalEnvironment:
         
         # Misc.
         self.patient_schedules = list()
+        self.follow_up_patient_info = list()
         self.waiting_list = list()
         self.first_verbose_flag = True
 
@@ -348,6 +349,20 @@ class HospitalEnvironment:
                 self.waiting_list.append((idx, requested_schedule))
                 if verbose:
                     log(f'{colorstr("[WAITING LIST ADDED]")}: {requested_schedule} schedule is appended to the waiting list.')
+
+
+    def add_follow_up_patient_info(self,
+                                   patient_info: dict,
+                                   fhir_resources: Optional[dict] = None):
+        """
+        Add follow-up patient information to the hospital environment and update FHIR resources if provided.
+        
+        Args:
+            patient_info (dict): A dictionary containing follow-up patient information.
+            fhir_resources (Optional[dict], optional): _description_. Defaults to None.
+        """
+        self.follow_up_patient_info.append(patient_info)
+        self.update_fhir(fhir_resources)
 
     
     def pop_waiting_list(self, idx: Union[list[int], int], verbose: bool = False):

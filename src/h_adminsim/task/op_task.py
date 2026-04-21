@@ -75,7 +75,7 @@ class OutpatientTask:
                                   metadata: dict,
                                   department_data: dict,
                                   patient_data: dict,
-                                  schedule_data: dict) -> dict:
+                                  assigned_department: str) -> dict:
         """
         Generate a FHIR Patient resource based on the provided patient information.
 
@@ -83,7 +83,7 @@ class OutpatientTask:
             metadata (dict): Hospital metadata information.
             department_data (dict): Hospital department information.
             patient_data (dict): Patient-specific information.
-            schedule_data (dict): Scheduling information for the patient.
+            assigned_department (str): The department to which the patient is assigned.
 
         Returns:
             dict: The generated FHIR Patient resource.
@@ -94,7 +94,7 @@ class OutpatientTask:
                 'department': deepcopy(department_data),
                 'patient': {
                     patient_data['name']: {
-                        'department': schedule_data['department'], 
+                        'department': assigned_department,
                         'gender': patient_data['gender'],
                         'telecom': [{'system': 'phone', 'value': patient_data['phone_number'], 'use': 'mobile'}],
                         'birthDate': personal_id_to_birth_date(patient_data['personal_id']),
