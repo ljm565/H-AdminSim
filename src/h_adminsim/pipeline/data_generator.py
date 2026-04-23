@@ -89,6 +89,11 @@ class DataGenerator:
             _task.add('first_visit')
         if 'follow_up_visit' in task:
             _task.add('follow_up_visit')
+        
+        if 'follow_up_visit' in _task and 'first_visit' not in _task:
+            log("'follow_up_visit' task requires 'first_visit' task. Adding 'first_visit' to task set.", level="warning")
+            _task.add('first_visit')
+        
         return _task
 
 
@@ -140,10 +145,7 @@ class DataGenerator:
         # First-visit data synthesis
         if 'first_visit' in self.task:
             try:
-                data, _ = self.fv_synthesizer.synthesize(
-                    sanity_check=sanity_check,
-                    department_info_path=department_info_path,
-                )
+                data = self.fv_synthesizer.synthesize(department_info_path)
                 log(f"Data synthesis completed successfully", color=True)
             except Exception:
                 log("Data synthesis failed.", level="error")
@@ -155,17 +157,10 @@ class DataGenerator:
                 log("Config must contain a 'hospital_data.follow_up_visit' section for follow-up synthesis.", "error")
 
             try:
-                if 'first_visit' in self.task:
-                    # First-visit data already generated -> merge follow-up into existing files
-                    if source_data_dir is None:
-                        source_data_dir = str(self.save_dir / 'data')
-                    followup_synthesizer = FollowUpDataSynthesizer(self.config, source_data_dir)
-                else:
-                    # Standalone mode -> generate hospital infra + follow-up patients from scratch
-                    followup_synthesizer = FollowUpDataSynthesizer(self.config)
-                    self.save_dir = followup_synthesizer.save_dir 
-                    log(f'Data saving directory: {colorstr(self.save_dir)}')
-
+                # First-visit data already generated -> merge follow-up into existing files
+                if source_data_dir is None:
+                    source_data_dir = str(self.save_dir / 'data')
+                followup_synthesizer = FollowUpDataSynthesizer(self.config, source_data_dir)
                 data = followup_synthesizer.synthesize(
                     sanity_check=sanity_check,
                     department_info_path=department_info_path,

@@ -184,6 +184,13 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                     }
                     _test['devices'][device_name]['schedule'] = test_schedule
         
+        # Pick out scheduling dependencies based on the current test information
+        code_to_test_name = {test['code']: test['name'] for _, tests in eligible_tests.items() for test in tests}
+        for tests in eligible_tests.values():
+            for test in tests:
+                test['depends_on'] = [dep for dep in test.get('depends_on', []) if dep in code_to_test_name]
+                test['avoid_same_day'] = [dep for dep in test.get('avoid_same_day', []) if dep in code_to_test_name]
+        
         return eligible_tests
 
 
@@ -322,7 +329,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                         vacant_test_schedules[key]['remain_n'] += int(len(vacant_schedules) * ratio)
                     
         # Make all possible test combinations based on the vacant_test_schedule
-        all_combinations = []
+        all_combinations = dict()
         consecutive_failures = 0
 
         while consecutive_failures < max_consecutive_failures:
@@ -423,34 +430,37 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                 if vacant_test_schedules[key]['remain_n'] <= 0:
                     del vacant_test_schedules[key]
 
-            all_combinations.append(combination)
+            all_combinations.setdefault(primary_dept, []).append(combination)
             consecutive_failures = 0
 
-        # Make patient profiles
-        follow_up_patient_info = dict()
-        used_names = list(set(patient_info.keys()))
-        new_names = DataSynthesizer.name_list_generator(len(all_combinations), reject_list=list(used_names))
-
-        # Make sure not to duplicate the first-visit appointments
+        # Pre-append first-visit consultations not to duplicate with follow-up test schedules
         _doctor_info = deepcopy(doctor_info)
-        for info in patient_info.values():
-            _doctor, _date, _schedule = info['attending_physician'], info['date'], info['schedule']
-            _doctor_info[_doctor]['schedule'][_date].append(_schedule)
+        for infos in patient_info.values():
+            for info in infos:
+                if info['visit_type'] == 'first_visit':
+                    _doctor, _date, _schedule = info['attending_physician'], info['date'], info['schedule']
+                    _doctor_info[_doctor]['schedule'][_date].append(_schedule)
 
-        for name, combination in zip(new_names, all_combinations):
-            department = combination[0]['department']
-            doctor = random.choice(department_info[department]['doctor'])
+        # Generate follow-up patient profiles based on the generated test combinations and merge them into patient_info
+        for patient, infos in patient_info.items():
+            department, doctor = None, None
+            for info in infos:
+                if info['visit_type'] == 'first_visit':
+                    # Basic demographic info
+                    gender, telecom, birth_date, identifier, address = \
+                        info['gender'], info['telecom'], info['birthDate'], info['identifier'], info['address']
+
+                    # Basic first-visit info
+                    symptom_level, department, doctor = info['symptom_level'], info['department'], info['attending_physician']
+                    break
+            
+            combination = random.choice(all_combinations[department])
             duration = int(Decimal(str(1)) / Decimal(str(doctor_info[doctor]['capacity_per_hour'])) / Decimal(str(interval_hour)))
             preference = generate_random_code_with_prob(
                 fu_config.preference.type,
                 fu_config.preference.probs
             )
             preference_rank = DataSynthesizer.second_preference_generator(preference, visit_type)
-            symptom_level = generate_random_code_with_prob(
-                fu_config.symptom.type,
-                fu_config.symptom.probs
-            )
-            birth_date = generate_random_date()
 
             if include_consultation:
                 last_time = max(
@@ -501,34 +511,24 @@ class FollowUpDataSynthesizer(DataSynthesizer):
             else:
                 date, appointment = None, None
             
-            follow_up_patient_info[name] = {
-                'visit_type': visit_type,
-                'department': department,
-                'attending_physician': doctor,
-                'date': date,
-                'schedule': appointment,
-                'preference': preference_rank,
-                'symptom_level': symptom_level,
-                'required_tests': combination,
-                'gender': generate_random_code('gender'),
-                'telecom': [{
-                    'system': 'phone',
-                    'value': generate_random_telecom(),
-                    'use': generate_random_code('use')
-                }],
-                'birthDate': birth_date,
-                'identifier': [{
-                    'value': generate_random_id_number(birth_date=birth_date),
-                    'use': 'official'
-                }],
-                'address': [{
-                    'type': 'postal',
-                    'text': generate_random_address(),
-                    'use': 'home'
-                }]
-            }
+            patient_info[patient].append(
+                {
+                    'visit_type': visit_type,
+                    'department': department,
+                    'attending_physician': doctor,
+                    'date': date,
+                    'schedule': appointment,
+                    'preference': preference_rank,
+                    'symptom_level': symptom_level,
+                    'required_tests': combination,
+                    'gender': gender,
+                    'telecom': telecom,
+                    'birthDate': birth_date,
+                    'identifier': identifier,
+                    'address': address,
+                }
+            )
 
-        patient_info.update(follow_up_patient_info)
         merged_data = {
             'metadata': metadata,
             'department': department_info,

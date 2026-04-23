@@ -25,17 +25,11 @@ class FirstVisitDataSynthesizer(DataSynthesizer):
         getcontext().prec = 10
 
 
-    def synthesize(self,
-                   return_obj: bool = False,
-                   sanity_check: bool = False,
-                   department_info_path: Optional[str] = None) -> Tuple[list[Information], list[Hospital]]:
+    def synthesize(self, department_info_path: Optional[str] = None) -> list[Information]:
         """
         Synthesize hospital data based on the configuration settings.
 
         Args:
-            return_obj (bool, optional): Whether to return the hospital data object.
-            sanity_check (bool, optional): If you want to check whether the generated data are compatible with the `Hospital` object,
-                                 you can use this option.
             department_info_path (Optional[str], optional): Path to a file containing department information. If provided, it will be used to load names. 
                                                             Defaults to None.
 
@@ -43,26 +37,18 @@ class FirstVisitDataSynthesizer(DataSynthesizer):
             e: Exception if data synthesis fails.
 
         Returns:
-            Tuple[list[Information], list[Hospital]]: A tuple containing the synthesized hospital data as an Information object and a Hospital object.
+            list[Information]: A list containing the synthesized hospital data as Information objects.
         """
-        if sanity_check:
-            return_obj = True
-
         try:
-            all_data, all_hospitals = list(), list()
+            all_data = list()
             hospitals = DataSynthesizer.hospital_list_generator(self.config.hospital_data.hospital_n)
             for i, hospital in tqdm(enumerate(hospitals), desc='Synthesizing data..', total=len(hospitals)):
                 data = DataSynthesizer.define_hospital_info(self.config, hospital, department_info_path)
                 data = FirstVisitDataSynthesizer.generate_first_visit_patients(self.config, data)
-                hospital_obj = convert_info_to_obj(data) if return_obj else None
-                if sanity_check:
-                    new_data = convert_obj_to_info(hospital_obj)
-                    assert to_dict(data) == to_dict(new_data)
                 json_save_fast(self.data_save_dir / f'hospital_{padded_int(i, len(str(self._n)))}.json', to_dict(data))
                 all_data.append(data)
-                all_hospitals.append(hospital_obj)
             log(f"Total {len(hospitals)} data synthesizing completed. Path: `{self.data_save_dir}`", color=True)
-            return all_data, all_hospitals
+            return all_data
 
         except Exception as e:
             log(f"Data synthesizing failed: {e}", level='error')
@@ -139,7 +125,7 @@ class FirstVisitDataSynthesizer(DataSynthesizer):
                         config.hospital_data.first_visit.symptom.probs
                     )
                     birth_date = generate_random_date()
-                    patient_info[patient] = {
+                    patient_info[patient] = [{
                         'visit_type': visit_type,
                         'department': department,
                         'attending_physician': doctor,
@@ -163,7 +149,7 @@ class FirstVisitDataSynthesizer(DataSynthesizer):
                             'text': generate_random_address(),
                             'use': 'home'
                         }]
-                    }
+                    }]
 
         data.patient = patient_info
         return data
