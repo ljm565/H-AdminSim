@@ -14,12 +14,7 @@ from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.common_utils import *
 from h_adminsim.utils.filesys_utils import *
 from h_adminsim.utils.random_utils import (
-    generate_random_code,
-    generate_random_date,
     generate_random_prob,
-    generate_random_telecom,
-    generate_random_address,
-    generate_random_id_number,
     generate_random_code_with_prob,    
 )
 
@@ -116,7 +111,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
             log(f"Follow-up data synthesizing failed: {e}", level='error')
             raise
     
-
+    
     @staticmethod
     def generate_test_schedule(config, 
                                hospital_data: dict,
@@ -195,23 +190,27 @@ class FollowUpDataSynthesizer(DataSynthesizer):
 
 
     @staticmethod
-    def generate_followup_patients(config, hospital_data: dict, max_consecutive_failures: int = 3) -> dict:
+    def _generate_test_combination(config,
+                                   department: str,
+                                   prev_end_iso: str,
+                                   code_to_test: dict,
+                                   vacant_test_schedules: dict,
+                                   cross_dept_prob: Optional[float] = 0.2,
+                                   max_failures: int = 3) -> list[dict]:
         """
-        Generate follow-up patient profiles and merge them into hospital data.
-
-        Reads hospital metadata, departments, and doctor information from existing hospital data, 
-        generates follow-up patients who need medical tests scheduled, and merges them into the same patient dict.
+        Generate a combination of follow-up tests based on the provided configuration and constraints.
 
         Args:
             config: Configuration object with hospital_data.follow_up_visit settings.
-            hospital_data (dict): Existing hospital data containing
-                                   metadata, department, doctor, and patient dicts.
-            max_consecutive_failures (int): Maximum number of consecutive failed attempts to generate
-                                            a valid test combination before stopping the loop. Defaults to 3.
-                               
+            department (str): Department of the attending physician for the follow-up patient, used to determine eligible tests.
+            prev_end_iso (str): ISO format datetime string representing the end time of the previous appointment (e.g. first-visit consultation), used to schedule follow-up tests after this time.
+            code_to_test (dict): Mapping from test codes to test names, used to build the output combination with test names.
+            vacant_test_schedules (dict): Dictionary containing the current vacant schedules for all tests, used to find available time slots for the follow-up tests. The structure is:
+            cross_dept_prob (Optional[float], optional): Probability of scheduling tests in a different department. Defaults to 0.2.
+            max_failures (int, optional): Maximum number of failures allowed before stopping the generation process. Defaults to 3.
 
         Returns:
-            dict: Hospital data with follow-up patients merged into the patient dict.
+            list[dict]: A list of dictionaries representing the generated follow-up test combinations.
         """
         def _get_available_tests(vacant_test_schedule: dict, func: callable) -> list[Tuple]:
             """
@@ -264,7 +263,133 @@ class FollowUpDataSynthesizer(DataSynthesizer):
             ]
             return valid_slots
         
+        # Initialize parameters
+        fu_config = config.hospital_data.follow_up_visit
+        min_test_num = max(1, fu_config.tests_per_patient.min)
+        max_test_num = min(fu_config.test_per_department.max, fu_config.tests_per_patient.max)
+        cross_dept_prob = fu_config.cross_department_test_prob
 
+        # Make all possible test combinations based on the vacant_test_schedule
+        consecutive_failures = 0
+        combination = []
+
+        while consecutive_failures < max_failures:
+            # For the first test, only consider those without dependencies
+            shuffled_candidates = _get_available_tests(
+                vacant_test_schedules, 
+                lambda k, v: v['remain_n'] > 0 and len(v['depends_on']) == 0
+            )
+            if not shuffled_candidates:
+                break
+
+            n_tests = random.randint(min_test_num, max_test_num)
+
+            # Build one combination in ascending priority order
+            combination = []
+            cur_end_iso = prev_end_iso
+            used_codes = set()
+            impossible_date = defaultdict(list)
+            result_out_time = dict()
+
+            for step in range(n_tests):
+                # First test: primary dept only; subsequent: cross-dept with probability
+                allow_cross = (step > 0) and (random.random() < cross_dept_prob)
+
+                for key in shuffled_candidates:
+                    priority, test_code, dept, device_name = key
+
+                    # Cross-dept and priority conditions
+                    if (not allow_cross and dept != department) or \
+                        (len(combination) and combination[-1]['priority'] > priority):
+                        continue
+
+                    # Filter the valid time slots
+                    entry = vacant_test_schedules[key]
+                    result_hours, depends_on, avoid_same_day = entry['result_hours'], entry['depends_on'], entry['avoid_same_day']
+                    valid_slots = _get_available_slots(
+                        entry['schedule'],
+                        lambda st, tr, _dep=depends_on: (st > cur_end_iso) and \
+                            iso_to_date(st) not in impossible_date.get(test_code, []) and \
+                            all(st > result_out_time.get(c, '') for c in _dep)
+                    )
+                    if not valid_slots:
+                        continue
+
+                    chosen_idx, chosen_slot = random.choice(valid_slots)
+                    combination.append({
+                        'name': code_to_test[test_code],
+                        'priority': priority,
+                        'test_code': test_code,
+                        'department': dept,
+                        'device_name': device_name,
+                        'schedule': chosen_slot,
+                        'result_hours': result_hours,
+                        'depends_on': depends_on,
+                        'avoid_same_day': avoid_same_day,
+                        '_key': key,
+                        '_slot_idx': chosen_idx,
+                    })
+
+                    # Update conditions
+                    cur_end_iso = chosen_slot[1]
+                    result_out_time[test_code] = (str_to_datetime(cur_end_iso) + timedelta(hours=result_hours)).isoformat()
+                    prev_end_date = iso_to_date(cur_end_iso)
+                    used_codes.add(test_code)
+                    for code in avoid_same_day:
+                        impossible_date[code].append(prev_end_date)
+                    break
+                
+                else:
+                    # Executed only if no break occurs
+                    break  # No valid test found for this step
+                
+                # Update available candidates depend on previous tests
+                shuffled_candidates = _get_available_tests(
+                    vacant_test_schedules,
+                    lambda k, v: (not k[1] in used_codes) and \
+                        (v['remain_n'] > 0) and len(set(v['depends_on']) - used_codes) == 0
+                )
+
+            # Validate combination size
+            if len(combination) < min_test_num:
+                consecutive_failures += 1
+                continue
+
+            # Commit: remove used slots and decrement remain_n
+            for item in combination:
+                key = item.pop('_key')
+                slot_idx = item.pop('_slot_idx')
+                item['date'] = iso_to_date(item['schedule'][0])
+                item['schedule'] = [iso_to_hour(item['schedule'][0]), iso_to_hour(item['schedule'][1])]
+                vacant_test_schedules[key]['schedule'].pop(slot_idx)
+                vacant_test_schedules[key]['remain_n'] -= 1
+                if vacant_test_schedules[key]['remain_n'] <= 0:
+                    del vacant_test_schedules[key]
+
+            break
+
+        return combination, vacant_test_schedules
+    
+
+    @staticmethod
+    def generate_followup_patients(config, hospital_data: dict, max_consecutive_failures: int = 3) -> dict:
+        """
+        Generate follow-up patient profiles and merge them into hospital data.
+
+        Reads hospital metadata, departments, and doctor information from existing hospital data, 
+        generates follow-up patients who need medical tests scheduled, and merges them into the same patient dict.
+
+        Args:
+            config: Configuration object with hospital_data.follow_up_visit settings.
+            hospital_data (dict): Existing hospital data containing
+                                   metadata, department, doctor, and patient dicts.
+            max_consecutive_failures (int): Maximum number of consecutive failed attempts to generate
+                                            a valid test combination before stopping the loop. Defaults to 3.
+                               
+
+        Returns:
+            dict: Hospital data with follow-up patients merged into the patient dict.
+        """
         # Hospital time parameters and data
         visit_type = 'follow_up_visit'
         metadata = hospital_data['metadata']
@@ -272,6 +397,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         end_hour = float(metadata['time']['end_hour'])
         interval_hour = float(metadata['time']['interval_hour'])
         fixed_test_schedule = hospital_data['test']
+        code_to_test = {t['code']: t['name'] for test_list in fixed_test_schedule.values() for t in test_list}
         hospital_time_segments = convert_time_to_segment(start_hour, end_hour, interval_hour)
 
         # Extract hospital data
@@ -281,11 +407,8 @@ class FollowUpDataSynthesizer(DataSynthesizer):
 
         # Follow-up config
         fu_config = config.hospital_data.follow_up_visit
-        tests_min = max(1, fu_config.tests_per_patient.min)
-        tests_max = min(fu_config.test_per_department.max, fu_config.tests_per_patient.max)
         cross_dept_prob = fu_config.cross_department_test_prob
         include_consultation = fu_config.get('include_consultation', True)
-        code_to_test = {t['code']: t['name'] for test_list in fixed_test_schedule.values() for t in test_list}
 
         # Collect vacant test schedules
         vacant_test_schedules = {}
@@ -328,111 +451,6 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                         ])
                         vacant_test_schedules[key]['remain_n'] += int(len(vacant_schedules) * ratio)
                     
-        # Make all possible test combinations based on the vacant_test_schedule
-        all_combinations = dict()
-        consecutive_failures = 0
-
-        while consecutive_failures < max_consecutive_failures:
-            # For the first test, only consider those without dependencies
-            shuffled_candidates = _get_available_tests(
-                vacant_test_schedules, 
-                lambda k, v: v['remain_n'] > 0 and len(v['depends_on']) == 0
-            )
-            if len(shuffled_candidates) < tests_min:
-                break
-
-            n_tests = random.randint(tests_min, min(tests_max, len(shuffled_candidates)))
-
-            # Choose a primary department for the patient and allow cross-department tests with a certain probability
-            available_depts = sorted(list(set(k[2] for k in shuffled_candidates)))
-            primary_dept = random.choice(available_depts)
-
-            # Build one combination in ascending priority order
-            combination = []
-            prev_end_iso = ''
-            used_codes = set()
-            impossible_date = defaultdict(list)
-            result_out_time = dict()
-
-            for step in range(n_tests):
-                # First test: primary dept only; subsequent: cross-dept with probability
-                allow_cross = (step > 0) and (random.random() < cross_dept_prob)
-
-                for key in shuffled_candidates:
-                    priority, test_code, dept, device_name = key
-                    
-                    # Cross-dept and priority conditions
-                    if (not allow_cross and dept != primary_dept) or \
-                        (len(combination) and combination[-1]['priority'] > priority):
-                        continue
-
-                    # Filter the valid time slots
-                    entry = vacant_test_schedules[key]
-                    result_hours, depends_on, avoid_same_day = entry['result_hours'], entry['depends_on'], entry['avoid_same_day']
-
-                    valid_slots = _get_available_slots(
-                        entry['schedule'],
-                        lambda st, tr, _dep=depends_on: (st > prev_end_iso) and \
-                            iso_to_date(st) not in impossible_date.get(test_code, []) and \
-                            all(st > result_out_time.get(c, '') for c in _dep)
-                    )
-                    if not valid_slots:
-                        continue
-
-                    chosen_idx, chosen_slot = random.choice(valid_slots)
-                    combination.append({
-                        'name': code_to_test[test_code],
-                        'priority': priority,
-                        'test_code': test_code,
-                        'department': dept,
-                        'device_name': device_name,
-                        'schedule': chosen_slot,
-                        'result_hours': result_hours,
-                        'depends_on': depends_on,
-                        'avoid_same_day': avoid_same_day,
-                        '_key': key,
-                        '_slot_idx': chosen_idx,
-                    })
-
-                    # Update conditions
-                    prev_end_iso = chosen_slot[1]
-                    result_out_time[test_code] = (str_to_datetime(prev_end_iso) + timedelta(hours=result_hours)).isoformat()
-                    prev_end_date = iso_to_date(prev_end_iso)
-                    used_codes.add(test_code)
-                    for code in avoid_same_day:
-                        impossible_date[code].append(prev_end_date)
-                    break
-                
-                else:
-                    # Executed only if no break occurs
-                    break  # No valid test found for this step
-                
-                # Update available candidates depend on previous tests
-                shuffled_candidates = _get_available_tests(
-                    vacant_test_schedules,
-                    lambda k, v: (not k[1] in used_codes) and \
-                        (v['remain_n'] > 0) and len(set(v['depends_on']) - used_codes) == 0
-                )
-
-            # Validate combination size
-            if len(combination) < tests_min:
-                consecutive_failures += 1
-                continue
-
-            # Commit: remove used slots and decrement remain_n
-            for item in combination:
-                key = item.pop('_key')
-                slot_idx = item.pop('_slot_idx')
-                item['date'] = iso_to_date(item['schedule'][0])
-                item['schedule'] = [iso_to_hour(item['schedule'][0]), iso_to_hour(item['schedule'][1])]
-                vacant_test_schedules[key]['schedule'].pop(slot_idx)
-                vacant_test_schedules[key]['remain_n'] -= 1
-                if vacant_test_schedules[key]['remain_n'] <= 0:
-                    del vacant_test_schedules[key]
-
-            all_combinations.setdefault(primary_dept, []).append(combination)
-            consecutive_failures = 0
-
         # Pre-append first-visit consultations not to duplicate with follow-up test schedules
         _doctor_info = deepcopy(doctor_info)
         for infos in patient_info.values():
@@ -443,7 +461,11 @@ class FollowUpDataSynthesizer(DataSynthesizer):
 
         # Generate follow-up patient profiles based on the generated test combinations and merge them into patient_info
         for patient, infos in patient_info.items():
-            department, doctor = None, None
+            # Initialize necessary info variables
+            gender, telecom, birth_date, identifier, address, symptom_level, department, doctor, prev_end_iso = \
+                None, None, None, None, None, None, None, None, None
+            
+            # Find the first-visit info
             for info in infos:
                 if info['visit_type'] == 'first_visit':
                     # Basic demographic info
@@ -452,9 +474,21 @@ class FollowUpDataSynthesizer(DataSynthesizer):
 
                     # Basic first-visit info
                     symptom_level, department, doctor = info['symptom_level'], info['department'], info['attending_physician']
+
+                    # Finish time of first-visit consultation (assuming the end of the scheduled appointment)
+                    prev_end_iso = get_iso_time(info['schedule'][1], info['date'])
                     break
+
+            assert all(v is not None for v in [gender, telecom, birth_date, identifier, address, symptom_level, department, doctor, prev_end_iso]), \
+                log(f"Missing required first-visit info for patient {patient}: ")
             
-            combination = random.choice(all_combinations[department])
+            # Make random test combination
+            combination, vacant_test_schedules = FollowUpDataSynthesizer._generate_test_combination(
+                config, department, prev_end_iso, code_to_test, vacant_test_schedules, cross_dept_prob, max_consecutive_failures
+            )
+            if not combination:
+                log(f"Skipping follow-up for patient {patient}: no valid test combination could be built", level='warning')
+                continue
             duration = int(Decimal(str(1)) / Decimal(str(doctor_info[doctor]['capacity_per_hour'])) / Decimal(str(interval_hour)))
             preference = generate_random_code_with_prob(
                 fu_config.preference.type,
@@ -676,41 +710,45 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         Raises:
             AssertionError: If validation fails.
         """
-        for patient_name, pdata in merged_data['patient'].items():
-            assert pdata.get('visit_type') in ('first_visit', 'follow_up_visit'), \
-                colorstr('red', f'Patient {patient_name} has invalid type: {pdata.get("type")}')
-            assert pdata['department'] in merged_data['department'], \
-                colorstr('red', f'Patient {patient_name} has invalid department {pdata["department"]}')
-            assert pdata['attending_physician'] in merged_data['doctor'], \
-                colorstr('red', f'Patient {patient_name} has invalid physician {pdata["attending_physician"]}')
+        for patient_name, visits in merged_data['patient'].items():
+            assert isinstance(visits, list) and len(visits) > 0, \
+                colorstr('red', f'Patient {patient_name} has invalid visits structure: {visits}')
 
-            if pdata['visit_type'] == 'follow_up_visit':
-                assert len(pdata['required_tests']) > 0, \
-                    colorstr('red', f'Follow-up patient {patient_name} has no required tests')
-                for test in pdata['required_tests']:
-                    assert 'test_code' in test, \
-                        colorstr('red', f'Patient {patient_name} has test with missing fields')
-                    assert len(test['schedule']) == 2, \
-                        colorstr('red', f'Patient {patient_name} has test with invalid schedule')
-                    assert 'priority' in test and isinstance(test['priority'], int) and test['priority'] >= 0, \
-                        colorstr('red', f'Patient {patient_name} has test with invalid priority')
+            for pdata in visits:
+                assert pdata.get('visit_type') in ('first_visit', 'follow_up_visit'), \
+                    colorstr('red', f'Patient {patient_name} has invalid type: {pdata.get("visit_type")}')
+                assert pdata['department'] in merged_data['department'], \
+                    colorstr('red', f'Patient {patient_name} has invalid department {pdata["department"]}')
+                assert pdata['attending_physician'] in merged_data['doctor'], \
+                    colorstr('red', f'Patient {patient_name} has invalid physician {pdata["attending_physician"]}')
 
-                # Validate sequential ordering and non-decreasing priority
-                tests = pdata['required_tests']
-                for i in range(len(tests) - 1):
-                    t1, t2 = tests[i], tests[i + 1]
+                if pdata['visit_type'] == 'follow_up_visit':
+                    assert len(pdata['required_tests']) > 0, \
+                        colorstr('red', f'Follow-up patient {patient_name} has no required tests')
+                    for test in pdata['required_tests']:
+                        assert 'test_code' in test, \
+                            colorstr('red', f'Patient {patient_name} has test with missing fields')
+                        assert len(test['schedule']) == 2, \
+                            colorstr('red', f'Patient {patient_name} has test with invalid schedule')
+                        assert 'priority' in test and isinstance(test['priority'], int) and test['priority'] >= 0, \
+                            colorstr('red', f'Patient {patient_name} has test with invalid priority')
 
-                    assert t1['priority'] <= t2['priority'], \
-                        colorstr('red', f'Patient {patient_name}: priority decreases from test {i} ({t1["priority"]}) to test {i+1} ({t2["priority"]})')
+                    # Validate sequential ordering and non-decreasing priority
+                    tests = pdata['required_tests']
+                    for i in range(len(tests) - 1):
+                        t1, t2 = tests[i], tests[i + 1]
 
-                    t1_end_iso = get_iso_time(t1['schedule'][1], t1['date'])
-                    t2_start_iso = get_iso_time(t2['schedule'][0], t2['date'])
-                    assert not compare_iso_time(t1_end_iso, t2_start_iso), \
-                        colorstr('red', f'Patient {patient_name}: test {i+1} starts ({t2_start_iso}) before test {i} ends ({t1_end_iso})')
-                    
-                # Validate consultation time
-                if pdata['date'] is not None:
-                    last_test_iso_time = get_iso_time(tests[-1]['schedule'][1], tests[-1]['date'])
-                    consultation_time = get_iso_time(pdata['schedule'][0], pdata['date'])
-                    assert not compare_iso_time(last_test_iso_time, consultation_time), \
-                        colorstr('red', f'Patient {patient_name}: consultation starts ({consultation_time}) before last test ends ({last_test_iso_time})')
+                        assert t1['priority'] <= t2['priority'], \
+                            colorstr('red', f'Patient {patient_name}: priority decreases from test {i} ({t1["priority"]}) to test {i+1} ({t2["priority"]})')
+
+                        t1_end_iso = get_iso_time(t1['schedule'][1], t1['date'])
+                        t2_start_iso = get_iso_time(t2['schedule'][0], t2['date'])
+                        assert not compare_iso_time(t1_end_iso, t2_start_iso), \
+                            colorstr('red', f'Patient {patient_name}: test {i+1} starts ({t2_start_iso}) before test {i} ends ({t1_end_iso})')
+
+                    # Validate consultation time
+                    if pdata['date'] is not None:
+                        last_test_iso_time = get_iso_time(tests[-1]['schedule'][1], tests[-1]['date'])
+                        consultation_time = get_iso_time(pdata['schedule'][0], pdata['date'])
+                        assert not compare_iso_time(last_test_iso_time, consultation_time), \
+                            colorstr('red', f'Patient {patient_name}: consultation starts ({consultation_time}) before last test ends ({last_test_iso_time})')
