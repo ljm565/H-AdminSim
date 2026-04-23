@@ -68,6 +68,3 @@ hospital_data:
         preference:
             type: ['asap', 'batch']    # Types of patient preferences.
             probs: [0.5, 0.5]           # Types probability distribution.
-        symptom:
-            type: ['simple', 'with_history']        # 'simple' = no referral; 'with_history' = referral case
-            probs: [0.7, 0.3]  
