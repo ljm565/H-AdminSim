@@ -53,10 +53,10 @@ hospital_data:
         test_per_department:
             min: 1
             max: 2
-        test_has_schedule_prob: 0.5             # Probability that a test has at least one fixed schedule
+        test_has_schedule_prob: 0.2             # Probability that a test has at least one fixed schedule
         test_fixed_schedule_ratio:              # Proportion of a test's fixed schedules relative to total working hours
-            min: 0.05
-            max: 0.2
+            min: 0.02
+            max: 0.05
         tests_per_patient:
             min: 1
             max: 2
