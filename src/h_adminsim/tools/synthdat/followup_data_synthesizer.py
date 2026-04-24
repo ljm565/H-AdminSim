@@ -170,11 +170,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                                 fu_config.test_has_schedule_prob,
                                 fu_config.test_fixed_schedule_ratio.min,
                                 fu_config.test_fixed_schedule_ratio.max,
-                            ),
-                            True,
-                            hospital_time_segments,
-                            min_chunk_size=test_duration_segments,
-                            max_chunk_size=test_duration_segments,
+                            )
                         )[1] for date in dates
                     }
                     _test['devices'][device_name]['schedule'] = test_schedule
