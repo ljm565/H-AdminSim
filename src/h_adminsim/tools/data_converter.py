@@ -186,10 +186,11 @@ class DataConverter:
         department_data = data.get('department')
         patients = list()
 
-        for patient_name, patient_values in data['patient'].items():
+        for patient_name, patient_data in data['patient'].items():
+            patient_value = patient_data[0]
             patient_id = get_individual_id(
                 hospital_name,
-                department_data[patient_values['department']]['code'].lower(), 
+                department_data[patient_value['department']]['code'].lower(), 
                 patient_name
             )
             names = patient_name.split()
@@ -203,11 +204,11 @@ class DataConverter:
                         'given': [' '.join(names[:-1])],
                     }
                 ],
-                'gender': patient_values['gender'],
-                'telecom': patient_values['telecom'],
-                'birthDate': patient_values['birthDate'],
-                'identifier': patient_values['identifier'],
-                'address': patient_values['address']
+                'gender': patient_value['gender'],
+                'telecom': patient_value['telecom'],
+                'birthDate': patient_value['birthDate'],
+                'identifier': patient_value['identifier'],
+                'address': patient_value['address']
             }
             patients.append(patient_obj)
 
@@ -652,6 +653,52 @@ class DataConverter:
         Returns:
             list[dict]: A list of converted FHIR Appointment resource objects.
         """
+        def _emit_consultation(department: str, 
+                               doctor_name: str, 
+                               patient_id: str, patient_name: str, 
+                               date: str, 
+                               schedule_time_range: list[float]):
+            """
+            Build a physician-consultation `Appointment` resource (Practitioner + Patient) and append it to the enclosing `appointments` list.
+
+            Args:
+                department (str): Department key used to look up the department code in `department_data`. Drives the practitioner ID generation.
+                doctor_name (str): Attending physician's full name; also used as the participant display label.
+                patient_id (str): Pre-resolved patient FHIR ID (computed by the caller so the helper does not need `department_data` knowledge beyond the doctor side).
+                patient_name (str): Patient's full name, used as the participant display label.
+                date (str): Appointment date (ISO `YYYY-MM-DD`). Must be a concrete date; callers should skip emission when the consultation is not yet scheduled.
+                schedule_time_range (list[float]): Start/end hour pair describing the consultation window (e.g. `[9.0, 9.5]`).
+                                                   Discretized into segments via the enclosing `interval_hour`.
+            """
+            practitioner_id = get_individual_id(
+                hospital_name,
+                department_data[department]['code'].lower(),
+                doctor_name
+            )
+            participant = [
+                {"actor": {"reference": f"Practitioner/{practitioner_id}", "display": doctor_name}, "status": "accepted"},
+                {"actor": {"reference": f"Patient/{patient_id}", "display": patient_name}, "status": "accepted"}
+            ]
+            schedule_segments = convert_time_to_segment(start_hour, end_hour, interval_hour, schedule_time_range)
+            appointment_id = get_appointment_id(practitioner_id, date, schedule_segments[0], schedule_segments[-1])
+            appointment_obj = {
+                'resourceType': 'Appointment',
+                'id': appointment_id,
+                'status': 'booked',
+                'start': get_iso_time(schedule_time_range[0], date, utc_offset),
+                'end': get_iso_time(schedule_time_range[-1], date, utc_offset),
+                'slot': [{'reference': f'Slot/{get_slot_id(practitioner_id, date, seg)}'} for seg in schedule_segments],
+                'participant': participant
+            }
+            appointments.append(appointment_obj)
+
+            if save_dir:
+                save_path = os.path.join(save_dir, f'{appointment_id}.fhir.json')
+                if sanity_check:
+                    assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
+                json_save_fast(save_path, appointment_obj)
+
+        # Initialize necessary things
         save_dir = None
         if output_dir:
             os.makedirs(os.path.join(output_dir, 'appointment'), exist_ok=True)
@@ -667,109 +714,74 @@ class DataConverter:
         interval_hour = data.get('metadata')['time']['interval_hour']
         appointments = list()
 
-        for patient_name, patient_values in data['patient'].items():
-            doctor_name = patient_values['attending_physician']
-            practitioner_id = get_individual_id(
-                hospital_name,
-                department_data[patient_values['department']]['code'].lower(), 
-                doctor_name
-            )
-            patient_id = get_individual_id(
-                hospital_name,
-                department_data[patient_values['department']]['code'].lower(), 
-                patient_name
-            )
-            participant = [
-                {"actor": {"reference": f"Practitioner/{practitioner_id}", "display": doctor_name}, "status": "accepted"},
-                {"actor": {"reference": f"Patient/{patient_id}", "display": patient_name}, "status": "accepted"}
-            ]
+        for patient_name, patient_data in data['patient'].items():
+            for appn in patient_data:
+                patient_id = get_individual_id(
+                    hospital_name,
+                    department_data[appn['department']]['code'].lower(),
+                    patient_name
+                )
 
-            # First visit: only appointment with physician
-            if patient_values['visit_type'] == 'first_visit':
-                # Appointment
-                date = patient_values['date']
-                schedule_time_range = patient_values['schedule']
-                schedule_segments = convert_time_to_segment(start_hour, end_hour, interval_hour, schedule_time_range)
-                appointment_id = get_appointment_id(practitioner_id, date, schedule_segments[0], schedule_segments[-1])
-                appointment_obj = {
-                    'resourceType': 'Appointment',
-                    'id': appointment_id,
-                    'status': 'booked',
-                    'start': get_iso_time(schedule_time_range[0], date, utc_offset),
-                    'end': get_iso_time(schedule_time_range[-1], date, utc_offset),
-                    'slot': [{'reference': f'Slot/{get_slot_id(practitioner_id, date, seg)}'} for seg in schedule_segments],
-                    'participant': participant
-                }
-                appointments.append(appointment_obj)
-
-                if save_dir:
-                    save_path = os.path.join(save_dir, f'{appointment_id}.fhir.json')
-                    if sanity_check:
-                        assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
-                    json_save_fast(
-                        save_path,
-                        appointment_obj
+                # First visit: only appointment with physician
+                if appn['visit_type'] == 'first_visit':
+                    _emit_consultation(
+                        appn['department'],
+                        appn['attending_physician'],
+                        patient_id,
+                        patient_name,
+                        appn['date'],
+                        appn['schedule']
                     )
 
-            # Follow-up visit: appointment with physician + tests
-            elif patient_values['visit_type'] == 'follow_up_visit':
-                # Tests
-                required_tests = patient_values.get('required_tests', [])
-                for test in required_tests:
-                    date = test['date']
-                    device_id = get_device_id(hospital_name, test['device_name'])
-                    schedule_time_range = test['schedule']
-                    schedule_segments = convert_time_to_segment(start_hour, end_hour, interval_hour, schedule_time_range)
-                    appointment_id = get_appointment_id(device_id, date, schedule_segments[0], schedule_segments[-1])
-                    appointment_obj = {
-                        'resourceType': 'Appointment',
-                        'id': appointment_id,
-                        'status': 'booked',
-                        'start': get_iso_time(schedule_time_range[0], date, utc_offset),
-                        'end': get_iso_time(schedule_time_range[-1], date, utc_offset),
-                        'slot': [{'reference': f'Slot/{get_slot_id(device_id, date, seg)}'} for seg in schedule_segments],
-                        'participant': participant
-                    }
-                    appointments.append(appointment_obj)
+                # Follow-up visit: appointment with physician + tests
+                elif appn['visit_type'] == 'follow_up_visit':
+                    # Tests: emit booked when a concrete date is present
+                    required_tests = appn.get('required_tests', [])
+                    for test in required_tests:
+                        device_id = get_device_id(hospital_name, test['device_name'])
+                        participant = [
+                            {"actor": {"reference": f"Device/{device_id}", "display": test['device_name']}, "status": "accepted"},
+                            {"actor": {"reference": f"Patient/{patient_id}", "display": patient_name}, "status": "accepted"}
+                        ]
+                        date = test['date']
+                        schedule_time_range = test['schedule']
+                        schedule_segments = convert_time_to_segment(start_hour, end_hour, interval_hour, schedule_time_range)
+                        appointment_id = get_appointment_id(device_id, date, schedule_segments[0], schedule_segments[-1])
+                        appointment_obj = {
+                            'resourceType': 'Appointment',
+                            'id': appointment_id,
+                            'status': 'booked',
+                            'start': get_iso_time(schedule_time_range[0], date, utc_offset),
+                            'end': get_iso_time(schedule_time_range[-1], date, utc_offset),
+                            'slot': [{'reference': f'Slot/{get_slot_id(device_id, date, seg)}'} for seg in schedule_segments],
+                            'participant': participant
+                        }
+                        appointments.append(appointment_obj)
 
-                    if save_dir:
-                        save_path = os.path.join(save_dir, f'{appointment_id}.fhir.json')
-                        if sanity_check:
-                            assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
-                        json_save_fast(
-                            save_path,
-                            appointment_obj
-                        )
-                
-                # Consultation with physician
-                date = patient_values['date']
-                if date:
-                    schedule_time_range = patient_values['schedule']
-                    schedule_segments = convert_time_to_segment(start_hour, end_hour, interval_hour, schedule_time_range)
-                    appointment_id = get_appointment_id(practitioner_id, date, schedule_segments[0], schedule_segments[-1])
-                    appointment_obj = {
-                        'resourceType': 'Appointment',
-                        'id': appointment_id,
-                        'status': 'booked',
-                        'start': get_iso_time(schedule_time_range[0], date, utc_offset),
-                        'end': get_iso_time(schedule_time_range[-1], date, utc_offset),
-                        'slot': [{'reference': f'Slot/{get_slot_id(practitioner_id, date, seg)}'} for seg in schedule_segments],
-                        'participant': participant
-                    }
-                    appointments.append(appointment_obj)
+                        if save_dir:
+                            save_path = os.path.join(save_dir, f'{appointment_id}.fhir.json')
+                            if sanity_check:
+                                assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
+                            json_save_fast(
+                                save_path,
+                                appointment_obj
+                            )
 
-                    if save_dir:
-                        save_path = os.path.join(save_dir, f'{appointment_id}.fhir.json')
-                        if sanity_check:
-                            assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
-                        json_save_fast(
-                            save_path,
-                            appointment_obj
+                    # Follow-up consultation with physician.
+                    # `appn['date']` is falsy when the consultation slot is out of the simulation day
+                    if appn['date']:
+                        _emit_consultation(
+                            appn['department'],
+                            appn['attending_physician'],
+                            patient_id,
+                            patient_name,
+                            appn['date'],
+                            appn['schedule']
                         )
 
-            else:
-                raise ValueError(log(f"Invalid patient type: {patient_values['visit_type']}", "error"))
-                 
+                else:
+                    raise ValueError(log(f"Invalid visit type: {appn['visit_type']}", "error"))
+
         return appointments
 
 
