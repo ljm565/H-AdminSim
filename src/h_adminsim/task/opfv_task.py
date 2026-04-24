@@ -1,7 +1,6 @@
 import os
 import json
 import random
-from copy import deepcopy
 from decimal import getcontext
 from importlib import resources
 from typing import Tuple, Union, Optional
@@ -167,7 +166,13 @@ class OutpatientFirstIntake(OutpatientTask):
             return prediction_department, ['supervisor error']
         
 
-    def __call__(self, data_pair: Tuple[dict, dict], agent_test_data: dict, agent_results: dict, environment, verbose: bool = False) -> dict:
+    def __call__(self, 
+                 data_pair: Tuple[dict, dict], 
+                 agent_test_data: dict, 
+                 agent_results: dict, 
+                 environment, 
+                 verbose: bool = False,
+                 **kwargs) -> dict:
         """
         Estimates the most appropriate medical department for each patient using an LLM agent.
 
@@ -681,7 +686,13 @@ class OutpatientFirstScheduling(OutpatientTask):
         )
             
 
-    def __call__(self, data_pair: Tuple[dict, dict], agent_test_data: dict, agent_results: dict, environment, verbose: bool = False) -> dict:
+    def __call__(self, 
+                 data_pair: Tuple[dict, dict], 
+                 agent_test_data: dict, 
+                 agent_results: dict, 
+                 environment, 
+                 verbose: bool = False,
+                 **kwargs) -> dict:
         """
         This method uses agent test data to prompt an LLM for scheduling decisions, post-processes
         the output, runs sanity checks on predicted schedules, and collects the results for evaluation.
