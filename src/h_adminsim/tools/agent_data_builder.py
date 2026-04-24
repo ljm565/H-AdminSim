@@ -51,63 +51,67 @@ class AgentDataBuilder:
             'agent_data': []
         }
         
-        for patient, patient_values in data['patient'].items():
-            visit_type = patient_values['visit_type']
-            doctor, department, date = patient_values['attending_physician'], patient_values['department'], patient_values['date']
-            gender, telecom, birth_date, identifier, address = \
-                patient_values['gender'], patient_values['telecom'], patient_values['birthDate'], patient_values['identifier'], patient_values['address']
-            preference, symptom_level = patient_values['preference'], patient_values['symptom_level']
-            disease = generate_random_symptom(
-                department=department,
-                symptom_file_path=symptom_file_path, 
-                ensure_unique_department='doctor' in patient_values['preference']
-            )
-            
-            # Branch depends on the visit type
-            if isinstance(disease, dict) and visit_type == 'first_visit':
-                gt_department = disease['department'] if isinstance(disease, dict) else [department]
-                required_tests = None
-            else:
-                gt_department = [department]    # For follow up visit, the patient must have only one department
-                required_tests = deepcopy(patient_values['required_tests'])
-                for _test in required_tests:
-                    del _test['schedule']
-                    del _test['date']
-                    del _test['device_name']
-            
-            gt = {
-                'visit_type': visit_type,
-                'patient': patient,
-                'gender': gender,
-                'telecom': telecom,
-                'birthDate': birth_date,
-                'identifier': identifier,
-                'address': address,
-                'department': gt_department,
-                'attending_physician': doctor,
-                'valid_from': date if 'date' in preference else 'N/A',
-                'preference': preference,
-                'symptom_level': symptom_level,
-                'required_tests': required_tests,
-            }
-            agent = {
-                'visit_type': visit_type,
-                'patient': patient,
-                'gender': gender,
-                'telecom': telecom,
-                'birthDate': birth_date,
-                'identifier': identifier,
-                'address': address,
-                'constraint': {
-                    'preference': preference,
+        for patient, patient_data in data['patient'].items():
+            for appn in patient_data:
+                # Basic information
+                visit_type = appn['visit_type']
+                doctor, department, date = appn['attending_physician'], appn['department'], appn['date']
+                gender, telecom, birth_date, identifier, address = \
+                    appn['gender'], appn['telecom'], appn['birthDate'], appn['identifier'], appn['address']
+                preference, symptom_level = appn['preference'], appn['symptom_level']
+                
+                # Make disease-symptom pair
+                disease = generate_random_symptom(
+                    department=department,
+                    symptom_file_path=symptom_file_path, 
+                    ensure_unique_department='doctor' in appn['preference']
+                )
+                
+                # Branch depends on the visit type
+                if isinstance(disease, dict) and visit_type == 'first_visit':
+                    gt_department = disease['department'] if isinstance(disease, dict) else [department]
+                    required_tests = None
+                else:
+                    gt_department = [department]    # For follow up visit, the patient must have only one department
+                    required_tests = deepcopy(appn['required_tests'])
+                    for _test in required_tests:
+                        del _test['schedule']
+                        del _test['date']
+                        del _test['device_name']
+                
+                gt = {
+                    'visit_type': visit_type,
+                    'patient': patient,
+                    'gender': gender,
+                    'telecom': telecom,
+                    'birthDate': birth_date,
+                    'identifier': identifier,
+                    'address': address,
+                    'department': gt_department,
                     'attending_physician': doctor,
                     'valid_from': date if 'date' in preference else 'N/A',
+                    'preference': preference,
                     'symptom_level': symptom_level,
-                    'symptom': disease,
                     'required_tests': required_tests,
                 }
-            }
-            agent_data['agent_data'].append((gt, agent))
+                agent = {
+                    'visit_type': visit_type,
+                    'patient': patient,
+                    'gender': gender,
+                    'telecom': telecom,
+                    'birthDate': birth_date,
+                    'identifier': identifier,
+                    'address': address,
+                    'constraint': {
+                        'preference': preference,
+                        'attending_physician': doctor,
+                        'valid_from': date if 'date' in preference else 'N/A',
+                        'symptom_level': symptom_level,
+                        'symptom': disease,
+                        'required_tests': required_tests,
+                    }
+                }
+                agent_data['agent_data'].append((gt, agent))
         
         if save_path:
             json_save_fast(
