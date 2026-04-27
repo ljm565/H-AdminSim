@@ -2,7 +2,7 @@ from copy import deepcopy
 from typing import Tuple, Optional
 from h_adminsim.tools import DataConverter
 
-from h_adminsim.utils import log
+from h_adminsim.utils import colorstr
 from h_adminsim.utils.common_utils import personal_id_to_birth_date
 
 
@@ -67,7 +67,7 @@ class OutpatientTask:
         if any(keyword in model.lower() for keyword in ['gemini', 'gpt']):
             return model, None, False
         else:
-            assert vllm_endpoint is not None, log('VLLM endpoint must be provided for non-Gemini/GPT models.', 'error')
+            assert vllm_endpoint is not None, colorstr("red", 'VLLM endpoint must be provided for non-Gemini/GPT models.')
             return model, vllm_endpoint, True
         
     

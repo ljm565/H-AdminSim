@@ -369,7 +369,7 @@ class OutpatientFirstScheduling(OutpatientTask):
         self.max_inferences = scheduling_max_inference
         self.scheduling_strategy = scheduling_strategy
         assert self.scheduling_strategy in ['reasoning', 'tool_calling'], \
-            log('Scheduling strategy must be either `reasoning` or `tool_calling`.', 'error')
+            colorstr("red", 'Scheduling strategy must be either `reasoning` or `tool_calling`')
         self.schedule_patient_system_prompt_path = str(resources.files("h_adminsim.assets.prompts").joinpath('opfv_schedule_patient_system.txt'))
         self.cancel_patient_system_prompt_path = str(resources.files("h_adminsim.assets.prompts").joinpath('opfv_cancel_patient_system.txt'))
         self.reschedule_patient_system_prompt_path = str(resources.files("h_adminsim.assets.prompts").joinpath('opfv_reschedule_patient_system.txt'))

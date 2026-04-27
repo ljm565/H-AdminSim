@@ -2,7 +2,7 @@ import os
 from tqdm import tqdm
 from typing import Optional
 
-from h_adminsim.utils import Information, log
+from h_adminsim.utils import Information, colorstr, log
 from h_adminsim.utils.fhir_utils import *
 from h_adminsim.registry.variables import PRIORITY_MAP
 from h_adminsim.utils.filesys_utils import json_load, json_save_fast, get_files
@@ -75,7 +75,7 @@ class DataConverter:
             if save_dir:
                 save_path = os.path.join(save_dir, f'{practitioner_id}.fhir.json')
                 if sanity_check:
-                    assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
+                    assert not os.path.exists(save_path), colorstr("red", f"Same file exists: {save_path}")
                 json_save_fast(
                     save_path,
                     practitioner_obj
@@ -152,7 +152,7 @@ class DataConverter:
             if save_dir:
                 save_path = os.path.join(save_dir, f'{practitionerrole_id}.fhir.json')
                 if sanity_check:
-                    assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
+                    assert not os.path.exists(save_path), colorstr("red", f"Same file exists: {save_path}")
                 json_save_fast(
                     save_path,
                     practitionerrole_obj
@@ -215,7 +215,7 @@ class DataConverter:
             if save_dir:
                 save_path = os.path.join(save_dir, f'{patient_id}.fhir.json')
                 if sanity_check:
-                    assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
+                    assert not os.path.exists(save_path), colorstr("red", f"Same file exists: {save_path}")
                 json_save_fast(
                     save_path,
                     patient_obj
@@ -286,7 +286,7 @@ class DataConverter:
                         if save_dir:
                             save_path = os.path.join(save_dir, f'{device_id}.fhir.json')
                             if sanity_check:
-                                assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
+                                assert not os.path.exists(save_path), colorstr("red", f"Same file exists: {save_path}")
                             json_save_fast(save_path, device_obj)
 
         return devices
@@ -385,7 +385,7 @@ class DataConverter:
                     if save_dir:
                         save_path = os.path.join(save_dir, f'{healthcareservice_id}.fhir.json')
                         if sanity_check:
-                            assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
+                            assert not os.path.exists(save_path), colorstr("red", f"Same file exists: {save_path}")
                         json_save_fast(save_path, healthcareservice_obj)
 
         return healthcareservices
@@ -443,7 +443,7 @@ class DataConverter:
             if save_dir:
                 save_path = os.path.join(save_dir, f'{schedule_id}.fhir.json')
                 if sanity_check:
-                    assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
+                    assert not os.path.exists(save_path), colorstr("red", f"Same file exists: {save_path}")
                 json_save_fast(
                     save_path,
                     schedule_obj
@@ -468,7 +468,7 @@ class DataConverter:
                         if save_dir:
                             save_path = os.path.join(save_dir, f'{schedule_id}.fhir.json')
                             if sanity_check:
-                                assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
+                                assert not os.path.exists(save_path), colorstr("red", f"Same file exists: {save_path}")
                             json_save_fast(
                                 save_path,
                                 schedule_obj
@@ -544,7 +544,7 @@ class DataConverter:
                     if save_dir:
                         save_path = os.path.join(save_dir, f'{slot_id}.fhir.json')
                         if sanity_check:
-                            assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
+                            assert not os.path.exists(save_path), colorstr("red", f"Same file exists: {save_path}")
                         json_save_fast(
                             save_path,
                             slot_obj
@@ -567,7 +567,7 @@ class DataConverter:
                     if save_dir:
                         save_path = os.path.join(save_dir, f'{slot_id}.fhir.json')
                         if sanity_check:
-                            assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
+                            assert not os.path.exists(save_path), colorstr("red", f"Same file exists: {save_path}")
                         json_save_fast(
                             save_path,
                             slot_obj
@@ -605,7 +605,7 @@ class DataConverter:
                                 if save_dir:
                                     save_path = os.path.join(save_dir, f'{slot_id}.fhir.json')
                                     if sanity_check:
-                                        assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
+                                        assert not os.path.exists(save_path), colorstr("red", f"Same file exists: {save_path}")
                                     json_save_fast(
                                         save_path,
                                         slot_obj
@@ -628,7 +628,7 @@ class DataConverter:
                                 if save_dir:
                                     save_path = os.path.join(save_dir, f'{slot_id}.fhir.json')
                                     if sanity_check:
-                                        assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
+                                        assert not os.path.exists(save_path), colorstr("red", f"Same file exists: {save_path}")
                                     json_save_fast(
                                         save_path,
                                         slot_obj
@@ -695,7 +695,7 @@ class DataConverter:
             if save_dir:
                 save_path = os.path.join(save_dir, f'{appointment_id}.fhir.json')
                 if sanity_check:
-                    assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
+                    assert not os.path.exists(save_path), colorstr("red", f"Same file exists: {save_path}")
                 json_save_fast(save_path, appointment_obj)
 
         # Initialize necessary things
@@ -761,7 +761,7 @@ class DataConverter:
                         if save_dir:
                             save_path = os.path.join(save_dir, f'{appointment_id}.fhir.json')
                             if sanity_check:
-                                assert not os.path.exists(save_path), log(f"Same file exists: {save_path}", "error")
+                                assert not os.path.exists(save_path), colorstr("red", f"Same file exists: {save_path}")
                             json_save_fast(
                                 save_path,
                                 appointment_obj

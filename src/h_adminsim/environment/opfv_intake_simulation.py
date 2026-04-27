@@ -43,7 +43,7 @@ class OPFVIntakeSimulation:
 
         if self.checker_agent:
             assert self.checker_agent.visit_type == self.patient_agent.visit_type, \
-                log(colorstr("red", f"The visit type between the Checker agent ({self.checker_agent.visit_type}) and the Patient agent ({self.patient_agent.visit_type}) must be the same."))
+                colorstr("red", f"The visit type between the Checker agent ({self.checker_agent.visit_type}) and the Patient agent ({self.patient_agent.visit_type}) must be the same.")
 
 
     def _init_agents(self, verbose: bool = True) -> None:

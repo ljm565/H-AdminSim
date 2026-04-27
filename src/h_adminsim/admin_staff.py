@@ -241,7 +241,7 @@ class SchedulingAdminStaffAgent:
         Initialize the environment with default settings.
         """
         assert self.target_task in ['first_visit_intake', 'first_visit_scheduling', 'follow_up_visit_scheduling'], \
-            log(colorstr("red", f"Unsupported target task: {self.target_task}. Supported tasks are `first_visit_intake`, `first_visit_scheduling`, and `follow_up_visit_scheduling`."))
+            colorstr("red", f"Unsupported target task: {self.target_task}. Supported tasks are `first_visit_intake`, `first_visit_scheduling`, and `follow_up_visit_scheduling`.")
 
         self.random_seed = kwargs.get('random_seed', None)
         self.temperature = kwargs.get('temperature', 0.2)   # For various responses. If you want deterministic responses, set it to 0.

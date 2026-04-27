@@ -255,7 +255,7 @@ class OPFVSchedulingSimulation:
         """
         # Sanity check
         if not self.fhir_integration:
-            assert doctor_information is not None, log(f"Doctor information must be provided if you don't use FHIR.", level="error")
+            assert doctor_information is not None, colorstr("red", f"Doctor information must be provided if you don't use FHIR.")
 
         filtered_doctor_information = self.environment.get_doctor_schedule(
             doctor_information=doctor_information if not self.fhir_integration else None,
@@ -422,7 +422,7 @@ class OPFVSchedulingSimulation:
         """
         # Sanity Check
         if not self.fhir_integration:
-            assert doctor_information is not None, log(f"Doctor information must be provided if you don't use FHIR.", level="error")
+            assert doctor_information is not None, colorstr("red", f"Doctor information must be provided if you don't use FHIR.")
 
         # Initialization based on the known condition from the staff
         callback = kwargs.pop('callback', None)
@@ -587,7 +587,7 @@ class OPFVSchedulingSimulation:
         """
         # Sanity check
         if not self.fhir_integration:
-            assert doctor_information is not None, log(f"Doctor information must be provided if you don't use FHIR.", level="error")
+            assert doctor_information is not None, colorstr("red", f"Doctor information must be provided if you don't use FHIR.")
 
         # Invoke
         prediction = scheduling_tool_calling(
@@ -708,7 +708,7 @@ class OPFVSchedulingSimulation:
         """
         # Sanity Check
         if not self.fhir_integration:
-            assert doctor_information is not None, log(f"Doctor information must be provided if you don't use FHIR.", level="error")
+            assert doctor_information is not None, colorstr("red", f"Doctor information must be provided if you don't use FHIR.")
 
         # Initialize agents and result dictionary
         staff_token_callback = TokenUsageCallback()
@@ -940,7 +940,7 @@ class OPFVSchedulingSimulation:
         """
         # Sanity Check
         if not self.fhir_integration:
-            assert doctor_information is not None, log(f"Doctor information must be provided if you don't use FHIR.", level="error")
+            assert doctor_information is not None, colorstr("red", f"Doctor information must be provided if you don't use FHIR.")
 
         # Initialize agents and result dictionary
         result_dict = init_result_dict()
@@ -1088,7 +1088,7 @@ class OPFVSchedulingSimulation:
         """
         # Sanity Check
         if not self.fhir_integration:
-            assert doctor_information is not None, log(f"Doctor information must be provided if you don't use FHIR.", level="error")
+            assert doctor_information is not None, colorstr("red", f"Doctor information must be provided if you don't use FHIR.")
 
         # Initialize agents and result dictionary
         result_dict = init_result_dict()
@@ -1258,7 +1258,7 @@ class OPFVSchedulingSimulation:
         """
         # Sanity Check
         if not self.fhir_integration:
-            assert doctor_information is not None, log(f"Doctor information must be provided if you don't use FHIR.", level="error")
+            assert doctor_information is not None, colorstr("red", f"Doctor information must be provided if you don't use FHIR.")
 
         # Initialize agents and result dictionary
         staff_token_callback = TokenUsageCallback()

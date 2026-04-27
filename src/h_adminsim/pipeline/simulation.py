@@ -58,21 +58,24 @@ class Simulator:
             task (dict): Task dictionary.
         """
         assert len(task), \
-            log("At least one of `first_visit_intake`, `first_visit_scheduliing`, or `follow_up_visit_scheduling` must be provided.", level='error')
+            colorstr("red", "At least one of `first_visit_intake`, `first_visit_scheduliing`, or `follow_up_visit_scheduling` must be provided.")
 
         if 'first_visit_intake' in task:
             assert isinstance(task['first_visit_intake'], OutpatientFirstIntake), \
-                log("Wrong type of `first_visit_intake` task.", level='error')
+                colorstr("red", "Wrong type of `first_visit_intake` task.")
         if 'first_visit_scheduling' in task:
             assert isinstance(task['first_visit_scheduling'], OutpatientFirstScheduling), \
-                log("Wrong type of `first_visit_scheduling` task.", level='error')
+                colorstr("red", "Wrong type of `first_visit_scheduling` task.")
             assert self.fhir_integration == task['first_visit_scheduling'].fhir_integration, \
-                log("FHIR integration setting mismatch between Simulator and `first_visit_scheduling` task.", level='error')
+                colorstr("red", "FHIR integration setting mismatch between Simulator and `first_visit_scheduling` task.")
         if 'follow_up_visit_scheduling' in task:
             assert isinstance(task['follow_up_visit_scheduling'], OutpatientFollowUpScheduling), \
-                log("Wrong type of `follow_up_visit_scheduling` task.", level='error')
+                colorstr("red", "Wrong type of `follow_up_visit_scheduling` task.")
             assert self.fhir_integration == task['follow_up_visit_scheduling'].fhir_integration, \
-                log("FHIR integration setting mismatch between Simulator and `follow_up_visit_scheduling` task.", level='error')
+                colorstr("red", "FHIR integration setting mismatch between Simulator and `follow_up_visit_scheduling` task.")
+            
+        if 'first_visit_intake' in task and 'follow_up_visit_scheduling' in task:
+            assert 'first_visit_scheduling' in task, colorstr('red', '`first_visit_scheduling` simulation must be required.')
         
         return task
     

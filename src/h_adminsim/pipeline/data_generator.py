@@ -55,7 +55,7 @@ class DataGenerator:
         if config is None:
             log(f"No config provided; using default {care_level} config.", "warning")
             assert care_level in ['primary', 'secondary', 'tertiary'], \
-                log(f"Invalid care_level: '{care_level}'. Expected one of: primary, secondary, tertiary.", "error")
+                colorstr("red", f"Invalid care_level: '{care_level}'. Expected one of: primary, secondary, tertiary.")
             default_path = str(resources.files("h_adminsim.assets.configs").joinpath(f"data4{care_level}.yaml"))
             return Config(default_path)
 
@@ -154,7 +154,7 @@ class DataGenerator:
         # Follow-up visit data synthesis
         if 'follow_up_visit' in self.task:
             assert hasattr(self.config.hospital_data, 'follow_up_visit'), \
-                log("Config must contain a 'hospital_data.follow_up_visit' section for follow-up synthesis.", "error")
+                colorstr("red", "Config must contain a 'hospital_data.follow_up_visit' section for follow-up synthesis.")
 
             try:
                 # First-visit data already generated -> merge follow-up into existing files
@@ -218,7 +218,7 @@ class DataGenerator:
         # Initialize FHIR URL and manager
         if not fhir_url:
             fhir_url = self.fhir_url
-        assert fhir_url != None, log('')
+        assert fhir_url != None, colorstr("red", 'Please double check the FHIR URL')
         
         if not fhir_url.endswith('fhir'):
             fhir_url = os.path.join(fhir_url, 'fhir')
