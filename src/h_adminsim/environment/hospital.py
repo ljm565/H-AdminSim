@@ -7,7 +7,10 @@ from typing import Union, Tuple, Optional
 
 from h_adminsim.task.fhir_manager import FHIRManager
 from h_adminsim.utils import log, colorstr
-from h_adminsim.utils.fhir_utils import get_all_doctor_info
+from h_adminsim.utils.fhir_utils import (
+    get_all_test_info,
+    get_all_doctor_info,
+)
 from h_adminsim.utils.common_utils import (
     iso_to_date,
     iso_to_hour,
@@ -62,11 +65,14 @@ class HospitalEnvironment:
         self.patient_schedules = list()
         self.follow_up_patient_info = list()
         self.waiting_list = list()
-        self.first_verbose_flag = True
+        self.doctor_first_verbose_flag = True
+        self.test_first_verbose_flag = True
 
         # Cache variables
         self._fhir_practitioner_cache = None
         self._fhir_practitionerrole_cache = None
+        self._fhir_healthcareservice_cache = None
+        self._fhir_device_cache = None
         self._fhir_schedule_cache = None
         self._fhir_slot_cache = None
 
@@ -96,31 +102,31 @@ class HospitalEnvironment:
             dict: doctor_information (dict): Dictionary of doctor data including their existing schedules.
                                              Each key is a doctor's name, and each value includes a 'schedule' field.
         """
-        if self.first_verbose_flag:
+        if self.doctor_first_verbose_flag:
             log('Build doctor information from the FHIR resources..')
-            self.first_verbose_flag = False
+            self.doctor_first_verbose_flag = False
 
         hospital_id = self.HOSPITAL_NAME.replace('_', '')
-        cache_ready = all([
-            self._fhir_practitioner_cache,
-            self._fhir_practitionerrole_cache,
-            self._fhir_schedule_cache,
-            self._fhir_slot_cache,
-        ])
         
-        if not use_cache or not cache_ready:
+        if not use_cache or not self._fhir_practitioner_cache:
             self._fhir_practitioner_cache = [
                 x for x in self.fhir_manager.read_all('Practitioner', verbose=False)
                 if hospital_id in x['resource']['id']
             ]
+
+        if not use_cache or not self._fhir_practitionerrole_cache:
             self._fhir_practitionerrole_cache = [
                 x for x in self.fhir_manager.read_all('PractitionerRole', verbose=False)
                 if hospital_id in x['resource']['id']
             ]
+        
+        if not use_cache or not self._fhir_schedule_cache:
             self._fhir_schedule_cache = [
                 x for x in self.fhir_manager.read_all('Schedule', verbose=False)
                 if hospital_id in x['resource']['id']
             ]
+        
+        if not use_cache or not self._fhir_slot_cache:
             self._fhir_slot_cache = [
                 x for x in self.fhir_manager.read_all('Slot', verbose=False)
                 if hospital_id in x['resource']['id']
@@ -133,9 +139,9 @@ class HospitalEnvironment:
             try:
                 self.fhir_appointment = [
                     x for x in self.fhir_manager.read_all('Appointment', verbose=False)
-                    if hospital_id in x['resource']['id']
+                    if hospital_id in x['resource']['id'] and 'Dr.' in x['resource']['id']
                 ]
-                valid_len = len(list(filter(lambda x: x['status'] != 'cancelled', self.patient_schedules)))
+                valid_len = len(list(filter(lambda x: x['visit_type'] == 'first_vistit' and x['status'] != 'cancelled', self.patient_schedules)))
                 assert len(self.fhir_appointment) == valid_len, f"Mismatch in appointment count: expected {valid_len}, got {len(self.fhir_appointment)}"
                 break
             except AssertionError as e:
@@ -158,6 +164,81 @@ class HospitalEnvironment:
             **{'start': self._START_HOUR, 'end': self._END_HOUR, 'interval': self._TIME_UNIT}
         )
         return doctor_information
+    
+
+    def get_general_test_info_from_fhir(self, use_cache: bool = True) -> dict:
+        """
+        Build a test information dictionary from FHIR resources for simulation.
+
+        Args:
+            use_cache (bool): If True, reuse cached FHIR resources if available. Defaults to True.
+
+        Returns:
+            dict: test_information (dict): Dictionary of test data including their existing schedules.
+        """
+        if self.test_first_verbose_flag:
+            log('Build test information from the FHIR resources..')
+            self.test_first_verbose_flag = False
+
+        hospital_id = self.HOSPITAL_NAME.replace('_', '')
+        
+        if not use_cache or not self._fhir_healthcareservice_cache:
+            self._fhir_healthcareservice_cache = [
+                x for x in self.fhir_manager.read_all('HealthcareService', verbose=False)
+                if hospital_id in x['resource']['id']
+            ]
+        
+        if not use_cache or not self._fhir_device_cache:
+            self._fhir_device_cache = [
+                x for x in self.fhir_manager.read_all('Device', verbose=False)
+                if hospital_id in x['resource']['id']
+            ]
+        
+        if not use_cache or not self._fhir_schedule_cache:
+            self._fhir_schedule_cache = [
+                x for x in self.fhir_manager.read_all('Schedule', verbose=False)
+                if hospital_id in x['resource']['id']
+            ]
+        
+        if not use_cache or not self._fhir_slot_cache:
+            self._fhir_slot_cache = [
+                x for x in self.fhir_manager.read_all('Slot', verbose=False)
+                if hospital_id in x['resource']['id']
+            ]
+
+        # Get Appointment resources from the FHIR server
+        # NOTE: Sometimes, a FHIR resource is accessed before it gets updated, so the operation is performed with a retry flag 
+        retry_count = 0
+        while 1:
+            try:
+                self.fhir_appointment = [
+                    x for x in self.fhir_manager.read_all('Appointment', verbose=False)
+                    if hospital_id in x['resource']['id'] and 'Dr.' not in x['resource']['id']
+                ]
+                valid_len = len(list(filter(lambda x: x['visit_type'] == 'follow_up_visit' and x['status'] != 'cancelled', self.patient_schedules)))
+                assert len(self.fhir_appointment) == valid_len, f"Mismatch in appointment count: expected {valid_len}, got {len(self.fhir_appointment)}"
+                break
+            except AssertionError as e:
+                if retry_count >= self.max_retries:
+                    log(f"\nMax retries reached. Last error: {e}", level='error')
+                    raise e
+                wait_time = exponential_backoff(retry_count)
+                log(f"[{retry_count + 1}/{self.max_retries}] {type(e).__name__}: {e}. Retrying in {wait_time:.1f} seconds...", level='warning')
+                time.sleep(wait_time)
+                retry_count += 1
+                continue
+
+        # Convert resources regardless of whether they came from cache or fresh read
+        test_information = get_all_test_info(
+            self._fhir_practitionerrole_cache,
+            self._fhir_healthcareservice_cache,
+            self._fhir_device_cache,
+            self._fhir_schedule_cache,
+            self._fhir_slot_cache,
+            self.fhir_appointment,
+            **{'start': self._START_HOUR, 'end': self._END_HOUR, 'interval': self._TIME_UNIT}
+        )
+        return test_information
     
 
     def get_doctor_schedule(self,
@@ -244,9 +325,9 @@ class HospitalEnvironment:
 
         # Get filtered doctor information directly from FHIR
         if fhir_integration:
-            if self.first_verbose_flag:
+            if self.doctor_first_verbose_flag:
                 log('Build doctor information from the FHIR resources..')
-                self.first_verbose_flag = False
+                self.doctor_first_verbose_flag = False
             
             # Get doctors belonging to the department
             hospital_id = self.HOSPITAL_NAME.replace('_', '')
