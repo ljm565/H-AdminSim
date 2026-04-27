@@ -476,7 +476,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                     break
 
             assert all(v is not None for v in [gender, telecom, birth_date, identifier, address, symptom_level, department, doctor, prev_end_iso]), \
-                log(f"Missing required first-visit info for patient {patient}: ")
+                colorstr("red", f"Missing required first-visit info for patient {patient}: ")
             
             # Make random test combination
             combination, vacant_test_schedules = FollowUpDataSynthesizer._generate_test_combination(
@@ -640,12 +640,12 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         for t in selected:
             for dep in t.get('depends_on', []):
                 assert dep in final_codes, \
-                    log(
-                    (
-                        f"[test_list_generator] {t['code']} depends on {dep}, "
-                        f"but {dep} is missing in selected tests for department '{department}'"
-                    ), level='error'
-                )
+                    colorstr("red",
+                        (
+                            f"[test_list_generator] {t['code']} depends on {dep}, "
+                            f"but {dep} is missing in selected tests for department '{department}'"
+                        )
+                    )
 
         if not (min_n_per_department <= len(selected) <= max_n_per_department):
             log(

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import Tuple, Any, Union, Optional
 
 from h_adminsim import registry
-from h_adminsim.utils import log
+from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.filesys_utils import txt_load, json_load
 from h_adminsim.utils.common_utils import str_to_datetime, datetime_to_str
 
@@ -298,7 +298,7 @@ def generate_random_code(category: str) -> str:
         str: A randomly selected code corresponding to the given category.
     """
     categories = ['use', 'gender']
-    assert category in categories, log(f"The category must be one of the values in the {categories}, but got {category}", "error")
+    assert category in categories, colorstr("red", f"The category must be one of the values in the {categories}, but got {category}")
     
     if category == 'use':
         return random.choice(['mobile', 'work'])
@@ -321,8 +321,8 @@ def generate_random_code_with_prob(codes: list[Any],
         Tuple[int, str]: The randomly chosen code. The exact type depends on the elements of `codes`.
                          (Adjust this description if the return type is known specifically.)
     """
-    assert round(sum(probs), 4) == 1, log(f"The sum of the probabilities would be a 1, but got {probs}", "error")
-    assert len(codes) == len(probs), log(f"The lengths of codes and probabilities must be the same, but got codes length: {len(codes)} and probs length: {len(probs)}", "error")
+    assert round(sum(probs), 4) == 1, colorstr("red", f"The sum of the probabilities would be a 1, but got {probs}")
+    assert len(codes) == len(probs), colorstr("red", f"The lengths of codes and probabilities must be the same, but got codes length: {len(codes)} and probs length: {len(probs)}")
 
     chosen = random.choices(population=codes, weights=probs, k=1)[0]
 

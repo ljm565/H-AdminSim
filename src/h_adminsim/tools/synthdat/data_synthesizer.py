@@ -5,7 +5,7 @@ from typing import Optional, Tuple
 from decimal import Decimal, getcontext
 
 from h_adminsim.task.schedule_assign import ScheduleAssigner
-from h_adminsim.utils import Information, log, colorstr
+from h_adminsim.utils import Information, colorstr
 from h_adminsim.utils.common_utils import *
 from h_adminsim.utils.filesys_utils import *
 from h_adminsim.utils.random_utils import (
@@ -243,7 +243,7 @@ class DataSynthesizer:
             last_name_file_path = str(resources.files("h_adminsim.assets.names").joinpath("lastname.txt"))
 
         if prefix != None:
-            assert isinstance(prefix, str), log("`prefix` must be a string type", "error")
+            assert isinstance(prefix, str), colorstr("red", "`prefix` must be a string type")
             names = [f'{prefix}{name}' for name in generate_random_names(n, first_name_file_path, last_name_file_path, reject_list)]
         else:
             names = [name for name in generate_random_names(n, first_name_file_path, last_name_file_path, reject_list)]

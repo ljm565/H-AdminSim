@@ -232,7 +232,7 @@ def get_utc_offset(country_code: Optional[str] = None,
     Returns:
         str: The UTC offset of the specified time zone in the format "+HH:MM" or "-HH:MM".
     """
-    assert not (country_code == None and time_zone == None), log("Either `country_code` or `time_zone` must be provided.", "error")
+    assert not (country_code == None and time_zone == None), colorstr("red", "Either `country_code` or `time_zone` must be provided.")
     
     if registry.COUNTRY_TIMEZONE_MAP is None:
         registry.COUNTRY_TIMEZONE_MAP = dict(pytz.country_timezones)
@@ -442,8 +442,8 @@ def convert_time_to_segment(start: float,
         >>> convert_time_to_segment(0, 24, 0.5)
         [0, 1, 2, ..., 47]  # Represents 48 half-hour segments from 00:00 to 24:00
     """
-    assert start < end, log("Start time must be less than end time", "error")
-    assert interval > 0, log("Interval must be greater than 0", "error")
+    assert start < end, colorstr("red", "Start time must be less than end time")
+    assert interval > 0, colorstr("red", "Interval must be greater than 0")
     
     getcontext().prec = 10
     num_segments = int((end - start) / interval)
@@ -452,9 +452,9 @@ def convert_time_to_segment(start: float,
         return list(range(num_segments))
 
     # Sanity check for time_range
-    assert len(time_range) == 2, log("Time range must be composed of two float values", "error")
-    assert time_range[0] >= start and time_range[1] <= end, log("Time range must be within overall time bounds", "error")
-    assert time_range[0] < time_range[1], log("Start time of `time_range` must be less than its end time", "error")
+    assert len(time_range) == 2, colorstr("red", "Time range must be composed of two float values")
+    assert time_range[0] >= start and time_range[1] <= end, colorstr("red", "Time range must be within overall time bounds")
+    assert time_range[0] < time_range[1], colorstr("red", "Start time of `time_range` must be less than its end time")
     
     start_idx = int((Decimal(str(time_range[0])) - Decimal(str(start))) / Decimal(str(interval)))
     end_idx = int((Decimal(str(time_range[1])) - Decimal(str(start))) / Decimal(str(interval)))
@@ -483,19 +483,19 @@ def convert_segment_to_time(start: float,
         >>> convert_segment_to_time(0, 24, 0.5, [0, 1, 2])
         [0.0, 1.5]
     """
-    assert start < end, log("Start time must be less than end time", "error")
-    assert interval > 0, log("Interval must be greater than 0", "error")
+    assert start < end, colorstr("red", "Start time must be less than end time")
+    assert interval > 0, colorstr("red", "Interval must be greater than 0")
 
     getcontext().prec = 10
     max_segments = int((end - start) / interval) - 1
     
     # Sanity checking
     for s in segments:
-        assert 0 <= s <= max_segments, log(f"Segment index {s} out of range", "error")
+        assert 0 <= s <= max_segments, colorstr("red", f"Segment index {s} out of range")
 
     if len(segments) > 1:
         for i in range(1, len(segments)):
-            assert segments[i] == segments[i-1] + 1, log("Segment indices must be continuous (i.e., increasing by 1)", "error")
+            assert segments[i] == segments[i-1] + 1, colorstr("red", "Segment indices must be continuous (i.e., increasing by 1)")
     
     seg_start = Decimal(str(start)) + Decimal(str(segments[0] * interval))
     seg_end = min(Decimal(str(start)) + Decimal(str((segments[-1] + 1) * interval)), end)
