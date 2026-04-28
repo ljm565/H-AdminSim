@@ -275,16 +275,20 @@ class HospitalEnvironment:
             fixed_slots = [slot['resource'] for slot in self.fhir_manager.read_all('Slot', params={'schedule': f'Schedule/{practitioner_schedule_id}'}, verbose=False)]
 
             # Append fixed schedules of a doctor
+            seen_appointment_ids = set()
             for slot in fixed_slots:
                 date = iso_to_date(slot['start'])
                 schedule.setdefault(date, [])
                 if slot['status'] != 'free':
                     schedule[date].append([iso_to_hour(slot['start']), iso_to_hour(slot['end'])])
-                
-                # Get all appointments related to this slot
+
+                # Collect each related appointment at most once
                 appointment_resources = self.fhir_manager.read_all('Appointment', params={'slot': f'Slot/{slot["id"]}'}, verbose=False)
                 if len(appointment_resources) > 0:
-                    appointments.append(appointment_resources[0]['resource'])
+                    appt = appointment_resources[0]['resource']
+                    if appt['id'] not in seen_appointment_ids:
+                        appointments.append(appt)
+                        seen_appointment_ids.add(appt['id'])
             
             # Merge fixed schedule times
             for date, time_list in schedule.items():
@@ -330,7 +334,7 @@ class HospitalEnvironment:
             
             # Get doctors belonging to the department
             hospital_id = self.HOSPITAL_NAME.replace('_', '')
-            params={"specialty:text": department}
+            params = {"specialty:text": department}
             practitioner_roles = [resource['resource'] for resource in self.fhir_manager.read_all('PractitionerRole', params=params, verbose=False)
                                   if hospital_id in resource['resource']['id']]
 

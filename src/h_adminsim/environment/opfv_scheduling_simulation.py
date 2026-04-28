@@ -258,9 +258,9 @@ class OPFVSchedulingSimulation:
             assert doctor_information is not None, colorstr("red", f"Doctor information must be provided if you don't use FHIR.")
 
         filtered_doctor_information = self.environment.get_doctor_schedule(
-            doctor_information=doctor_information if not self.fhir_integration else None,
+            doctor_information=doctor_information,
             department=known_condition['department'],
-            fhir_integration=self.fhir_integration,
+            fhir_integration=self.fhir_integration and doctor_information is None,
         )
         _schedule_client = self.admin_staff_agent.build_agent(
             rule=self.rules, 
@@ -428,9 +428,9 @@ class OPFVSchedulingSimulation:
         callback = kwargs.pop('callback', None)
         department = known_condition['department']
         filtered_doctor_information = self.environment.get_doctor_schedule(
-            doctor_information=doctor_information if not self.fhir_integration else None,
+            doctor_information=doctor_information,
             department=department,
-            fhir_integration=self.fhir_integration,
+            fhir_integration=self.fhir_integration and doctor_information is None,
         )
         
         # First, try to use the tool calling
@@ -472,9 +472,9 @@ class OPFVSchedulingSimulation:
             reschedule_desc = "Rescheduling requested. This is the rescheduling of a patient who wishes to move their appointment earlier due to a previous patient's cancelled reservation" \
                 if reschedule_flag else 'Not requested.'
             filtered_doctor_information = self.environment.get_doctor_schedule(
-                doctor_information=doctor_information if not self.fhir_integration else None,
+                doctor_information=doctor_information,
                 department=department,
-                fhir_integration=self.fhir_integration,
+                fhir_integration=self.fhir_integration and doctor_information is None,
                 express_detail=True
             )
             user_prompt = self.admin_staff_agent.scheduling_user_prompt_template.format(
@@ -715,9 +715,9 @@ class OPFVSchedulingSimulation:
         self._init_agents(verbose=verbose)
         staff_token_stats = {}
         filtered_doctor_information = self.environment.get_doctor_schedule(
-            doctor_information=doctor_information if not self.fhir_integration else None,
+            doctor_information=doctor_information,
             department=staff_known_data['department'],
-            fhir_integration=self.fhir_integration,
+            fhir_integration=self.fhir_integration and doctor_information is None,
         )
         client = self.admin_staff_agent.build_agent(
             rule=self.rules, 
@@ -1265,9 +1265,9 @@ class OPFVSchedulingSimulation:
         self._init_agents(verbose=verbose)
         staff_token_stats = {}
         filtered_doctor_information = self.environment.get_doctor_schedule(
-            doctor_information=doctor_information if not self.fhir_integration else None,
+            doctor_information=doctor_information,
             department=staff_known_data['department'],
-            fhir_integration=self.fhir_integration,
+            fhir_integration=self.fhir_integration and doctor_information is None,
         )
         client = self.admin_staff_agent.build_agent(
             rule=self.rules, 
