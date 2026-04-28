@@ -15,6 +15,7 @@ from h_adminsim.utils.common_utils import (
     init_result_dict,
     compare_iso_time,
     get_iso_time,
+    iso_to_date,
 )
 
 
@@ -160,6 +161,7 @@ class SchedulingRule:
                  patient_schedule_list: list[dict], 
                  patient_name: str, 
                  doctor_name: str, 
+                 status: str,
                  date: Optional[str] = None) -> int:
         """
         Identify the index of the appointment corresponding to the patient's request
@@ -170,17 +172,57 @@ class SchedulingRule:
                                                 Each item contains appointment details such as doctor name, date, and time.
             patient_name (str): Name of the patient making the request.
             doctor_name (str): Name of the doctor associated with the target appointment.
+            status (str): Patient's appointment status.
             date (Optional[str], optional): Date of the target appointment (YYYY-MM-DD). Defaults to None.
 
         Returns:
             int: The index of the appointment that matches the patient's request.
         """
-        for idx, patient_schedule in enumerate(patient_schedule_list):
-            if ((patient_schedule['visit_type'] == 'first_visit' and patient_schedule['status'] == 'scheduled') or \
-                    patient_schedule['visit_type'] == 'follow_up_visit') and \
+        # With FHIR integration case
+        if self.fhir_integration:
+            # Get patient resource
+            name_parts = patient_name.strip().split()
+            given = name_parts[0]
+            family = name_parts[-1]
+            patient_entries = self.environment.fhir_manager.read_all(
+                "Patient",
+                params={"given": given, "family": family},
+                verbose=False,
+            )
+            if not patient_entries:
+                return -1
+            patient_id = patient_entries[0]['resource']['id']
+
+            # Get appointment resource
+            appointment_entries = self.environment.fhir_manager.read_all(
+                'Appointment', 
+                params={'patient': f'Patient/{patient_id}'}, 
+                verbose=False,
+            )
+            if not appointment_entries:
+                return -1
+
+            candidate_pairs = {
+                (entry['resource']['participant'][0]['actor']['display'].lower(),
+                 iso_to_date(entry['resource']['start']))
+                for entry in appointment_entries
+            }
+
+            for idx, patient_schedule in enumerate(patient_schedule_list):
+                if patient_schedule['status'] == status and \
                         patient_schedule['patient'].lower() == patient_name.lower() and \
                             patient_schedule['attending_physician'].lower() == doctor_name.lower() and \
-                                (date is None or patient_schedule['date'] == date):
+                                (date is None or patient_schedule['date'] == date) and \
+                                    (patient_schedule['attending_physician'].lower(), patient_schedule['date']) in candidate_pairs:
+                    return idx
+            return -1
+
+        # Without FHIR integration case
+        for idx, patient_schedule in enumerate(patient_schedule_list):
+            if patient_schedule['status'] == status and \
+                    patient_schedule['patient'].lower() == patient_name.lower() and \
+                        patient_schedule['attending_physician'].lower() == doctor_name.lower() and \
+                            (date is None or patient_schedule['date'] == date):
                 return idx
         return -1
 
@@ -327,7 +369,7 @@ def create_tools(rule: SchedulingRule,
         prefix = 'Dr.'
         if prefix not in doctor_name:
             doctor_name = f'{prefix} {doctor_name}'
-        index = rule.find_idx(patient_schedule_list, patient_name, doctor_name, date)
+        index = rule.find_idx(patient_schedule_list, patient_name, doctor_name, status='scheduled', date=date)
 
         # Update result_dict
         if gt_idx is None:
@@ -369,7 +411,7 @@ def create_tools(rule: SchedulingRule,
         prefix = 'Dr.'
         if prefix not in doctor_name:
             doctor_name = f'{prefix} {doctor_name}'
-        index = rule.find_idx(patient_schedule_list, patient_name, doctor_name, date)
+        index = rule.find_idx(patient_schedule_list, patient_name, doctor_name, status='scheduled', date=date)
         
         # Update result_dict
         if gt_idx is None:
@@ -408,7 +450,7 @@ def create_tools(rule: SchedulingRule,
         prefix = 'Dr.'
         if prefix not in doctor_name:
             doctor_name = f'{prefix} {doctor_name}'
-        index = rule.find_idx(patient_schedule_list, patient_name, doctor_name)
+        index = rule.find_idx(patient_schedule_list, patient_name, doctor_name, status='completed')
 
         # Update result_dict
         if gt_idx is None:
