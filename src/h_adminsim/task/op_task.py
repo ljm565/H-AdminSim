@@ -92,16 +92,16 @@ class OutpatientTask:
             {
                 'metadata': deepcopy(metadata),
                 'department': deepcopy(department_data),
-                'patient': [{
-                    patient_data['name']: {
+                'patient': {
+                    patient_data['name']: [{
                         'department': assigned_department,
                         'gender': patient_data['gender'],
                         'telecom': [{'system': 'phone', 'value': patient_data['phone_number'], 'use': 'mobile'}],
                         'birthDate': personal_id_to_birth_date(patient_data['personal_id']),
                         'identifier': [{'value': patient_data['personal_id'], 'use': 'official'}],
                         'address': [{'type': 'postal', 'text': patient_data['address'], 'use': 'home'}],
-                    }
-                }]
+                    }]
+                }
             }
         )[0]
         return fhir_patient

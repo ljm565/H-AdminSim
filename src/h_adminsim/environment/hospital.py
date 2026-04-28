@@ -140,7 +140,7 @@ class HospitalEnvironment:
                     x for x in self.fhir_manager.read_all('Appointment', verbose=False)
                     if hospital_id in x['resource']['id'] and 'Dr.' in x['resource']['id']
                 ]
-                valid_len = len(list(filter(lambda x: x['visit_type'] == 'first_vistit' and x['status'] != 'cancelled', self.patient_schedules)))
+                valid_len = len(list(filter(lambda x: x['visit_type'] == 'first_visit' and x['status'] != 'cancelled', self.patient_schedules)))
                 assert len(self.fhir_appointment) == valid_len, f"Mismatch in appointment count: expected {valid_len}, got {len(self.fhir_appointment)}"
                 break
             except AssertionError as e:
