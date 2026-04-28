@@ -170,7 +170,7 @@ class OutpatientFirstIntake(OutpatientTask):
                  data_pair: Tuple[dict, dict], 
                  agent_test_data: dict, 
                  agent_results: dict, 
-                 environment, 
+                 environment: HospitalEnvironment, 
                  verbose: bool = False,
                  **kwargs) -> dict:
         """
@@ -690,7 +690,7 @@ class OutpatientFirstScheduling(OutpatientTask):
                  data_pair: Tuple[dict, dict], 
                  agent_test_data: dict, 
                  agent_results: dict, 
-                 environment, 
+                 environment: HospitalEnvironment, 
                  verbose: bool = False,
                  **kwargs) -> dict:
         """
@@ -725,7 +725,6 @@ class OutpatientFirstScheduling(OutpatientTask):
         self.sanity_checker = SanityChecker(self._START_HOUR, self._END_HOUR, self._TIME_UNIT)
         doctor_information = environment.get_general_doctor_info_from_fhir() if self.fhir_integration else agent_test_data.get('doctor')
         patient_info, department, sanity = self.get_intake_information(gt, agent_results, doctor_information)
-        self.rules = SchedulingRule(self._metadata, self._department_data, environment, self.fhir_integration)
         results = init_result_dict()
         self.reset_token_data()
 

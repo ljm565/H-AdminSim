@@ -24,7 +24,8 @@ class SchedulingRule:
                  metadata: dict, 
                  department_data: dict, 
                  environment, 
-                 fhir_intergration: bool = False):
+                 fhir_integration: bool = False):
+        # Initialize parameters
         self.environment = environment
         self._current_time = self.environment.current_time
         self._utc_offset = self.environment._utc_offset
@@ -34,7 +35,7 @@ class SchedulingRule:
         self._END_HOUR = self._metadata.get('time').get('end_hour')
         self._TIME_UNIT = self._metadata.get('time').get('interval_hour')
         self.current_time = environment.current_time
-        self.fhir_integration = fhir_intergration
+        self.fhir_integration = fhir_integration
 
 
     def physician_filter(self, filtered_doctor_information: dict, preferred_doctor: str) -> list[str]:

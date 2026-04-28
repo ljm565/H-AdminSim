@@ -63,7 +63,6 @@ class HospitalEnvironment:
         
         # Misc.
         self.patient_schedules = list()
-        self.follow_up_patient_info = list()
         self.waiting_list = list()
         self.doctor_first_verbose_flag = True
         self.test_first_verbose_flag = True
@@ -431,20 +430,6 @@ class HospitalEnvironment:
                 if verbose:
                     log(f'{colorstr("[WAITING LIST ADDED]")}: {requested_schedule} schedule is appended to the waiting list.')
 
-
-    def add_follow_up_patient_info(self,
-                                   patient_info: dict,
-                                   fhir_resources: Optional[dict] = None):
-        """
-        Add follow-up patient information to the hospital environment and update FHIR resources if provided.
-        
-        Args:
-            patient_info (dict): A dictionary containing follow-up patient information.
-            fhir_resources (Optional[dict], optional): _description_. Defaults to None.
-        """
-        self.follow_up_patient_info.append(patient_info)
-        self.update_fhir(fhir_resources)
-
     
     def pop_waiting_list(self, idx: Union[list[int], int], verbose: bool = False):
         """
@@ -496,13 +481,20 @@ class HospitalEnvironment:
                 self.fhir_manager.delete(resource_type, resource['id'], verbose=False)
     
 
-    def update_current_time(self):
+    def update_current_time(self, new_time: Optional[str] = None):
         """
         Update the current hospital time.
+
+        Args:
+            new_time: Custom new current time.
         """
-        min_iso_time = self.current_time
-        max_iso_time = (str_to_datetime(self.current_time) + timedelta(hours=self.avg_gap)).isoformat(timespec='seconds')
-        self.current_time = generate_random_iso_time_between(min_iso_time, max_iso_time)
+        if new_time is None:
+            min_iso_time = self.current_time
+            max_iso_time = (str_to_datetime(self.current_time) + timedelta(hours=self.avg_gap)).isoformat(timespec='seconds')
+            self.current_time = generate_random_iso_time_between(min_iso_time, max_iso_time)
+        else:
+            self.current_time = new_time
+            self.update_patient_status()
 
     
     def update_patient_status(self):
