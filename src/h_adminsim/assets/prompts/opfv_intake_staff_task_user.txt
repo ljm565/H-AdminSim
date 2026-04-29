@@ -4,7 +4,7 @@ Please extract the patient's **name, gender, phone number, personal ID, address,
 ## Answer format examples:
 Example 1:
 ```json
-{"name": "Chuck Adamcik", "gender": "male", "phone_number": "+82707813973", "personal_id": "740925-6104539", "address": "93, Bomok 3-gil, Inje-gun, Gimpo-si", "department": "rheumatory"}
+{"name": "Chuck Adamcik", "gender": "male", "phone_number": "+82707813973", "personal_id": "740925-6104539", "address": "93, Bomok 3-gil, Inje-gun, Gimpo-si", "department": "rheumatology"}
 ```
 Example 2:
 ```json

@@ -24,6 +24,7 @@ from h_adminsim.tools import DataConverter, SchedulingRule
 from h_adminsim.registry import (
     STATUS_CODES,
     SCHEDULE_STATUS,
+    DEPARTMENT_NORMALIZATION,
     OPFV_PREFERENCE_PHRASE_PATIENT,
 )
 from h_adminsim.utils import colorstr, log
@@ -104,6 +105,7 @@ class OutpatientFirstIntake(OutpatientTask):
         try:
             pattern = re.compile(r'Answer:\s*\d+\.\s*(.+)')
             text = pattern.search(text).group(1)
+            text = DEPARTMENT_NORMALIZATION.get(text.lower(), text)
         except:
             text = 'wrong'
         return text

@@ -26,3 +26,7 @@ SCHEDULE_STATUS = {
     'completed': 'completed',
     'cancelled': 'cancelled',
 }
+DEPARTMENT_NORMALIZATION = {
+    'rheumatory': 'rheumatology',
+    'pulmonology': 'pulmonary',
+}
