@@ -20,3 +20,9 @@ PRIORITY_MAP = {
         'advanced': 2
     }
 }
+SCHEDULE_STATUS = {
+    'scheduled': 'scheduled',
+    'in_progress': 'in_progress',
+    'completed': 'completed',
+    'cancelled': 'cancelled',
+}

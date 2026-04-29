@@ -5,6 +5,7 @@ from decimal import getcontext
 from datetime import timedelta
 from typing import Union, Tuple, Optional
 
+from h_adminsim.registry import SCHEDULE_STATUS
 from h_adminsim.task.fhir_manager import FHIRManager
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.fhir_utils import (
@@ -140,7 +141,7 @@ class HospitalEnvironment:
                     x for x in self.fhir_manager.read_all('Appointment', verbose=False)
                     if hospital_id in x['resource']['id'] and 'Dr.' in x['resource']['id']
                 ]
-                valid_len = len(list(filter(lambda x: x['visit_type'] == 'first_visit' and x['status'] != 'cancelled', self.patient_schedules)))
+                valid_len = len(list(filter(lambda x: x['visit_type'] == 'first_visit' and x['status'] != SCHEDULE_STATUS['cancelled'], self.patient_schedules)))
                 assert len(self.fhir_appointment) == valid_len, f"Mismatch in appointment count: expected {valid_len}, got {len(self.fhir_appointment)}"
                 break
             except AssertionError as e:
@@ -214,7 +215,7 @@ class HospitalEnvironment:
                     x for x in self.fhir_manager.read_all('Appointment', verbose=False)
                     if hospital_id in x['resource']['id'] and 'Dr.' not in x['resource']['id']
                 ]
-                valid_len = len(list(filter(lambda x: x['visit_type'] == 'follow_up_visit' and x['status'] != 'cancelled', self.patient_schedules)))
+                valid_len = len(list(filter(lambda x: x['visit_type'] == 'follow_up_visit' and x['status'] != SCHEDULE_STATUS['cancelled'], self.patient_schedules)))
                 assert len(self.fhir_appointment) == valid_len, f"Mismatch in appointment count: expected {valid_len}, got {len(self.fhir_appointment)}"
                 break
             except AssertionError as e:
@@ -382,7 +383,7 @@ class HospitalEnvironment:
                         self.patient_schedules.append(pred)
                         self.current_time = pred['last_updated_time']
                     
-                    if 'status' in pred and not pred['status'] == 'cancelled':
+                    if 'status' in pred and not pred['status'] == SCHEDULE_STATUS['cancelled']:
                         self.booking_num[pred['attending_physician']] += 1
             
             self.waiting_list = sorted([(i, s) for i, s in enumerate(self.patient_schedules) if s['waiting_order'] >= 0], key=lambda x: x[1]['waiting_order'])
@@ -411,7 +412,7 @@ class HospitalEnvironment:
                 if i == idx:
                     self.pop_waiting_list(turn, verbose)
                     break
-            self.patient_schedules[idx]['status'] = 'cancelled'
+            self.patient_schedules[idx]['status'] = SCHEDULE_STATUS['cancelled']
             self.patient_schedules[idx]['last_updated_time'] = self.current_time
             self.booking_num[self.patient_schedules[idx]['attending_physician']] -= 1
             if verbose:
@@ -509,18 +510,18 @@ class HospitalEnvironment:
             if schedule.get('waiting_order', -1) < 0:
                 schedule['waiting_order'] = -1
 
-            if schedule.get('status') == 'cancelled':
+            if schedule.get('status') == SCHEDULE_STATUS['cancelled']:
                 continue
 
             tmp_st_iso_time = get_iso_time(schedule['schedule'][0], date=schedule['date'], utc_offset=self._utc_offset)
             tmp_tr_iso_time = get_iso_time(schedule['schedule'][-1], date=schedule['date'], utc_offset=self._utc_offset)
 
             if compare_iso_time(self.current_time, tmp_tr_iso_time):
-                status = 'completed'
+                status = SCHEDULE_STATUS['completed']
             elif compare_iso_time(tmp_st_iso_time, self.current_time):
-                status = 'scheduled'
+                status = SCHEDULE_STATUS['scheduled']
             else: 
-                status = 'in_progress'
+                status = SCHEDULE_STATUS['in_progress']
             
             schedule['status'] = status
 

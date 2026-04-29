@@ -12,7 +12,12 @@ from langchain_core.messages import HumanMessage, AIMessage
 
 from h_adminsim import SchedulingAdminStaffAgent
 from h_adminsim.registry.errors import ToolCallingError, DataNotFoundError, SchedulingError
-from h_adminsim.registry import OPFV_PREFERENCE_PHRASE_PATIENT, OPFV_PREFERENCE_PHRASE_STAFF, STATUS_CODES
+from h_adminsim.registry import (
+    STATUS_CODES,
+    SCHEDULE_STATUS,
+    OPFV_PREFERENCE_PHRASE_STAFF,
+    OPFV_PREFERENCE_PHRASE_PATIENT, 
+)
 from h_adminsim.environment.hospital import HospitalEnvironment
 from h_adminsim.utils import log, colorstr
 from h_adminsim.tools.callback import TokenUsageCallback
@@ -335,7 +340,7 @@ class OPFVSchedulingSimulation:
             dict: Updated (or not updated) doctor information and a result dictionary.
         """
         for turn, (idx, original) in enumerate(self.environment.waiting_list):
-            if original['status'] == 'scheduled':
+            if original['status'] == SCHEDULE_STATUS['scheduled']:
                 new_schedule = self._get_rescheduled_result(
                     known_condition=original,
                     doctor_information=doctor_information,
@@ -923,7 +928,7 @@ class OPFVSchedulingSimulation:
         Simulate a multi-turn conversation for appointment cancellation.
 
         Args:
-            gt_idx (Optional[int], optional): Ground-truth index of the appointment to be canceled. Defaults to None.
+            gt_idx (Optional[int], optional): Ground-truth index of the appointment to be cancelled. Defaults to None.
             doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s).
             patient_schedules (Optional[list[dict]], optional): List of patient appointment schedules. Defaults to None.
             verbose (bool, optional): Whether to print conversation logs. Defaults to True.

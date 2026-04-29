@@ -5,7 +5,7 @@ from langchain.tools import tool
 from langchain.agents import AgentExecutor
 
 from .data_converter import DataConverter
-from h_adminsim.registry import STATUS_CODES
+from h_adminsim.registry import STATUS_CODES, SCHEDULE_STATUS
 from h_adminsim.utils import log
 from h_adminsim.utils.fhir_utils import *
 from h_adminsim.utils.common_utils import (
@@ -369,7 +369,7 @@ def create_tools(rule: SchedulingRule,
         prefix = 'Dr.'
         if prefix not in doctor_name:
             doctor_name = f'{prefix} {doctor_name}'
-        index = rule.find_idx(patient_schedule_list, patient_name, doctor_name, status='scheduled', date=date)
+        index = rule.find_idx(patient_schedule_list, patient_name, doctor_name, status=SCHEDULE_STATUS['scheduled'], date=date)
 
         # Update result_dict
         if gt_idx is None:
@@ -411,7 +411,7 @@ def create_tools(rule: SchedulingRule,
         prefix = 'Dr.'
         if prefix not in doctor_name:
             doctor_name = f'{prefix} {doctor_name}'
-        index = rule.find_idx(patient_schedule_list, patient_name, doctor_name, status='scheduled', date=date)
+        index = rule.find_idx(patient_schedule_list, patient_name, doctor_name, status=SCHEDULE_STATUS['scheduled'], date=date)
         
         # Update result_dict
         if gt_idx is None:
@@ -450,7 +450,7 @@ def create_tools(rule: SchedulingRule,
         prefix = 'Dr.'
         if prefix not in doctor_name:
             doctor_name = f'{prefix} {doctor_name}'
-        index = rule.find_idx(patient_schedule_list, patient_name, doctor_name, status='completed')
+        index = rule.find_idx(patient_schedule_list, patient_name, doctor_name, status=SCHEDULE_STATUS['completed'])
 
         # Update result_dict
         if gt_idx is None:

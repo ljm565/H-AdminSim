@@ -8,6 +8,7 @@ from datetime import timedelta
 from h_adminsim.task import OutpatientTask
 from h_adminsim.task.opfv_task import *
 from h_adminsim.task.opfu_task import *
+from h_adminsim.registry import SCHEDULE_STATUS
 from h_adminsim.task.fhir_manager import FHIRManager
 from h_adminsim.tools import DataConverter
 from h_adminsim.environment.hospital import HospitalEnvironment
@@ -152,12 +153,12 @@ class Simulator:
             entries = scheduled_by_patient.get(name, [])
 
             # Promote: first-visit appointment has finished
-            if any(s.get('status') == 'completed' for s in entries):
+            if any(s.get('status') == SCHEDULE_STATUS['completed'] for s in entries):
                 ready.append(pending.pop(name))
                 continue
 
             # In flight: scheduled or in_progress, awaiting time advance
-            if any(s.get('status') != 'cancelled' for s in entries):
+            if any(s.get('status') != SCHEDULE_STATUS['cancelled'] for s in entries):
                 continue
 
             # Drop: all entries cancelled, or first-visit was processed but produced no schedule (error occurred case)
@@ -187,7 +188,7 @@ class Simulator:
         pending_names = set(pending.keys())
         candidate_ends = []
         for s in environment.patient_schedules:
-            if s['visit_type'] == 'first_visit' and s['patient'] in pending_names and s['status'] in ['scheduled', 'in_progress']:
+            if s['visit_type'] == 'first_visit' and s['patient'] in pending_names and s['status'] in [SCHEDULE_STATUS['scheduled'], SCHEDULE_STATUS['in_progress']]:
                 end_iso = get_iso_time(s['schedule'][-1], date=s['date'], utc_offset=environment._utc_offset)
                 if not compare_iso_time(end_iso, sim_end_iso):
                     candidate_ends.append(end_iso)
@@ -281,7 +282,7 @@ class Simulator:
             'test': None,
             'last_updated_time': environment.current_time,
             'waiting_order': -1,
-            'status': 'completed',
+            'status': SCHEDULE_STATUS['completed'],
         }
         environment.patient_schedules.append(virtual)
         environment.booking_num[doctor] += 1
@@ -369,7 +370,7 @@ class Simulator:
             statuses = [x for y in agent_results['first_visit_scheduling']['status'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
             preds = [x for y in agent_results['first_visit_scheduling']['pred'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
             for status, pred in zip(statuses, preds):
-                if status and 'status' in pred and pred['status'] != 'cancelled':
+                if status and 'status' in pred and pred['status'] != SCHEDULE_STATUS['cancelled']:
                     fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].append(pred['schedule'])
                     fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].sort()
         

@@ -21,7 +21,11 @@ from h_adminsim.environment import (
 from h_adminsim.environment.hospital import HospitalEnvironment
 from h_adminsim.tools.sanity_checker import SanityChecker
 from h_adminsim.tools import DataConverter, SchedulingRule
-from h_adminsim.registry import STATUS_CODES, OPFV_PREFERENCE_PHRASE_PATIENT
+from h_adminsim.registry import (
+    STATUS_CODES,
+    SCHEDULE_STATUS,
+    OPFV_PREFERENCE_PHRASE_PATIENT,
+)
 from h_adminsim.utils import colorstr, log
 from h_adminsim.utils.fhir_utils import *
 from h_adminsim.utils.common_utils import *
@@ -479,7 +483,7 @@ class OutpatientFirstScheduling(OutpatientTask):
             Tuple[dict, Optional[dict]]: Updated doctor information and a result dictionary after cancellation.
         """
         if idx is None:
-            candidate_idx = [i for i, schedule in enumerate(environment.patient_schedules) if schedule['status'] == 'scheduled']
+            candidate_idx = [i for i, schedule in enumerate(environment.patient_schedules) if schedule['status'] == SCHEDULE_STATUS['scheduled']]
             idx = random.choice(candidate_idx) if len(candidate_idx) else -1
 
         if idx >= 0:
@@ -513,7 +517,7 @@ class OutpatientFirstScheduling(OutpatientTask):
                 max_retries=self.max_retries,
             )
 
-            # Successfully canceled
+            # Successfully cancelled
             if result_dict['status'][0] is not False:   # No GT and correct case
                 # Update waiting list due to cancellation
                 doctor_information, rs_result_dict = self.automatic_waiting_list_update(
@@ -552,7 +556,7 @@ class OutpatientFirstScheduling(OutpatientTask):
         """
         result_dict = init_result_dict()
         if idx is None:
-            candidate_idx = [i for i, schedule in enumerate(environment.patient_schedules) if schedule['status'] == 'scheduled']
+            candidate_idx = [i for i, schedule in enumerate(environment.patient_schedules) if schedule['status'] == SCHEDULE_STATUS['scheduled']]
             idx = random.choice(candidate_idx) if len(candidate_idx) else -1
         
         if idx >= 0:
