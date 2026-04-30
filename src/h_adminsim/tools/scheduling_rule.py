@@ -365,32 +365,26 @@ def create_tools(rule: SchedulingRule,
             dict: A dictionary containing the cancelled_schedule, result_dict, and updated_doctor_info.
         """
         log(f'[TOOL CALL] cancel_tool | patient_name={patient_name}, doctor_name={doctor_name}, date={date}', color=True)
-        result_dict, updated_doctor_info, cancelled_schedule = init_result_dict(), None, None
+        updated_doctor_info, cancelled_schedule = None, None
         prefix = 'Dr.'
         if prefix not in doctor_name:
             doctor_name = f'{prefix} {doctor_name}'
         index = rule.find_idx(patient_schedule_list, patient_name, doctor_name, status=SCHEDULE_STATUS['scheduled'], date=date)
 
         # Update result_dict
-        if gt_idx is None:
-            result_dict['gt'].append({'cancel': None})
-            result_dict['pred'].append({'cancel': index})
-            result_dict['status'].append(None)
-            result_dict['status_code'].append(None)
+        if index == -1 or gt_idx is None:
+            status = None
+        elif index == gt_idx:
+            status = True
         else:
-            status = True if index == gt_idx else False
-            status_code = STATUS_CODES['correct'] if index == gt_idx else STATUS_CODES['cancel']['identify']
-            result_dict['gt'].append({'cancel': gt_idx})
-            result_dict['pred'].append({'cancel': index})
-            result_dict['status'].append(status)
-            result_dict['status_code'].append(status_code)
+            status = False
 
         # Update the schedule only when the cancellation is correct or there is no gt_idx
-        if gt_idx is None or status:
+        if index != -1 and (gt_idx is None or status):
             cancelled_schedule = patient_schedule_list[index]
             updated_doctor_info = rule.cancel_schedule(index, doctor_info, cancelled_schedule)
                 
-        return {'cancelled_schedule': cancelled_schedule, 'result_dict': result_dict, 'updated_doctor_info': updated_doctor_info}
+        return {'cancelled_schedule': cancelled_schedule, 'updated_doctor_info': updated_doctor_info, 'index': {'gt': gt_idx, 'pred': index}, 'status': status}
     
 
     @tool
@@ -427,7 +421,7 @@ def create_tools(rule: SchedulingRule,
             result_dict['status'].append(status)
             result_dict['status_code'].append(status_code)
 
-        if gt_idx is None or status:
+        if index != -1 and (gt_idx is None or status):
             original_schedule = patient_schedule_list[index]
 
         return {'original_schedule': original_schedule, 'result_dict': result_dict}
@@ -446,7 +440,7 @@ def create_tools(rule: SchedulingRule,
             dict: A dictionary containing the list of required tests for the patient.
         """
         log(f'[TOOL CALL] retrieve_patient_tests | patient_name={patient_name}, doctor_name={doctor_name}', color=True)
-        result_dict, test_list = init_result_dict(), None
+        result_dict, test_list, patient_fv = init_result_dict(), None, None
         prefix = 'Dr.'
         if prefix not in doctor_name:
             doctor_name = f'{prefix} {doctor_name}'
@@ -466,10 +460,11 @@ def create_tools(rule: SchedulingRule,
             result_dict['status'].append(status)
             result_dict['status_code'].append(status_code)
         
-        if gt_idx is None or status:
+        if index != -1 and (gt_idx is None or status):
+            patient_fv = patient_schedule_list[index]
             test_list = patient_schedule_list[index]['test']
 
-        return {'test_list': test_list, 'result_dict': result_dict}
+        return {'test_list': test_list, 'patient_fv': patient_fv, 'result_dict': result_dict}
     
 
     if only_schedule_tool:

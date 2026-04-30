@@ -540,6 +540,9 @@ class OPFVSchedulingSimulation:
         Returns:
             dict: Cancelling processed result.
         """
+        # Initialize
+        result_dict = init_result_dict()
+
         # Invoke
         prediction = scheduling_tool_calling(
             client=client,
@@ -549,14 +552,38 @@ class OPFVSchedulingSimulation:
         
         # Canceling result
         if prediction['type'] == 'tool':
-            # Schedule not found case: -> return: str
-            if prediction['result']['result_dict']['pred'][0]['cancel'] == -1:
-                prediction['type'] = 'text'
-                prediction['result'] = "Sorry, we couldn't find a matching appointment. Could you please check your appointment details again?"
+            if prediction['result']['status'] is None:
+                # Schedule not found case: -> return: str
+                if prediction['result']['index']['pred'] == -1:
+                    prediction['type'] = 'text'
+                    prediction['result'] = "Sorry, we couldn't find a matching appointment. Could you please check your appointment details again?"
+                
+                # No GT case
+                else:
+                    result_dict['gt'].append({'cancel': None})
+                    result_dict['pred'].append({'cancel': prediction['result']['index']['pred']})
+                    result_dict['status'].append(None)
+                    result_dict['status_code'].append(None)
+                    prediction['result_dict'] = result_dict
+
+                return prediction
+            
+            # Retrieval fail case
+            elif prediction['result']['status'] is False:
+                result_dict['gt'].append({'cancel': prediction['result']['index']['gt']})
+                result_dict['pred'].append({'cancel': prediction['result']['index']['pred']})
+                result_dict['status'].append(prediction['result']['status'])
+                result_dict['status_code'].append(STATUS_CODES['cancel']['identify'])
+                prediction['result_dict'] = result_dict
                 return prediction
             
             # Successful cancellation case -> return: dict
             else:
+                result_dict['gt'].append({'cancel': prediction['result']['index']['gt']})
+                result_dict['pred'].append({'cancel': prediction['result']['index']['pred']})
+                result_dict['status'].append(prediction['result']['status'])
+                result_dict['status_code'].append(STATUS_CODES['correct'])
+                prediction['result_dict'] = result_dict
                 return prediction
 
         # Clarification message case -> return: str
@@ -996,7 +1023,7 @@ class OPFVSchedulingSimulation:
                 # Tool calling result
                 elif staff_response['type'] == 'tool':
                     result = staff_response['result']
-                    result_dict = result['result_dict']
+                    result_dict = staff_response['result_dict']
                     
                     # Succesful case
                     if result_dict['status'][0] is not False:  # No GT and correct case
