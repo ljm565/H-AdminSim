@@ -24,6 +24,10 @@ STATUS_CODES = {
         'schedule': 'reschedule: {status_code}',
         'type': 'reschedule: unexpected tool calling result'
     },
+    'test_retrieve': {
+        'identify': 'test_retrieve: fail to identify requested schedule',
+        'type': 'test_retrieve: unexpected tool calling result'
+    },
     'preceding': 'preceding task failed',
     'unexpected': "unexpected error: {e}",
     'correct': 'pass',

@@ -653,11 +653,12 @@ class DataConverter:
         Returns:
             list[dict]: A list of converted FHIR Appointment resource objects.
         """
-        def _emit_consultation(department: str, 
-                               doctor_name: str, 
-                               patient_id: str, patient_name: str, 
-                               date: str, 
-                               schedule_time_range: list[float]):
+        def _emit_consultation(department: str,
+                               doctor_name: str,
+                               patient_id: str, patient_name: str,
+                               date: str,
+                               schedule_time_range: list[float],
+                               supporting_information: Optional[list[dict]] = None):
             """
             Build a physician-consultation `Appointment` resource (Practitioner + Patient) and append it to the enclosing `appointments` list.
 
@@ -669,6 +670,8 @@ class DataConverter:
                 date (str): Appointment date (ISO `YYYY-MM-DD`). Must be a concrete date; callers should skip emission when the consultation is not yet scheduled.
                 schedule_time_range (list[float]): Start/end hour pair describing the consultation window (e.g. `[9.0, 9.5]`).
                                                    Discretized into segments via the enclosing `interval_hour`.
+                supporting_information (Optional[list[dict]]): FHIR R5 `Appointment.supportingInformation` entries
+                                                              (e.g., `Reference(HealthcareService)` for tests prescribed at this consultation).
             """
             practitioner_id = get_individual_id(
                 hospital_name,
@@ -690,6 +693,8 @@ class DataConverter:
                 'slot': [{'reference': f'Slot/{get_slot_id(practitioner_id, date, seg)}'} for seg in schedule_segments],
                 'participant': participant
             }
+            if supporting_information:
+                appointment_obj['supportingInformation'] = supporting_information
             appointments.append(appointment_obj)
 
             if save_dir:
