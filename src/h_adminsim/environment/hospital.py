@@ -242,17 +242,17 @@ class HospitalEnvironment:
     
 
     def get_doctor_schedule(self,
+                            department: str,
                             doctor_information: Optional[dict] = None,
                             *,
-                            department: Optional[str] = None,
                             fhir_integration: bool = False,
                             express_detail: bool = False) -> dict:
         """
         Build doctor schedules for a given department.
 
         Args:
+            department (str): Target department name.
             doctor_information (Optional[dict], optional): Simulation doctor data (used when fhir_integration is False). Defaults to None.
-            department (Optional[str], optional): Target department name. Defaults to None.
             fhir_integration (bool, optional): If True, build schedules from FHIR resources. Defaults to False.
             express_detail (bool, optional): If True, express schedules with explicit start/end fields. Defualtsto False.
 
