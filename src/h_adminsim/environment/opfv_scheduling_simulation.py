@@ -326,6 +326,60 @@ class OPFVSchedulingSimulation:
         return None
     
 
+    def _make_reschedule_pipeline(self, doctor_information: Optional[dict] = None, **kwargs):
+        """
+        Build a callable that runs the post-retrieval rescheduling pipeline:
+        _get_rescheduled_result -> sanity check -> _check_reschedule_validity -> waiting list.
+
+        Args:
+            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s).
+            **kwargs: Additional keyword arguments forwarded to the inner scheduling agent.
+
+        Returns:
+            Callable[[int, dict], dict]: A pipeline function returning a dict with keys
+                'action' ('reschedule' | 'waiting_list' | 'schedule_fail'),
+                'new_schedule' (dict | None), and optional 'status_code'.
+        """
+        def pipeline(idx: int, original_schedule: dict) -> dict:
+            try:
+                new_schedule = self._get_rescheduled_result(
+                    known_condition=original_schedule,
+                    doctor_information=doctor_information,
+                    **kwargs,
+                )
+            except Exception:
+                return {'action': 'schedule_fail', 'new_schedule': None,
+                        'status_code': STATUS_CODES['format']}
+
+            if self.sanity_checker is not None:
+                ok, code = self.sanity_checker.schedule_check(
+                    prediction=new_schedule,
+                    gt_patient_condition=original_schedule,
+                    doctor_information=doctor_information,
+                    environment=self.environment,
+                )
+                if not ok:
+                    return {'action': 'schedule_fail', 'new_schedule': new_schedule,
+                            'status_code': code}
+
+            try:
+                final = self._check_reschedule_validity(
+                    idx=idx,
+                    new_schedule=new_schedule,
+                    original_schedule=original_schedule,
+                    doctor_information=doctor_information,
+                )
+                if final is not None:
+                    return {'action': 'reschedule', 'new_schedule': final, 'status_code': None}
+                self.environment.add_waiting_list(idx, True)
+                return {'action': 'waiting_list', 'new_schedule': None, 'status_code': None}
+            except Exception:
+                return {'action': 'schedule_fail', 'new_schedule': new_schedule,
+                        'status_code': STATUS_CODES['format']}
+
+        return pipeline
+
+
     def automatic_waiting_list_update(self,
                                       doctor_information: dict,
                                       **kwargs):
@@ -595,8 +649,8 @@ class OPFVSchedulingSimulation:
             raise TypeError(colorstr("red", "Error: Unexpected return type from canceling method."))
     
 
-    def rescheduling(self, 
-                     client: AgentExecutor, 
+    def rescheduling(self,
+                     client: AgentExecutor,
                      patient_intention: str,
                      doctor_information: Optional[dict] = None,
                      chat_history: list = [],
@@ -607,7 +661,7 @@ class OPFVSchedulingSimulation:
         Args:
             client (AgentExecutor): The agent executor to handle tool calls or conversation.
             patient_intention (str): The patient's utterance expressing a rescheduling request.
-            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s) involved, 
+            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s) involved,
                                                            including availability and other relevant details. Defaults to None.
             chat_history (list, optional): Chat history. Defaults to [].
 
@@ -621,6 +675,9 @@ class OPFVSchedulingSimulation:
         if not self.fhir_integration:
             assert doctor_information is not None, colorstr("red", f"Doctor information must be provided if you don't use FHIR.")
 
+        # Initialize
+        result_dict = init_result_dict()
+
         # Invoke
         prediction = scheduling_tool_calling(
             client=client,
@@ -628,73 +685,53 @@ class OPFVSchedulingSimulation:
             history=chat_history,
         )
 
-        # Rescheduling result
         if prediction['type'] == 'tool':
-            # Schedule not found case: -> return: str
-            if prediction['result']['result_dict']['pred'][0]['reschedule'] == -1:
+            res = prediction['result']
+            st = res['status']
+            idx = res['index']
+
+            # Schedule not found case: -> text
+            if st is None and idx['pred'] == -1:
                 prediction['type'] = 'text'
                 prediction['result'] = "Sorry, we couldn't find a matching appointment. Could you please check your appointment details again?"
                 return prediction
-        
-            # Successfully retrieve the original schedule -> return: dict
-            else:
-                # Step 1: Retrieved original schedule
-                original_schedule = prediction['result']['original_schedule']
-                if prediction['result']['result_dict']['status'][0] == False:  # Case of failure to identify the schedule
-                    prediction['tmp_flag'] = 'retrieve'
-                    return prediction
 
-                # Step 2: Try to reschedule based on the patient record (or the memo)
-                new_schedule = self._get_rescheduled_result(
-                    known_condition=original_schedule,
-                    doctor_information=doctor_information,
-                    **kwargs
-                )
-                prediction['result']['new_schedule'] = new_schedule
-
-                # Sanity check
-                ## When GT exists
-                if self.sanity_checker is not None:
-                    status, status_code = self.sanity_checker.schedule_check(
-                        prediction=new_schedule,
-                        gt_patient_condition=original_schedule,
-                        doctor_information=doctor_information,
-                        environment=self.environment
-                    )
-                    if not status:
-                        prediction['result']['result_dict']['pred'] = [new_schedule]
-                        prediction['result']['result_dict']['status'] = [False]
-                        prediction['result']['result_dict']['status_code'] = [STATUS_CODES['reschedule']['schedule'].format(status_code=status_code)]
-                        prediction['tmp_flag'] = 'schedule'
-                        return prediction
-                    
-                # Step 3: Check the validity of the rescheduled result
-                try:
-                    # Successful case
-                    pred_idx = prediction['result']['result_dict']['pred'][0]['reschedule']
-                    final_schedule = self._check_reschedule_validity(
-                        idx=pred_idx,
-                        new_schedule=new_schedule,
-                        original_schedule=original_schedule,
-                        doctor_information=doctor_information,
-                    )
-                    if final_schedule is not None:
-                        prediction['result']['new_schedule'] = final_schedule
-                        prediction['result']['result_dict']['pred'] = [final_schedule]
-                        prediction['tmp_flag'] = 'reschedule'
-                    else:
-                        self.environment.add_waiting_list(pred_idx, True)
-                        prediction['tmp_flag'] = 'waiting_list'
-                
-                except:
-                    log('No sanity checker is available; an error occurred while parsing the prediction. Returning a failure result.', level='warning')
-                    prediction['result']['result_dict']['pred'] = [new_schedule]
-                    prediction['result']['result_dict']['status'] = [False]
-                    prediction['result']['result_dict']['status_code'] = [STATUS_CODES['reschedule']['schedule'].format(status_code=STATUS_CODES['format'])]
-                    prediction['tmp_flag'] = 'schedule'
-                    return prediction
-
+            # Build retrieval result_dict
+            if st is None:  # No GT, retrieved
+                result_dict['gt'].append({'reschedule': None})
+                result_dict['pred'].append({'reschedule': idx['pred']})
+                result_dict['status'].append(None)
+                result_dict['status_code'].append(None)
+            elif st is False:  # GT exists, identification failed
+                result_dict['gt'].append({'reschedule': idx['gt']})
+                result_dict['pred'].append({'reschedule': idx['pred']})
+                result_dict['status'].append(False)
+                result_dict['status_code'].append(STATUS_CODES['reschedule']['identify'])
+                prediction['result_dict'] = result_dict
+                prediction['tmp_flag'] = 'retrieve'
                 return prediction
+            else:  # True
+                result_dict['gt'].append({'reschedule': idx['gt']})
+                result_dict['pred'].append({'reschedule': idx['pred']})
+                result_dict['status'].append(True)
+                result_dict['status_code'].append(STATUS_CODES['correct'])
+
+            # Translate pipeline action into tmp_flag + result_dict updates
+            action = res.get('action')
+            if action == 'reschedule':
+                result_dict['pred'] = [res['new_schedule']]
+                prediction['tmp_flag'] = 'reschedule'
+            elif action == 'waiting_list':
+                prediction['tmp_flag'] = 'waiting_list'
+            elif action == 'schedule_fail':
+                result_dict['pred'] = [res['new_schedule']]
+                result_dict['status'] = [False]
+                result_dict['status_code'] = [STATUS_CODES['reschedule']['schedule'].format(
+                    status_code=res.get('schedule_status_code') or STATUS_CODES['format'])]
+                prediction['tmp_flag'] = 'schedule'
+
+            prediction['result_dict'] = result_dict
+            return prediction
 
         # Clarification message case -> return: str
         elif prediction['type'] == 'text':
@@ -1127,14 +1164,15 @@ class OPFVSchedulingSimulation:
         self._init_agents(verbose=verbose)
         patient_schedules = self.environment.patient_schedules if patient_schedules is None else patient_schedules
         doctor_information = self.environment.get_general_doctor_info_from_fhir() if self.fhir_integration else doctor_information
+        merged_patient_kwargs = {**patient_kwargs, **kwargs}
+        merged_staff_kwargs = {**staff_kwargs, **kwargs}
         client = self.admin_staff_agent.build_agent(
-            rule=self.rules, 
+            rule=self.rules,
             doctor_info=doctor_information,
             patient_schedule_list=patient_schedules,
             gt_idx=gt_idx,
+            reschedule_pipeline=self._make_reschedule_pipeline(doctor_information, **merged_staff_kwargs),
         )
-        merged_patient_kwargs = {**patient_kwargs, **kwargs}
-        merged_staff_kwargs = {**staff_kwargs, **kwargs}
 
         # Start conversation
         staff_greet = self.admin_staff_agent.general_greet
@@ -1163,7 +1201,7 @@ class OPFVSchedulingSimulation:
                     chat_history=self._to_lc_history('reschedule'),
                     **merged_staff_kwargs
                 )
-                
+
                 # Clarification message
                 if staff_response['type'] == 'text':
                     response = staff_response['result']
@@ -1175,28 +1213,28 @@ class OPFVSchedulingSimulation:
                 elif staff_response['type'] == 'tool':
                     # Fail to identify the schedule
                     if staff_response['tmp_flag'] == 'retrieve':
-                        result_dict = staff_response['result']['result_dict']
+                        result_dict = staff_response['result_dict']
                         raise DataNotFoundError(colorstr("red", "Error: Schedule not found error."))
-                    
+
                     # Scheduling failure case
                     elif staff_response['tmp_flag'] == 'schedule':
-                        result_dict = staff_response['result']['result_dict']
+                        result_dict = staff_response['result_dict']
                         raise SchedulingError(colorstr("red", "Error: Scheduling error."))
-                    
+
                     # Successful case
                     else:
                         result = staff_response['result']
                         tmp_original_schedule = {k: v for k, v in result['original_schedule'].items() \
                                                  if k in ['patient', 'attending_physician', 'department', 'date', 'schedule']}
-                        
+
                         # Successfully adding to waiting list
                         if staff_response['tmp_flag'] == 'waiting_list':
-                            result_dict = result['result_dict']
+                            result_dict = staff_response['result_dict']
                             response = f"There are no available times. I've added this schedule to the waiting list: {tmp_original_schedule}"
-                        
+
                         # Successfully rescheduled case
                         elif staff_response['tmp_flag'] == 'reschedule':
-                            result_dict = result['result_dict']
+                            result_dict = staff_response['result_dict']
                             tmp_prediction_schedule = {k: v for k, v in result['new_schedule'].items() \
                                                        if k in ['patient', 'attending_physician', 'department', 'date', 'schedule']}
                             response = f"I've moved your original schedule: {tmp_original_schedule} to the new one: {tmp_prediction_schedule}"

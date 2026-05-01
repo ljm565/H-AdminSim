@@ -298,11 +298,12 @@ class SchedulingRule:
         return doctor_info
 
 
-def create_tools(rule: SchedulingRule, 
+def create_tools(rule: SchedulingRule,
                  doctor_info: dict,
                  patient_schedule_list: Optional[list[dict]] = None,
                  gt_idx: Optional[int] = None,
-                 only_schedule_tool: bool = False) -> list[tool]:
+                 only_schedule_tool: bool = False,
+                 reschedule_pipeline: Optional[callable] = None) -> list[tool]:
     @tool
     def physician_filter_tool(preferred_doctor: str) -> dict:
         """
@@ -390,7 +391,7 @@ def create_tools(rule: SchedulingRule,
     @tool
     def reschedule_tool(patient_name: str, doctor_name: str, date: str) -> dict:
         """
-        Identify the index of the appointment to be rescheduled from the patient's schedule list.
+        Identify the original appointment to be rescheduled and run the post-retrieval rescheduling pipeline.
 
         Args:
             patient_name (str): Name of the patient requesting the rescheduling.
@@ -398,33 +399,42 @@ def create_tools(rule: SchedulingRule,
             date (str): Date of the original appointment to be rescheduled (YYYY-MM-DD).
 
         Returns:
-            dict: A dictionary containing the original_schedule and result_dict.
+            dict: A dictionary containing original_schedule, new_schedule, index, status,
+                  pipeline action, and optional schedule_status_code.
         """
         log(f'[TOOL CALL] reschedule_tool | patient_name={patient_name}, doctor_name={doctor_name}, date={date}', color=True)
-        result_dict, original_schedule = init_result_dict(), None
         prefix = 'Dr.'
         if prefix not in doctor_name:
             doctor_name = f'{prefix} {doctor_name}'
         index = rule.find_idx(patient_schedule_list, patient_name, doctor_name, status=SCHEDULE_STATUS['scheduled'], date=date)
-        
-        # Update result_dict
-        if gt_idx is None:
-            result_dict['gt'].append({'reschedule': None})
-            result_dict['pred'].append({'reschedule': index})
-            result_dict['status'].append(None)
-            result_dict['status_code'].append(None)
-        else:
-            status = True if index == gt_idx else False
-            status_code = STATUS_CODES['correct'] if index == gt_idx else STATUS_CODES['reschedule']['identify']
-            result_dict['gt'].append({'reschedule': gt_idx})
-            result_dict['pred'].append({'reschedule': index})
-            result_dict['status'].append(status)
-            result_dict['status_code'].append(status_code)
 
+        if index == -1 or gt_idx is None:
+            status = None
+        elif index == gt_idx:
+            status = True
+        else:
+            status = False
+
+        original_schedule, new_schedule = None, None
+        action, schedule_status_code = None, None
+
+        # Run pipeline only when retrieval succeeded (No-GT or correct GT match)
         if index != -1 and (gt_idx is None or status):
             original_schedule = patient_schedule_list[index]
+            if reschedule_pipeline is not None:
+                pipe_result = reschedule_pipeline(index, original_schedule)
+                action = pipe_result['action']
+                new_schedule = pipe_result['new_schedule']
+                schedule_status_code = pipe_result.get('status_code')
 
-        return {'original_schedule': original_schedule, 'result_dict': result_dict}
+        return {
+            'original_schedule': original_schedule,
+            'new_schedule': new_schedule,
+            'index': {'gt': gt_idx, 'pred': index},
+            'status': status,
+            'action': action,
+            'schedule_status_code': schedule_status_code,
+        }
     
 
     @tool

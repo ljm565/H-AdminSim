@@ -396,12 +396,13 @@ class SchedulingAdminStaffAgent:
         self.client.reset_history(verbose=verbose)
 
 
-    def build_agent(self, 
-                    rule: SchedulingRule, 
+    def build_agent(self,
+                    rule: SchedulingRule,
                     doctor_info: dict,
                     patient_schedule_list: Optional[list[dict]] = None,
                     gt_idx: Optional[int] = None,
-                    only_schedule_tool: bool = False) -> AgentExecutor:
+                    only_schedule_tool: bool = False,
+                    reschedule_pipeline: Optional[callable] = None) -> AgentExecutor:
         """
         Build a LangChain agent with scheduling tools.
 
@@ -411,11 +412,15 @@ class SchedulingAdminStaffAgent:
             patient_schedule_list (Optional[list[dict]], optional): A list of the patient's scheduled appointments. Defaults to None.
             gt_idx (Optional[int], optional): Ground-truth index of the appointment to be cancelled or rescheduled. Defaults to None.
             only_schedule_tool (bool, optional): Whether use only scheduling tools or not. Defaults to False.
+            reschedule_pipeline (Optional[callable], optional): Callable executing the post-retrieval rescheduling pipeline. Defaults to None.
 
         Returns:
             AgentExecutor: A LangChain agent executor with the scheduling tools.
         """
-        tools = create_tools(rule, doctor_info, patient_schedule_list, gt_idx, only_schedule_tool)
+        tools = create_tools(
+            rule, doctor_info, patient_schedule_list, gt_idx, only_schedule_tool,
+            reschedule_pipeline=reschedule_pipeline
+        )
         tool_calling_prompt = self.sc_tool_calling_prompt if only_schedule_tool else self.tool_calling_prompt
         prompt = ChatPromptTemplate.from_messages([
             ("system", tool_calling_prompt),
