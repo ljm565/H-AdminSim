@@ -445,36 +445,34 @@ def create_tools(rule: SchedulingRule,
         Args:
             patient_name (str): Name of the patient.
             doctor_name (str): Name of the doctor for the scheduled appointment.
-        
+
         Returns:
-            dict: A dictionary containing the list of required tests for the patient.
+            dict: A dictionary containing the test_list, patient_fv, index, and status.
         """
         log(f'[TOOL CALL] retrieve_patient_tests | patient_name={patient_name}, doctor_name={doctor_name}', color=True)
-        result_dict, test_list, patient_fv = init_result_dict(), None, None
+        test_list, patient_fv = None, None
         prefix = 'Dr.'
         if prefix not in doctor_name:
             doctor_name = f'{prefix} {doctor_name}'
         index = rule.find_idx(patient_schedule_list, patient_name, doctor_name, status=SCHEDULE_STATUS['completed'])
 
-        # Update result_dict
-        if gt_idx is None:
-            result_dict['gt'].append({'test_retrieve': None})
-            result_dict['pred'].append({'test_retrieve': index})
-            result_dict['status'].append(None)
-            result_dict['status_code'].append(None)
+        if index == -1 or gt_idx is None:
+            status = None
+        elif index == gt_idx:
+            status = True
         else:
-            status = True if index == gt_idx else False
-            status_code = STATUS_CODES['correct'] if index == gt_idx else STATUS_CODES['test_retrieve']['identify']
-            result_dict['gt'].append({'test_retrieve': gt_idx})
-            result_dict['pred'].append({'test_retrieve': index})
-            result_dict['status'].append(status)
-            result_dict['status_code'].append(status_code)
-        
+            status = False
+
         if index != -1 and (gt_idx is None or status):
             patient_fv = patient_schedule_list[index]
             test_list = patient_schedule_list[index]['test']
 
-        return {'test_list': test_list, 'patient_fv': patient_fv, 'result_dict': result_dict}
+        return {
+            'test_list': test_list,
+            'patient_fv': patient_fv,
+            'index': {'gt': gt_idx, 'pred': index},
+            'status': status,
+        }
     
 
     if only_schedule_tool:
