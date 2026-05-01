@@ -365,6 +365,57 @@ class HospitalEnvironment:
         return filtered_doctor_information
     
 
+    def get_test_device_schedule(self,
+                                 test_code: list[str],
+                                 test_device_information: Optional[dict] = None,
+                                 *,
+                                 fhir_integration: bool = False,
+                                 express_detail: bool = False) -> dict:
+        """
+        Build test device schedules for the given test codes.
+
+        Args:
+            test_code (list[str]): Test codes the patient must take.
+            test_device_information (Optional[dict], optional): Simulation test data structured as
+                                                                ``{department: [test_dict, ...]}`` (used when
+                                                                ``fhir_integration`` is False). Defaults to None.
+            fhir_integration (bool, optional): If True, build schedules from FHIR resources. Defaults to False.
+            express_detail (bool, optional): If True, express each device schedule with explicit
+                                             ``start``/``end`` fields. Defaults to False.
+
+        Returns:
+            dict: Filtered test device scheduling information of the form
+                  ``{'test': {test_code: {..., 'devices': {device_name: {'schedule': {...}}}}}}``.
+        """
+        filtered_test_device_information = {'test': {}}
+
+        # Get filtered test information directly from FHIR
+        if fhir_integration:
+            all_test_information = self.get_general_test_info_from_fhir()
+            for tests in all_test_information.values():
+                for test in tests:
+                    if test['code'] in test_code:
+                        filtered_test_device_information['test'][test['code']] = deepcopy(test)
+
+        # Get filtered test information from the simulation data
+        else:
+            for tests in test_device_information.values():
+                for test in tests:
+                    if test['code'] in test_code:
+                        filtered_test_device_information['test'][test['code']] = deepcopy(test)
+
+        # Whether express more details in the built schedules
+        if express_detail:
+            for info in filtered_test_device_information['test'].values():
+                for device_info in info.get('devices', {}).values():
+                    device_info['schedule'] = {
+                        date: [{'start': s[0], 'end': s[1]} for s in schedule]
+                        for date, schedule in device_info.get('schedule', {}).items()
+                    }
+
+        return filtered_test_device_information
+    
+
     def resume(self, agent_results: dict):
         """
         Resume the hospital environment from previously saved agent results.
