@@ -1,0 +1,79 @@
+Below is information about the hospital's operating hours, the patient's required tests, and the test devices including their currently occupied schedules.
+Schedule every required test into an available device slot, respecting all dependencies and constraints, and according to the patient's scheduling preference.
+Respond in JSON format only, as shown in the examples below.
+
+
+## Hospital time information:
+* Start_hour: {START_HOUR}
+* End_hour: {END_HOUR}
+* Time unit: {TIME_UNIT}
+* Current time: {CURRENT_TIME}
+* UTC offset: {UTC_OFFSET}
+
+
+## Patient information:
+* Department: {DEPARTMENT}
+* Attending physician (must be used for the follow-up consultation): {ATTENDING_PHYSICIAN}
+* Patient utterance expressing scheduling preference: {PREFERENCE}
+* Tips:
+    * ASAP case: All required tests must finish (including the time required for results to be ready) as early as possible, even if the patient must visit the hospital on multiple distinct days.
+    * Batch case: Minimize the number of distinct visit dates by clustering tests on as few days as possible. Among feasible groupings, prefer the one whose final test result becomes available the earliest.
+
+
+## Required tests (each entry includes duration_hour, result_hours, priority, depends_on, avoid_same_day):
+NOTE: ``priority`` is a hard time-ordering constraint. If priority(A) < priority(B), then A.end <= B.start.
+``depends_on`` lists tests that must complete (including their result-ready time) before this test can start.
+``avoid_same_day`` lists tests that must NOT share a date with this test.
+```json
+{TESTS}
+```
+
+
+## Example of how to read schedules:
+* [9.0, 10.25]: Indicates an occupied (booked) slot from 9:00 to 10:15.
+* [10.5, 17.0]: Indicates an occupied (booked) slot from 10:30 to 17:00.
+
+
+## Test device information and their {DAY}-day schedules:
+NOTE: Each ``schedule`` field lists the time intervals already occupied per date for each device. Any time range NOT included in the list should be considered available for new scheduling. Time slots **must** be assigned only for dates that exist in the schedule.
+```json
+{TEST_DEVICES}
+```
+
+
+## Doctor information and their {DAY}-day schedules:
+NOTE: Same reading rule as the device schedules — each ``schedule`` field lists already-occupied intervals per date, and any time range NOT included is available. Use this section only to choose the follow-up consultation slot for ``{ATTENDING_PHYSICIAN}``; do not assign tests here.
+```json
+{DOCTOR_SCHEDULES}
+```
+
+
+## Test scheduling instructions:
+1. Every required test must be scheduled exactly once on one of its supporting devices listed under ``devices``.
+2. Each test slot's start time must be later than the ``current time`` (ISO format) and must lie within the hospital operating hours (``Start_hour`` to ``End_hour``).
+3. ``end - start`` for each scheduled test must equal that test's ``duration_hour`` (using the hospital's ``Time unit``).
+4. The chosen device slot must not overlap with any of the device's currently occupied intervals on the chosen date.
+5. ``priority`` is a hard time-ordering constraint: a test with a lower ``priority`` must finish before a test with a higher ``priority`` starts.
+6. ``depends_on`` is a hard time-ordering constraint: for each predecessor P listed in ``depends_on``, the dependent test's start time must be at or after P.end + P.``result_hours`` (i.e., after P's result is ready).
+7. ``avoid_same_day``: tests listed in this field must not share a date with the current test.
+8. Optimization based on the patient's preference:
+    * If the preference is **ASAP**, minimize the latest ``result_ready_at`` across the test set (i.e., complete the slowest test as early as possible). Multiple visit dates are acceptable.
+    * If the preference is **Batch**, minimize the number of distinct visit dates first; among feasible groupings, prefer the one whose final ``result_ready_at`` is earliest.
+9. The top-level ``all_results_ready_at`` field is the latest per-test (end + ``result_hours``) ISO 8601 timestamp across the schedule, computed using the given UTC offset.
+10. Output the patient's scheduled tests as a list under the ``test_schedule`` key in the JSON format shown below. Each list item is an object whose single key is the **device code** (one of the keys under ``devices`` in the corresponding test entry) and whose value is ``{{date, start, end}}`` with ``start`` and ``end`` expressed in float hours. Each required test must appear exactly once across the list (i.e., exactly one of the test's devices is booked).
+11. The top-level ``fu_schedule`` field is the follow-up consultation appointment with ``{ATTENDING_PHYSICIAN}``. Choose the **earliest available** slot in the doctor's schedule whose start time is at or after ``all_results_ready_at``. The slot duration must equal the doctor's ``outpatient_duration`` and must not overlap with any of the doctor's already-occupied intervals on that date. Output as ``{{<doctor_name>: {{date, start, end}}}}`` with ``start`` and ``end`` expressed in float hours. If no such slot exists within the provided schedule horizon, set ``fu_schedule`` to the string ``"none"``.
+
+
+## Answer format examples:
+Example 1 (ASAP):
+```json
+{{"test_schedule": [{{"IMCAR-T02-1": {{"date": "2025-06-13", "start": 9.0, "end": 9.5}}}}, {{"IMCAR-T03-0": {{"date": "2025-06-13", "start": 10.0, "end": 10.5}}}}], "all_results_ready_at": "2025-06-13T12:30:00+09:00", "fu_schedule": {{"Dr. Rosendo Libbey": {{"date": "2025-06-13", "start": 14.0, "end": 14.5}}}}}}
+```
+Example 2 (Batch):
+```json
+{{"test_schedule": [{{"IMGAS-T01-2": {{"date": "2025-06-14", "start": 13.0, "end": 14.0}}}}, {{"IMALL-T01-1": {{"date": "2025-06-14", "start": 14.5, "end": 15.0}}}}], "all_results_ready_at": "2025-06-15T09:00:00+09:00", "fu_schedule": {{"Dr. Adrian Hardester": {{"date": "2025-06-15", "start": 9.5, "end": 10.0}}}}}}
+```
+Example 3 (no follow-up slot available within the schedule horizon):
+```json
+{{"test_schedule": [{{"IMPUL-T04-0": {{"date": "2025-06-20", "start": 16.0, "end": 17.0}}}}], "all_results_ready_at": "2025-06-22T11:00:00+09:00", "fu_schedule": "none"}}
+```

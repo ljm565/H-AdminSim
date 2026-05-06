@@ -270,6 +270,20 @@ class SchedulingAdminStaffAgent:
                 "There are {test_len} test(s) you will need to complete before the appointment: {test_list}.",
             ]
         )
+        self.fu_schedule_suggestion = kwargs.get(
+            'fu_schedule_suggestion',
+            "How about this test schedule: {schedule_summary}"
+        )
+        self.natural_fu_schedule_suggestion = kwargs.get(
+            'natural_fu_schedule_suggestion',
+            [
+                "Could we book your tests as follows: {schedule_summary}?",
+                "Would this test schedule work for you: {schedule_summary}?",
+                "Can I schedule your tests like this: {schedule_summary}?",
+                "Is this arrangement for your tests okay: {schedule_summary}?",
+                "How does this test plan sound: {schedule_summary}?",
+            ]
+        )
         
         # Set random seed for reproducibility
         if self.random_seed:
@@ -343,7 +357,6 @@ class SchedulingAdminStaffAgent:
 
         # Initialilze with the default user prompt for scheduling task
         if not scheduling_user_prompt_path:
-            # TODO: Add reasoning-based scheduling prompt in OPFU case
             if self.target_task == 'first_visit_scheduling':
                 prompt_file_name = 'opfv_schedule_staff_reasoning.txt'
             elif self.target_task == 'follow_up_visit_scheduling':
@@ -402,7 +415,9 @@ class SchedulingAdminStaffAgent:
                     patient_schedule_list: Optional[list[dict]] = None,
                     gt_idx: Optional[int] = None,
                     only_schedule_tool: bool = False,
-                    reschedule_pipeline: Optional[callable] = None) -> AgentExecutor:
+                    reschedule_pipeline: Optional[callable] = None,
+                    filtered_test_device_information: Optional[dict] = None,
+                    required_test_codes: Optional[list] = None) -> AgentExecutor:
         """
         Build a LangChain agent with scheduling tools.
 
@@ -413,13 +428,18 @@ class SchedulingAdminStaffAgent:
             gt_idx (Optional[int], optional): Ground-truth index of the appointment to be cancelled or rescheduled. Defaults to None.
             only_schedule_tool (bool, optional): Whether use only scheduling tools or not. Defaults to False.
             reschedule_pipeline (Optional[callable], optional): Callable executing the post-retrieval rescheduling pipeline. Defaults to None.
+            filtered_test_device_information (Optional[dict], optional): Test/device schedules filtered to the patient's required tests.
+                                                                          When provided together with ``required_test_codes`` enables the test-scheduling tools.
+            required_test_codes (Optional[list], optional): Codes of the tests the patient must take. Defaults to None.
 
         Returns:
             AgentExecutor: A LangChain agent executor with the scheduling tools.
         """
         tools = create_tools(
             rule, doctor_info, patient_schedule_list, gt_idx, only_schedule_tool,
-            reschedule_pipeline=reschedule_pipeline
+            reschedule_pipeline=reschedule_pipeline,
+            filtered_test_device_information=filtered_test_device_information,
+            required_test_codes=required_test_codes,
         )
         tool_calling_prompt = self.sc_tool_calling_prompt if only_schedule_tool else self.tool_calling_prompt
         prompt = ChatPromptTemplate.from_messages([
