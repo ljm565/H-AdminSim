@@ -57,7 +57,7 @@ hospital_data:
         test_fixed_schedule_ratio:              # Proportion of a test's fixed schedules relative to total working hours
             min: 0.02
             max: 0.05
-        tests_per_patient:
+        test_per_patient:
             min: 1
             max: 4
         test_schedule_appointment_ratio:            # Proportion of a test's appontment schedules relative to vacant slots
