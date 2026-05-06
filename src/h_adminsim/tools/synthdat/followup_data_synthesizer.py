@@ -261,8 +261,8 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         
         # Initialize parameters
         fu_config = config.hospital_data.follow_up_visit
-        min_test_num = max(1, fu_config.tests_per_patient.min)
-        max_test_num = min(fu_config.test_per_department.max, fu_config.tests_per_patient.max)
+        min_test_num = max(1, fu_config.test_per_patient.min)
+        max_test_num = min(fu_config.test_per_department.max, fu_config.test_per_patient.max)
         cross_dept_prob = fu_config.cross_department_test_prob
 
         # Make all possible test combinations based on the vacant_test_schedule
