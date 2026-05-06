@@ -557,7 +557,7 @@ class SchedulingRule:
         Objective (lex-min):
 
         - ``mode == 'asap'``: ``(per_priority_unscheduled, max_result_ready_at)``.
-        - ``mode == 'batch'``: ``(per_priority_unscheduled, num_visit_dates, max_result_ready_at)``.
+        - ``mode == 'batch'``: ``(per_priority_unscheduled, num_test_visit_dates, max_result_ready_at)``.
 
         ``per_priority_unscheduled`` is a tuple indexed by priority ascending
         (lower number first), so the search first protects the most important
@@ -714,10 +714,10 @@ class SchedulingRule:
             unscheduled_search (list): Codes the backtracker could not place.
 
         Returns:
-            dict: ``{'tests', 'visit_dates', 'all_results_ready_at', 'unscheduled', 'status'}``.
+            dict: ``{'tests', 'test_visit_dates', 'all_results_ready_at', 'unscheduled', 'status'}``.
         """
         unscheduled = sorted(set(unscheduled_input) | set(unscheduled_search))
-        visit_dates = sorted({a['date'] for a in placed.values()})
+        test_visit_dates = sorted({a['date'] for a in placed.values()})
         all_ready = None
         for a in placed.values():
             if all_ready is None or compare_iso_time(a['result_ready_at'], all_ready):
@@ -725,7 +725,7 @@ class SchedulingRule:
         status = 'partial' if unscheduled else 'ok'
         return {
             'tests': placed,
-            'visit_dates': visit_dates,
+            'test_visit_dates': test_visit_dates,
             'all_results_ready_at': all_ready,
             'unscheduled': unscheduled,
             'status': status,
@@ -747,10 +747,10 @@ class SchedulingRule:
             test_codes (list[str]): Codes of the tests the patient must take.
 
         Returns:
-            dict: ``{'tests', 'visit_dates', 'all_results_ready_at', 'unscheduled', 'status'}``.
+            dict: ``{'tests', 'test_visit_dates', 'all_results_ready_at', 'unscheduled', 'status'}``.
         """
         empty_result = {
-            'tests': {}, 'visit_dates': [], 'all_results_ready_at': None,
+            'tests': {}, 'test_visit_dates': [], 'all_results_ready_at': None,
             'unscheduled': [], 'status': 'ok',
         }
         if not test_codes:
@@ -779,7 +779,7 @@ class SchedulingRule:
                              test_codes: list) -> dict:
         """
         Backtracking batch scheduler — finds the assignment that minimizes
-        ``(unscheduled_count, num_visit_dates, max_result_ready_at)`` over every
+        ``(unscheduled_count, num_test_visit_dates, max_result_ready_at)`` over every
         (device, date, start) combination. Priority is a hard time-ordering
         constraint.
 
@@ -792,7 +792,7 @@ class SchedulingRule:
             dict: Same shape as ``schedule_tests_asap``.
         """
         empty_result = {
-            'tests': {}, 'visit_dates': [], 'all_results_ready_at': None,
+            'tests': {}, 'test_visit_dates': [], 'all_results_ready_at': None,
             'unscheduled': [], 'status': 'ok',
         }
         if not test_codes:
@@ -999,22 +999,40 @@ def create_tools(rule: SchedulingRule,
     
 
     @tool
-    def asap_test_schedule(attending_physician: str) -> dict:
+    def follow_up_asap_test_schedule(attending_physician: str) -> dict:
         """
-        Place each required test at its earliest available slot INDEPENDENTLY,
-        EVEN IF this results in many separate hospital visits across different days.
-        Use when the patient explicitly accepts multiple visits in exchange for the
-        fastest individual test completion (e.g. "as soon as possible",
-        "even with multiple visits", "don't mind multiple days").
+        Schedule each required test at its earliest available slot to MINIMIZE the
+        overall time until all results are ready. Visit-date count is NOT minimized;
+        the schedule may span multiple separate visits when that yields the earliest
+        completion.
+        After scheduling the tests, this tool also schedules a follow-up consultation
+        appointment with the specified attending physician.
+
+        Use this tool whenever the patient prioritizes SPEED of test completion
+        — e.g. "as soon as possible", "ASAP", "quickly", "earliest", "right away",
+        "fastest", "want to finish quickly", or any equivalent urgency expression.
+        Explicit acceptance of multiple visits is NOT required to use this tool;
+        a plain speed preference is sufficient. This is the default choice when the
+        patient expresses urgency and says nothing about visit count.
+
+        IMPORTANT:
+            DO NOT call this tool if ``attending_physician`` is unknown, omitted,
+            ambiguous, or not explicitly confirmed by the patient.
+            This tool must be called only when the attending physician is explicitly
+            identified, since a follow-up consultation appointment will be scheduled
+            with that physician after all tests are completed.
 
         Args:
-            attending_physician (str): Name of the attending physician.
+            attending_physician (str):
+                Name of the attending physician for whom the follow-up consultation
+                appointment should be scheduled after all required tests are completed.
+                This argument is mandatory and must be explicitly provided.
 
         Returns:
-            dict: Mapping of test schedules with fields ``tests``, ``visit_dates``,
-                  ``all_results_ready_at``, ``unscheduled`` and ``status``.
+            dict: Mapping of test schedules with fields ``tests``, ``test_visit_dates``,
+                ``all_results_ready_at``, ``unscheduled``, ``fu_schedule``, and ``status``.
         """
-        log(f'[TOOL CALL] asap_test_schedule | attending_physician={attending_physician}', color=True)
+        log(f'[TOOL CALL] follow_up_asap_test_schedule | attending_physician={attending_physician}', color=True)
         prefix = 'Dr.'
         if prefix not in attending_physician:
             attending_physician = f'{prefix} {attending_physician}'
@@ -1027,21 +1045,38 @@ def create_tools(rule: SchedulingRule,
 
 
     @tool
-    def batch_test_schedule(attending_physician: str) -> dict:
+    def follow_up_batch_test_schedule(attending_physician: str) -> dict:
         """
-        Group the required tests into the SMALLEST possible number of visit days.
-        The patient must accept that some tests may be delayed in order to be
-        co-located on the same day with other tests (e.g. "minimize visits",
-        "fewer days", "on the same day", "together", "in one trip").
+        Group the required tests into the SMALLEST possible number of visit days,
+        accepting that some tests may finish later than they could individually.
+        After scheduling the tests, this tool also schedules a follow-up consultation
+        appointment with the specified attending physician.
+
+        Use this tool ONLY when the patient EXPLICITLY asks to minimize the number
+        of hospital visits — e.g. "minimize visits", "fewer days", "on the same
+        day", "together", "in one trip", "all at once", "one visit", or any
+        equivalent phrasing that targets visit-count rather than speed. Do NOT use
+        this tool when the patient only expresses a speed/urgency preference; use
+        ``follow_up_asap_test_schedule`` for that case.
+
+        IMPORTANT:
+            DO NOT call this tool if ``attending_physician`` is unknown, omitted,
+            ambiguous, or not explicitly confirmed by the patient.
+            This tool must be called only when the attending physician is explicitly
+            identified, since a follow-up consultation appointment will be scheduled
+            with that physician after all tests are completed.
 
         Args:
-            attending_physician (str): Name of the attending physician.
+            attending_physician (str):
+                Name of the attending physician for whom the follow-up consultation
+                appointment should be scheduled after all required tests are completed.
+                This argument is mandatory and must be explicitly provided.
 
         Returns:
-            dict: Mapping of test schedules with fields ``tests``, ``visit_dates``,
-                  ``all_results_ready_at``, ``unscheduled`` and ``status``.
+            dict: Mapping of test schedules with fields ``tests``, ``test_visit_dates``,
+                ``all_results_ready_at``, ``unscheduled`` and ``status``.
         """
-        log(f'[TOOL CALL] batch_test_schedule | attending_physician={attending_physician}', color=True)
+        log(f'[TOOL CALL] follow_up_batch_test_schedule | attending_physician={attending_physician}', color=True)
         prefix = 'Dr.'
         if prefix not in attending_physician:
             attending_physician = f'{prefix} {attending_physician}'
@@ -1069,7 +1104,7 @@ def create_tools(rule: SchedulingRule,
     # After determine the patient's tests
     if filtered_test_device_information is not None and required_test_codes is not None:
         tools = [
-            asap_test_schedule, batch_test_schedule,
+            follow_up_asap_test_schedule, follow_up_batch_test_schedule,
         ]
     return tools
 

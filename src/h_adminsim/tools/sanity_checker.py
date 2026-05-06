@@ -377,7 +377,7 @@ class SanityChecker:
             elif preference == 'batch':
                 optimal = rule.schedule_tests_batch(test_device_information, test_codes_list)
                 pred_distinct_dates = len(set(date_by_test.values()))
-                opt_distinct_dates  = len(optimal.get('visit_dates', []))
+                opt_distinct_dates  = len(optimal.get('test_visit_dates', []))
                 if opt_distinct_dates and pred_distinct_dates > opt_distinct_dates:
                     return False, ts_codes['preference']['batch']
                 if pred_distinct_dates == opt_distinct_dates and \

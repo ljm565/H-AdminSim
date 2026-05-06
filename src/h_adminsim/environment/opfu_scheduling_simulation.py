@@ -222,10 +222,13 @@ class OPFUSchedulingSimulation:
             # Test post-processing
             required_tests = data['tests']
             for _, values in required_tests.items():
-                device_code, date = values['device'], values['date']
+                device_code = values['device']
                 st_hour, tr_hour = iso_to_hour(values['start']), iso_to_hour(values['end'])
+                tmp_schedule = {**values}
+                tmp_schedule['start'] = st_hour
+                tmp_schedule['end'] = tr_hour
                 schedule['test_schedule'].append(
-                    {device_code: {'date': date, 'start': st_hour, 'end': tr_hour}}
+                    {device_code: tmp_schedule}
                 )
             return schedule
 
@@ -303,11 +306,7 @@ class OPFUSchedulingSimulation:
         result_dict = init_result_dict()
         callback = kwargs.pop('callback', None)
         department = known_condition['department']
-        filtered_doctor_information = self.environment.get_doctor_schedule(
-            doctor_information=doctor_information,
-            department=department,
-            fhir_integration=self.fhir_integration and doctor_information is None,
-        )
+        attending_physician = known_condition['attending_physician']
         
         # First, try to use the tool calling
         try:
@@ -316,7 +315,8 @@ class OPFUSchedulingSimulation:
             # Invoke
             prediction = scheduling_tool_calling(
                 client=client, 
-                user_prompt=known_condition['patient_intention'],
+                user_prompt = known_condition['patient_intention'] + f' (Attending Physician: {attending_physician})' \
+                    if attending_physician else known_condition['patient_intention'],
                 history=chat_history,
                 callback=callback,
             )
@@ -355,6 +355,11 @@ class OPFUSchedulingSimulation:
                     return prediction
                 
                 elif res['action'] == 'scheduling':
+                    filtered_doctor_information = self.environment.get_doctor_schedule(
+                        doctor_information=doctor_information,
+                        department=department,
+                        fhir_integration=self.fhir_integration and doctor_information is None,
+                    )
                     test_schedules = OPFUSchedulingSimulation.postprocessing(
                         strategy='tool_calling',
                         data=prediction['result'],
@@ -615,14 +620,14 @@ class OPFUSchedulingSimulation:
                             
                             elif 'test_schedule' in staff_response['result']:
                                 pred_schedule  = staff_response['result']
-                                pred_schedules = pred_schedule['test_schedule']
+                                pred_test_schedules = pred_schedule['test_schedule']
 
                                 # Build a humanized summary of every test slot
                                 parts = []
-                                for entry in pred_schedules:
-                                    for dev_code, slot in entry.items():
+                                for entry in pred_test_schedules:
+                                    for _, slot in entry.items():
                                         parts.append(
-                                            f"{dev_code} on {slot['date']} from {slot['start']} to {slot['end']}"
+                                            f"{slot['name']} on {slot['date']} from {slot['start']} to {slot['end']}"
                                         )
                                 fu_slot = pred_schedule.get('fu_schedule')
                                 if isinstance(fu_slot, dict) and fu_slot:
@@ -729,17 +734,21 @@ class OPFUSchedulingSimulation:
         }
         if status:
             try:
+                pred_doctor_name = list(pred_schedule['fu_schedule'].keys())[0]
+                fu_schedule = pred_schedule['fu_schedule'][pred_doctor_name]
                 prediction = {
-                    'patient_fv': staff_known_data.get('patient_fv'),
-                    'department': staff_known_data.get('department'),
-                    'attending_physician': staff_known_data.get('attending_physician'),
-                    'required_tests': staff_known_data.get('required_tests'),
-                    'test_schedule': pred_schedule['test_schedule'],
-                    'fu_schedule': pred_schedule.get('fu_schedule'),
-                    'all_results_ready_at': pred_schedule['all_results_ready_at'],
-                    'patient_intention': staff_known_data.get('patient_intention'),
+                    'visit_type': 'follow_up_visit',
+                    'patient': staff_known_data['patient_fv']['patient'],
+                    'attending_physician': staff_known_data['attending_physician'],
+                    'department': staff_known_data['department'],
+                    'date': fu_schedule['date'],
+                    'schedule': [fu_schedule['start'], fu_schedule['end']],
+                    'patient_intention': staff_known_data['patient_intention'],
                     'preference': gt_data[i].get('preference'),
-                    'last_updated_time': self.environment.current_time,
+                    'preferred_doctor': gt_data[i].get('preferred_doctor'),
+                    'valid_from': gt_data[i].get('valid_from'),
+                    'test': pred_schedule['test_schedule'],
+                    'last_updated_time': self.environment.current_time
                 }
                 result_dict['pred'] = [prediction]
                 result_dict['status'] = [True]
