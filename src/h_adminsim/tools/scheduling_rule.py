@@ -326,20 +326,20 @@ class SchedulingRule:
         Enumerate candidate (device, date, start_iso, end_iso) windows for a single test.
 
         Mirrors `physician_filter` slot logic but iterates per device under
-        ``test_info['devices']`` and merges any same-call ``extra_busy`` bookings
+        `test_info['devices']` and merges any same-call `extra_busy` bookings
         into the device's pre-existing fixed segments before computing free time.
 
         Args:
-            test_info (dict): One entry from ``filtered_test_device_information['test'][code]``.
+            test_info (dict): One entry from `filtered_test_device_information['test'][code]`.
             after_iso (str): Earliest acceptable ISO start time.
-            forbidden_dates (set): Dates blocked by an already-placed test in ``avoid_same_day``.
-            extra_busy (Optional[dict]): ``{device_name: {date: [[start_hr, end_hr], ...]}}``
+            forbidden_dates (set): Dates blocked by an already-placed test in `avoid_same_day`.
+            extra_busy (Optional[dict]): `{device_name: {date: [[start_hr, end_hr], ...]}}`
                                          of slots booked earlier in this call. Defaults to None.
             on_date (Optional[str]): If set, only enumerate candidates on this YYYY-MM-DD date.
 
         Returns:
-            list[tuple[str, str, str, str]]: ``(device_name, date, start_iso, end_iso)`` tuples
-                                              sorted by ``(start_iso, device_name)`` ascending.
+            list[tuple[str, str, str, str]]: `(device_name, date, start_iso, end_iso)` tuples
+                                              sorted by `(start_iso, device_name)` ascending.
         """
         candidates = []
         duration = test_info['duration_hour']
@@ -388,15 +388,22 @@ class SchedulingRule:
     @staticmethod
     def _topological_order(tests: dict) -> tuple:
         """
-        Kahn's topological sort over the ``depends_on`` DAG restricted to ``tests``.
+        Kahn's topological sort over the `depends_on` DAG restricted to `tests`.
 
         Args:
-            tests (dict): ``{test_code: test_info}`` to be ordered.
+            tests (dict): `{test_code: test_info}` to be ordered.
 
         Returns:
             tuple[list[str], list[str]]: Topologically ordered test codes and any codes
-                                          left over due to a cycle.
+                                         left over due to a cycle.
         """
+        def sort_key(c):
+            # Stable per-level priority: lower priority int first, longer result_hours first
+            info = tests[c]
+            return (info.get('priority', 0),
+                    -info.get('result_hours', 0),
+                    -info.get('duration_hour', 0))
+
         in_deg = {code: 0 for code in tests}
         children = defaultdict(list)
         for code, info in tests.items():
@@ -405,26 +412,17 @@ class SchedulingRule:
                     in_deg[code] += 1
                     children[dep].append(code)
 
-        ordered, frontier = [], []
-        for code, info in tests.items():
-            if in_deg[code] == 0:
-                frontier.append(code)
-        # Stable per-level priority: lower priority int first, longer result_hours first
-        frontier.sort(key=lambda c: (tests[c].get('priority', 0),
-                                     -tests[c].get('result_hours', 0),
-                                     -tests[c].get('duration_hour', 0)))
+        ordered = []
+        frontier = [c for c, d in in_deg.items() if d == 0]
+        frontier.sort(key=sort_key)
         while frontier:
             code = frontier.pop(0)
             ordered.append(code)
-            next_ready = []
             for child in children[code]:
                 in_deg[child] -= 1
                 if in_deg[child] == 0:
-                    next_ready.append(child)
-            frontier.extend(next_ready)
-            frontier.sort(key=lambda c: (tests[c].get('priority', 0),
-                                         -tests[c].get('result_hours', 0),
-                                         -tests[c].get('duration_hour', 0)))
+                    frontier.append(child)
+            frontier.sort(key=sort_key)
 
         unresolved = [c for c, d in in_deg.items() if d > 0]
         return ordered, unresolved
@@ -433,13 +431,13 @@ class SchedulingRule:
     @staticmethod
     def _build_avoid_pairs(tests: dict) -> dict:
         """
-        Symmetric closure of ``avoid_same_day`` restricted to ``tests``.
+        Symmetric closure of `avoid_same_day` restricted to `tests`.
 
         Args:
-            tests (dict): ``{test_code: test_info}``.
+            tests (dict): `{test_code: test_info}`.
 
         Returns:
-            dict: ``{test_code: set(test_codes the test must not share a date with)}``.
+            dict: `{test_code: set(test_codes the test must not share a date with)}`.
         """
         avoid = {code: set() for code in tests}
         for code, info in tests.items():
@@ -453,19 +451,19 @@ class SchedulingRule:
     @staticmethod
     def _check_priority_depends_consistency(tests: dict) -> list:
         """
-        Detect ``depends_on`` edges that contradict the priority ordering.
+        Detect `depends_on` edges that contradict the priority ordering.
 
-        Priority is a hard time constraint: ``priority(A) < priority(B)`` implies
-        ``A`` finishes no later than ``B`` starts. So a test cannot depend on
+        Priority is a hard time constraint: `priority(A) < priority(B)` implies
+        `A` finishes no later than `B` starts. So a test cannot depend on
         another test that has a strictly higher (numerically larger) priority,
         because that would force the depended-on test to be scheduled later in
         time than the dependent — contradicting both rules at once.
 
         Args:
-            tests (dict): ``{test_code: test_info}``.
+            tests (dict): `{test_code: test_info}`.
 
         Returns:
-            list[str]: Codes of tests that violate priority ↔ depends_on consistency.
+            list[str]: Codes of tests that violate priority <-> depends_on consistency.
         """
         offenders = []
         for code, info in tests.items():
@@ -480,14 +478,14 @@ class SchedulingRule:
     @staticmethod
     def _add_result_hours(end_iso: str, result_hours) -> str:
         """
-        Add ``result_hours`` to an ISO end time, preserving the original tz suffix.
+        Add `result_hours` to an ISO end time, preserving the original tz suffix.
 
         Args:
-            end_iso (str): ISO end time produced by ``get_iso_time`` (e.g. ``2026-05-01T11:00:00+09:00``).
+            end_iso (str): ISO end time produced by `get_iso_time` (e.g. `2026-05-01T11:00:00+09:00`).
             result_hours: Hours until the test result becomes ready.
 
         Returns:
-            str: Result-ready ISO time with the same tz suffix as ``end_iso``.
+            str: Result-ready ISO time with the same tz suffix as `end_iso`.
         """
         suffix = ''
         for marker in ('+', '-'):
@@ -500,47 +498,6 @@ class SchedulingRule:
         return ready.isoformat(timespec='seconds') + suffix
 
 
-    @staticmethod
-    def _build_global_order(tests: dict) -> list:
-        """
-        Build a single global processing order combining priority and ``depends_on``:
-        priority ascending (lower priority number first), with topological sort
-        applied so every test appears after all of its in-set dependencies.
-
-        Args:
-            tests (dict): ``{test_code: test_info}`` to be ordered.
-
-        Returns:
-            list[str]: Test codes in priority+topo order.
-        """
-        in_deg = {c: 0 for c in tests}
-        children = defaultdict(list)
-        for c, info in tests.items():
-            for dep in info.get('depends_on') or []:
-                if dep in tests:
-                    in_deg[c] += 1
-                    children[dep].append(c)
-
-        def sort_key(c):
-            info = tests[c]
-            return (info.get('priority', 0),
-                    -info.get('result_hours', 0),
-                    -info.get('duration_hour', 0))
-
-        ordered = []
-        frontier = [c for c, d in in_deg.items() if d == 0]
-        frontier.sort(key=sort_key)
-        while frontier:
-            c = frontier.pop(0)
-            ordered.append(c)
-            for child in children[c]:
-                in_deg[child] -= 1
-                if in_deg[child] == 0:
-                    frontier.append(child)
-            frontier.sort(key=sort_key)
-        return ordered
-
-
     def _backtrack_schedule(self,
                             tests: dict,
                             ordered: list,
@@ -549,33 +506,33 @@ class SchedulingRule:
         """
         Branch-and-bound backtracking search across slot/device choices.
 
-        Tries every (device, date, start) candidate per test in ``ordered``; if a
+        Tries every (device, date, start) candidate per test in `ordered`; if a
         choice blocks a later test, undoes it and tries the next candidate. Also
         considers a "skip" branch per test so the search degrades gracefully to
         a partial schedule when no full assignment is feasible.
 
         Objective (lex-min):
 
-        - ``mode == 'asap'``: ``(per_priority_unscheduled, max_result_ready_at)``.
-        - ``mode == 'batch'``: ``(per_priority_unscheduled, num_test_visit_dates, max_result_ready_at)``.
+        - `mode == 'asap'`: `(per_priority_unscheduled, max_result_ready_at)`.
+        - `mode == 'batch'`: `(per_priority_unscheduled, num_test_visit_dates, max_result_ready_at)`.
 
-        ``per_priority_unscheduled`` is a tuple indexed by priority ascending
+        `per_priority_unscheduled` is a tuple indexed by priority ascending
         (lower number first), so the search first protects the most important
         tests from being dropped before optimizing the secondary objectives.
 
-        Priority time ordering is enforced by computing ``after_iso`` per test
-        as ``max(current_time, every lower-priority placed test's end, every
-        dep's result_ready_at)`` — any candidate before that is rejected by
-        ``_enumerate_device_slots``.
+        Priority time ordering is enforced by computing `after_iso` per test
+        as `max(current_time, every lower-priority placed test's end, every
+        dep's result_ready_at)` — any candidate before that is rejected by
+        `_enumerate_device_slots`.
 
         Args:
-            tests (dict): ``{test_code: test_info}``.
-            ordered (list[str]): Processing order from ``_build_global_order``.
-            avoid (dict): Symmetric closure of ``avoid_same_day``.
-            mode (str): ``'asap'`` or ``'batch'``.
+            tests (dict): `{test_code: test_info}`.
+            ordered (list[str]): Processing order from `_topological_order`.
+            avoid (dict): Symmetric closure of `avoid_same_day`.
+            mode (str): `'asap'` or `'batch'`.
 
         Returns:
-            dict: ``{'placed': {code: assignment}, 'unscheduled': [codes], 'objective': tuple}``.
+            dict: `{'placed': {code: assignment}, 'unscheduled': [codes], 'objective': tuple}`.
         """
         assigned = {}
         just_booked = defaultdict(lambda: defaultdict(list))
@@ -588,7 +545,7 @@ class SchedulingRule:
 
         def pu_tuple(idx, extra_skip_priority=None):
             """Per-priority unscheduled count for ordered[0..idx-1] given the current
-            ``assigned`` state, optionally adding 1 at ``extra_skip_priority``."""
+            `assigned` state, optionally adding 1 at `extra_skip_priority`."""
             counts = [0] * n_priorities
             for i in range(idx):
                 c = ordered[i]
@@ -709,12 +666,12 @@ class SchedulingRule:
         Build the public return shape from a backtracker's best snapshot.
 
         Args:
-            placed (dict): ``{code: assignment}`` from ``_backtrack_schedule``.
-            unscheduled_input (list): Codes that were missing from ``filtered_test_device_information``.
+            placed (dict): `{code: assignment}` from `_backtrack_schedule`.
+            unscheduled_input (list): Codes that were missing from `filtered_test_device_information`.
             unscheduled_search (list): Codes the backtracker could not place.
 
         Returns:
-            dict: ``{'tests', 'test_visit_dates', 'all_results_ready_at', 'unscheduled', 'status'}``.
+            dict: `{'tests', 'test_visit_dates', 'all_results_ready_at', 'unscheduled', 'status'}`.
         """
         unscheduled = sorted(set(unscheduled_input) | set(unscheduled_search))
         test_visit_dates = sorted({a['date'] for a in placed.values()})
@@ -736,18 +693,16 @@ class SchedulingRule:
                             filtered_test_device_information: dict,
                             test_codes: list) -> dict:
         """
-        Backtracking ASAP scheduler — finds the assignment that minimizes
-        ``(unscheduled_count, max_result_ready_at)`` over every (device, date,
-        start) combination. Priority is a hard time-ordering constraint
-        (``priority(A) < priority(B)`` implies ``A.end <= B.start``).
+        Backtracking ASAP scheduler — finds the assignment that minimizes `(unscheduled_count, max_result_ready_at)` 
+        over every (device, date, start) combination. Priority is a hard time-ordering constraint
+        (`priority(A) < priority(B)` implies `A.end <= B.start`).
 
         Args:
-            filtered_test_device_information (dict): Output of
-                ``HospitalEnvironment.get_test_device_schedule``.
+            filtered_test_device_information (dict): Output of `HospitalEnvironment.get_test_device_schedule`.
             test_codes (list[str]): Codes of the tests the patient must take.
 
         Returns:
-            dict: ``{'tests', 'test_visit_dates', 'all_results_ready_at', 'unscheduled', 'status'}``.
+            dict: `{'tests', 'test_visit_dates', 'all_results_ready_at', 'unscheduled', 'status'}`.
         """
         empty_result = {
             'tests': {}, 'test_visit_dates': [], 'all_results_ready_at': None,
@@ -760,7 +715,7 @@ class SchedulingRule:
         tests = {c: tests_index[c] for c in test_codes if c in tests_index}
         missing = [c for c in test_codes if c not in tests_index]
 
-        _, unresolved = self._topological_order(tests)
+        ordered, unresolved = self._topological_order(tests)
         if unresolved:
             return {**empty_result, 'unscheduled': sorted(unresolved + missing), 'status': 'infeasible'}
 
@@ -769,7 +724,6 @@ class SchedulingRule:
             return {**empty_result, 'unscheduled': sorted(set(offenders) | set(missing)), 'status': 'infeasible'}
 
         avoid = self._build_avoid_pairs(tests)
-        ordered = self._build_global_order(tests)
         result = self._backtrack_schedule(tests, ordered, avoid, mode='asap')
         return self._assemble_schedule_result(result['placed'], missing, result['unscheduled'])
 
@@ -778,18 +732,15 @@ class SchedulingRule:
                              filtered_test_device_information: dict,
                              test_codes: list) -> dict:
         """
-        Backtracking batch scheduler — finds the assignment that minimizes
-        ``(unscheduled_count, num_test_visit_dates, max_result_ready_at)`` over every
-        (device, date, start) combination. Priority is a hard time-ordering
-        constraint.
+        Backtracking batch scheduler — finds the assignment that minimizes `(unscheduled_count, num_test_visit_dates, max_result_ready_at)` 
+        over every (device, date, start) combination. Priority is a hard time-ordering constraint.
 
         Args:
-            filtered_test_device_information (dict): Output of
-                ``HospitalEnvironment.get_test_device_schedule``.
+            filtered_test_device_information (dict): Output of `HospitalEnvironment.get_test_device_schedule`.
             test_codes (list[str]): Codes of the tests the patient must take.
 
         Returns:
-            dict: Same shape as ``schedule_tests_asap``.
+            dict: Same shape as `schedule_tests_asap`.
         """
         empty_result = {
             'tests': {}, 'test_visit_dates': [], 'all_results_ready_at': None,
@@ -802,7 +753,7 @@ class SchedulingRule:
         tests = {c: tests_index[c] for c in test_codes if c in tests_index}
         missing = [c for c in test_codes if c not in tests_index]
 
-        _, unresolved = self._topological_order(tests)
+        ordered, unresolved = self._topological_order(tests)
         if unresolved:
             return {**empty_result, 'unscheduled': sorted(unresolved + missing), 'status': 'infeasible'}
 
@@ -811,9 +762,9 @@ class SchedulingRule:
             return {**empty_result, 'unscheduled': sorted(set(offenders) | set(missing)), 'status': 'infeasible'}
 
         avoid = self._build_avoid_pairs(tests)
-        ordered = self._build_global_order(tests)
         result = self._backtrack_schedule(tests, ordered, avoid, mode='batch')
         return self._assemble_schedule_result(result['placed'], missing, result['unscheduled'])
+
 
 
 def create_tools(rule: SchedulingRule,
@@ -1016,7 +967,7 @@ def create_tools(rule: SchedulingRule,
         patient expresses urgency and says nothing about visit count.
 
         IMPORTANT:
-            DO NOT call this tool if ``attending_physician`` is unknown, omitted,
+            DO NOT call this tool if `attending_physician` is unknown, omitted,
             ambiguous, or not explicitly confirmed by the patient.
             This tool must be called only when the attending physician is explicitly
             identified, since a follow-up consultation appointment will be scheduled
@@ -1029,8 +980,8 @@ def create_tools(rule: SchedulingRule,
                 This argument is mandatory and must be explicitly provided.
 
         Returns:
-            dict: Mapping of test schedules with fields ``tests``, ``test_visit_dates``,
-                ``all_results_ready_at``, ``unscheduled``, ``fu_schedule``, and ``status``.
+            dict: Mapping of test schedules with fields `tests`, `test_visit_dates`,
+                `all_results_ready_at`, `unscheduled`, `fu_schedule`, and `status`.
         """
         log(f'[TOOL CALL] follow_up_asap_test_schedule | attending_physician={attending_physician}', color=True)
         prefix = 'Dr.'
@@ -1057,10 +1008,10 @@ def create_tools(rule: SchedulingRule,
         day", "together", "in one trip", "all at once", "one visit", or any
         equivalent phrasing that targets visit-count rather than speed. Do NOT use
         this tool when the patient only expresses a speed/urgency preference; use
-        ``follow_up_asap_test_schedule`` for that case.
+        `follow_up_asap_test_schedule` for that case.
 
         IMPORTANT:
-            DO NOT call this tool if ``attending_physician`` is unknown, omitted,
+            DO NOT call this tool if `attending_physician` is unknown, omitted,
             ambiguous, or not explicitly confirmed by the patient.
             This tool must be called only when the attending physician is explicitly
             identified, since a follow-up consultation appointment will be scheduled
@@ -1073,8 +1024,8 @@ def create_tools(rule: SchedulingRule,
                 This argument is mandatory and must be explicitly provided.
 
         Returns:
-            dict: Mapping of test schedules with fields ``tests``, ``test_visit_dates``,
-                ``all_results_ready_at``, ``unscheduled`` and ``status``.
+            dict: Mapping of test schedules with fields `tests`, `test_visit_dates`,
+                `all_results_ready_at`, `unscheduled` and `status`.
         """
         log(f'[TOOL CALL] follow_up_batch_test_schedule | attending_physician={attending_physician}', color=True)
         prefix = 'Dr.'
