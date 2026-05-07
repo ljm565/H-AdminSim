@@ -629,13 +629,22 @@ class OPFUSchedulingSimulation:
                                         parts.append(
                                             f"{slot['name']} on {slot['date']} from {slot['start']} to {slot['end']}"
                                         )
-                                fu_slot = pred_schedule.get('fu_schedule')
+                                fu_slot = pred_schedule['fu_schedule']
+                                fu_doctor = staff_known_data['patient_fv']['attending_physician']
                                 if isinstance(fu_slot, dict) and fu_slot:
-                                    fu_doctor = next(iter(fu_slot))
                                     fu_info = fu_slot[fu_doctor]
                                     parts.append(
                                         f"follow-up with {fu_doctor} on {fu_info['date']} from {fu_info['start']} to {fu_info['end']}"
                                     )
+                                else:
+                                    all_results_ready_at = pred_schedule.get('all_results_ready_at')
+                                    if all_results_ready_at:
+                                        parts.append(
+                                            f"and can I make an follow-up appointment with {fu_doctor} after {all_results_ready_at}."
+                                        )
+                                    else:
+                                        parts.append(f"(follow-up with {fu_doctor} cannot be booked at this time)")
+                                
                                 schedule_summary = "; ".join(parts)
 
                                 # Response formatting for test guidance
@@ -734,15 +743,15 @@ class OPFUSchedulingSimulation:
         }
         if status:
             try:
-                pred_doctor_name = list(pred_schedule['fu_schedule'].keys())[0]
-                fu_schedule = pred_schedule['fu_schedule'][pred_doctor_name]
+                fu_slot = pred_schedule['fu_schedule']
+                fu_schedule = fu_slot[next(iter(fu_slot))] if fu_slot else None
                 prediction = {
                     'visit_type': 'follow_up_visit',
                     'patient': staff_known_data['patient_fv']['patient'],
                     'attending_physician': staff_known_data['attending_physician'],
                     'department': staff_known_data['department'],
-                    'date': fu_schedule['date'],
-                    'schedule': [fu_schedule['start'], fu_schedule['end']],
+                    'date': fu_schedule['date'] if fu_schedule else None,
+                    'schedule': [fu_schedule['start'], fu_schedule['end']] if fu_schedule else None,
                     'patient_intention': staff_known_data['patient_intention'],
                     'preference': gt_data[i].get('preference'),
                     'preferred_doctor': gt_data[i].get('preferred_doctor'),
