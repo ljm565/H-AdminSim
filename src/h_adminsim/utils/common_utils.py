@@ -395,6 +395,33 @@ def compare_iso_time(time1: Union[str, datetime], time2: Union[str, datetime]) -
 
 
 
+def add_hours_to_iso(iso_time: Union[str, datetime], hours: Union[int, float]) -> str:
+    """
+    Add `hours` to an ISO 8601 time, preserving the original timezone suffix
+    and properly carrying overflow into the date.
+
+    Args:
+        iso_time (Union[str, datetime]): ISO 8601 time string (e.g. '2026-05-01T17:00:00+09:00')
+                                         or a datetime object.
+        hours (Union[int, float]): Hours to add. Can exceed 24.
+
+    Returns:
+        str: ISO 8601 string with hours added (e.g. '2026-05-03T17:00:00+09:00').
+    """
+    if isinstance(iso_time, str):
+        suffix = ''
+        for marker in ('+', '-'):
+            tz_idx = iso_time.rfind(marker)
+            if tz_idx > 10:
+                suffix = iso_time[tz_idx:]
+                iso_time = iso_time[:tz_idx]
+                break
+        ready = str_to_datetime(iso_time) + timedelta(hours=float(hours))
+        return ready.isoformat(timespec='seconds') + suffix
+    return (iso_time + timedelta(hours=float(hours))).isoformat(timespec='seconds')
+
+
+
 def generate_random_iso_date_between(min_date: Union[str, datetime],
                                      max_date: Union[str, datetime]) -> str:
     """

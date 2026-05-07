@@ -1,7 +1,6 @@
 from copy import deepcopy
 from typing import Optional
 from decimal import Decimal
-from datetime import timedelta
 from collections import defaultdict
 from langchain.tools import tool
 from langchain.agents import AgentExecutor
@@ -15,7 +14,7 @@ from h_adminsim.utils.common_utils import (
     convert_segment_to_time,
     convert_time_to_segment,
     compare_iso_time,
-    str_to_datetime,
+    add_hours_to_iso,
     get_iso_time,
     iso_to_hour,
     iso_to_date,
@@ -398,7 +397,10 @@ class SchedulingRule:
                                          left over due to a cycle.
         """
         def sort_key(c):
-            # Stable per-level priority: lower priority int first, longer result_hours first
+            # Stable per-level priority: 
+            #   - lower priority int first: Hard constraint
+            #   - longer result_hours first: Jackson's rule / Longest Delivery Time (LDT) first
+            #   - longer duration_hour first: Longest Processing Time (LPT) first
             info = tests[c]
             return (info.get('priority', 0),
                     -info.get('result_hours', 0),
@@ -473,29 +475,6 @@ class SchedulingRule:
                     offenders.append(code)
                     break
         return offenders
-
-
-    @staticmethod
-    def _add_result_hours(end_iso: str, result_hours) -> str:
-        """
-        Add `result_hours` to an ISO end time, preserving the original tz suffix.
-
-        Args:
-            end_iso (str): ISO end time produced by `get_iso_time` (e.g. `2026-05-01T11:00:00+09:00`).
-            result_hours: Hours until the test result becomes ready.
-
-        Returns:
-            str: Result-ready ISO time with the same tz suffix as `end_iso`.
-        """
-        suffix = ''
-        for marker in ('+', '-'):
-            tz_idx = end_iso.rfind(marker)
-            if tz_idx > 10:
-                suffix = end_iso[tz_idx:]
-                end_iso = end_iso[:tz_idx]
-                break
-        ready = str_to_datetime(end_iso) + timedelta(hours=float(result_hours))
-        return ready.isoformat(timespec='seconds') + suffix
 
 
     def _backtrack_schedule(self,
@@ -623,7 +602,7 @@ class SchedulingRule:
             candidates = self._enumerate_device_slots(info, after_iso, forbidden, just_booked)
 
             for device, date, start_iso, end_iso in candidates:
-                ready = self._add_result_hours(end_iso, info.get('result_hours', 0))
+                ready = add_hours_to_iso(end_iso, info.get('result_hours', 0))
 
                 # Branch-and-bound prune: a feasible completion can be no better than the LB
                 if best['objective'] is not None:

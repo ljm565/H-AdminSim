@@ -234,20 +234,20 @@ class SanityChecker:
 
         Args:
             prediction (Union[str, dict]): Tool / reasoning output of the form
-                ``{'test_schedule': [{<device_code>: {'date', 'start', 'end'}}, ...],
+                `{'test_schedule': [{<device_code>: {'date', 'start', 'end'}}, ...],
                 'fu_schedule': {<doctor_name>: {'date', 'start', 'end'}} | None,
-                'all_results_ready_at': iso_str}``.
-            gt_patient_condition (dict): GT containing at least ``required_tests`` (list with ``test_code``),
-                ``preference`` ('asap' | 'batch') and ``attending_physician``.
+                'all_results_ready_at': iso_str}`.
+            gt_patient_condition (dict): GT containing at least `required_tests` (list with `test_code`),
+                `preference` ('asap' | 'batch') and `attending_physician`.
             test_device_information (dict): Filtered output of
-                ``HospitalEnvironment.get_test_device_schedule`` covering all required tests.
-            environment (HospitalEnvironment): Provides ``current_time`` and ``_utc_offset``.
+                `HospitalEnvironment.get_test_device_schedule` covering all required tests.
+            environment (HospitalEnvironment): Provides `current_time` and `_utc_offset`.
             doctor_information (Optional[dict], optional): Department-filtered output of
-                ``HospitalEnvironment.get_doctor_schedule``. Required when ``rule`` is provided
+                `HospitalEnvironment.get_doctor_schedule`. Required when `rule` is provided
                 to validate the follow-up consultation slot. Defaults to None.
-            rule (Optional[object], optional): A ``SchedulingRule`` instance used to evaluate
-                preference optimality via ``schedule_tests_asap`` / ``schedule_tests_batch`` and
-                the earliest follow-up consultation slot via ``physician_filter``.
+            rule (Optional[object], optional): A `SchedulingRule` instance used to evaluate
+                preference optimality via `schedule_tests_asap` / `schedule_tests_batch` and
+                the earliest follow-up consultation slot via `physician_filter`.
                 Skips preference and follow-up comparison if not provided.
 
         Returns:
@@ -268,8 +268,8 @@ class SanityChecker:
                 return False, ts_codes['format']
 
         ############################ Coverage ############################
-        # Each schedule entry is keyed by ``device_code`` (matches postprocessing
-        # output: ``values['device']`` from SchedulingRule._backtrack_schedule).
+        # Each schedule entry is keyed by `device_code` (matches postprocessing
+        # output: `values['device']` from SchedulingRule._backtrack_schedule).
         required_codes = {t['test_code'] for t in gt_patient_condition.get('required_tests', [])}
         test_index = test_device_information.get('test', {})
         if not required_codes.issubset(set(test_index.keys())):
@@ -351,8 +351,8 @@ class SanityChecker:
         for tc, _, slot in entries:
             info = test_index[tc]
             start_iso_by_test[tc] = get_iso_time(float(slot['start']), str(slot['date']), utc_offset=utc_offset)
-            ready_hour = float(Decimal(str(slot['end'])) + Decimal(str(info.get('result_hours', 0))))
-            result_ready_iso_by_test[tc] = get_iso_time(ready_hour, str(slot['date']), utc_offset=utc_offset)
+            end_iso = get_iso_time(float(slot['end']), str(slot['date']), utc_offset=utc_offset)
+            result_ready_iso_by_test[tc] = add_hours_to_iso(end_iso, info.get('result_hours', 0))
             date_by_test[tc] = str(slot['date'])
 
         for tc, _, _ in entries:
@@ -387,7 +387,7 @@ class SanityChecker:
 
         ############################ Follow-up consultation optimality ############################
         # Verify the predicted follow-up appointment is the earliest available slot
-        # for the attending physician at or after ``all_results_ready_at``.
+        # for the attending physician at or after `all_results_ready_at`.
         if rule is not None and doctor_information is not None:
             attending_physician = gt_patient_condition.get('attending_physician')
             pred_fu = prediction.get('fu_schedule')

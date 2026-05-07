@@ -158,7 +158,6 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         for test_list in eligible_tests.values():
             for _test in test_list:
                 device_n = random.randint(fu_config.n_machines_per_test.min, fu_config.n_machines_per_test.max)
-                test_duration_segments = max(1, math.ceil(Decimal(str(_test['duration_hour'])) / Decimal(str(interval_hour))))
                 _test['device_n'] = device_n
                 _test['devices'] = dict()
                 for i in range(device_n):
