@@ -275,6 +275,22 @@ class SanityChecker:
         if not required_codes.issubset(set(test_index.keys())):
             return False, ts_codes['format']
 
+        # Compute the rule-based optimum once so coverage and preference checks share it.
+        # When the optimum itself is partial (window cannot fit every required test), the achievable subset becomes the expected coverage target.
+        optimal = None
+        optimal_scheduled = required_codes
+        expected_partial = False
+        if rule is not None:
+            preference = gt_patient_condition.get('preference')
+            test_codes_list = list(required_codes)
+            if preference == 'asap':
+                optimal = rule.schedule_tests_asap(test_device_information, test_codes_list)
+            elif preference == 'batch':
+                optimal = rule.schedule_tests_batch(test_device_information, test_codes_list)
+            if optimal is not None and optimal.get('status') == 'partial':
+                optimal_scheduled = set(optimal.get('tests', {}).keys())
+                expected_partial = True
+
         # device_code -> {test_code, ...}: which required tests can run on this device?
         device_to_tests = {}
         for tc in required_codes:
@@ -294,8 +310,12 @@ class SanityChecker:
             entries.append((tc, dev_code, slot))
             scheduled_codes.add(tc)
 
-        if scheduled_codes != required_codes:
-            return False, ts_codes['coverage']
+        if expected_partial:
+            if scheduled_codes != optimal_scheduled:
+                return False, ts_codes['coverage']
+        else:
+            if scheduled_codes != required_codes:
+                return False, ts_codes['coverage']
 
         ############################ Per-entry validity ############################
         utc_offset = environment._utc_offset
@@ -366,16 +386,13 @@ class SanityChecker:
                     return False, ts_codes['avoid_same_day']
 
         ############################ Preference optimality ############################
-        if rule is not None:
+        if optimal is not None:
             preference = gt_patient_condition.get('preference')
-            test_codes_list = list(required_codes)
             if preference == 'asap':
-                optimal = rule.schedule_tests_asap(test_device_information, test_codes_list)
                 if optimal.get('all_results_ready_at') is not None and \
                    compare_iso_time(prediction['all_results_ready_at'], optimal['all_results_ready_at']):
                     return False, ts_codes['preference']['asap']
             elif preference == 'batch':
-                optimal = rule.schedule_tests_batch(test_device_information, test_codes_list)
                 pred_distinct_dates = len(set(date_by_test.values()))
                 opt_distinct_dates  = len(optimal.get('test_visit_dates', []))
                 if opt_distinct_dates and pred_distinct_dates > opt_distinct_dates:

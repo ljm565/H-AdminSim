@@ -629,6 +629,16 @@ class OPFUSchedulingSimulation:
                                         parts.append(
                                             f"{slot['name']} on {slot['date']} from {slot['start']} to {slot['end']}"
                                         )
+
+                                # Notify the patient of any required tests that the agent could not
+                                # fit within the simulation window (no deferred booking is attempted).
+                                required_test_codes = {t['test_code'] for t in gt_patient_condition.get('required_tests', [])}
+                                unscheduled_tests = {value['name'] for entry in pred_test_schedules for value in entry.values() if value['code'] not in required_test_codes}
+                                if unscheduled_tests:
+                                    parts.append(
+                                        f"however, the scheduling for {', '.join(sorted(unscheduled_tests))} test(s) will be arranged later"
+                                    )
+
                                 fu_slot = pred_schedule['fu_schedule']
                                 fu_doctor = staff_known_data['patient_fv']['attending_physician']
                                 if isinstance(fu_slot, dict) and fu_slot:
@@ -640,7 +650,7 @@ class OPFUSchedulingSimulation:
                                     all_results_ready_at = pred_schedule.get('all_results_ready_at')
                                     if all_results_ready_at:
                                         parts.append(
-                                            f"and can I make an follow-up appointment with {fu_doctor} after {all_results_ready_at}."
+                                            f"and can I make an follow-up appointment with {fu_doctor} after {all_results_ready_at}"
                                         )
                                     else:
                                         parts.append(f"(follow-up with {fu_doctor} cannot be booked at this time)")
