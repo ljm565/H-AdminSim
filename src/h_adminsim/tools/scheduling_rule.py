@@ -7,7 +7,7 @@ from langchain.agents import AgentExecutor
 
 from .data_converter import DataConverter
 from h_adminsim.registry import SCHEDULE_STATUS
-from h_adminsim.utils import log
+from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.fhir_utils import *
 from h_adminsim.utils.common_utils import (
     group_consecutive_segments,
@@ -694,13 +694,19 @@ class SchedulingRule:
         tests = {c: tests_index[c] for c in test_codes if c in tests_index}
         missing = [c for c in test_codes if c not in tests_index]
 
+        # Sanity check
         ordered, unresolved = self._topological_order(tests)
-        if unresolved:
-            return {**empty_result, 'unscheduled': sorted(unresolved + missing), 'status': 'infeasible'}
+        assert not len(unresolved + missing), colorstr(
+            'red',
+            f'[SchedulingRule] infeasible test graph — unresolvable depends_on: {unresolved}, '
+            f'unknown test codes: {missing}'
+        )
 
         offenders = self._check_priority_depends_consistency(tests)
-        if offenders:
-            return {**empty_result, 'unscheduled': sorted(set(offenders) | set(missing)), 'status': 'infeasible'}
+        assert not len(offenders), colorstr(
+            'red',
+            f'[SchedulingRule] priority/depends_on contradiction on tests: {offenders}'
+        )
 
         avoid = self._build_avoid_pairs(tests)
         result = self._backtrack_schedule(tests, ordered, avoid, mode='asap')
@@ -732,13 +738,19 @@ class SchedulingRule:
         tests = {c: tests_index[c] for c in test_codes if c in tests_index}
         missing = [c for c in test_codes if c not in tests_index]
 
+        # Sanity check
         ordered, unresolved = self._topological_order(tests)
-        if unresolved:
-            return {**empty_result, 'unscheduled': sorted(unresolved + missing), 'status': 'infeasible'}
+        assert not len(unresolved + missing), colorstr(
+            'red',
+            f'[SchedulingRule] infeasible test graph — unresolvable depends_on: {unresolved}, '
+            f'unknown test codes: {missing}'
+        )
 
         offenders = self._check_priority_depends_consistency(tests)
-        if offenders:
-            return {**empty_result, 'unscheduled': sorted(set(offenders) | set(missing)), 'status': 'infeasible'}
+        assert not len(offenders), colorstr(
+            'red',
+            f'[SchedulingRule] priority/depends_on contradiction on tests: {offenders}'
+        )
 
         avoid = self._build_avoid_pairs(tests)
         result = self._backtrack_schedule(tests, ordered, avoid, mode='batch')
