@@ -2,8 +2,8 @@ import os
 import random
 import numpy as np
 from typing import Optional
-from decimal import Decimal
 from datetime import timedelta
+from decimal import Decimal, getcontext
 
 from h_adminsim.task import OutpatientTask
 from h_adminsim.task.opfv_task import *
@@ -27,6 +27,7 @@ class Simulator:
                  random_seed: int = 9999):
         
         # Initialize
+        getcontext().prec = 10
         self.simulation_start_day_before = simulation_start_day_before
         self.fhir_integration = fhir_integration
         self.fhir_url = fhir_url if self.fhir_integration else None
@@ -249,12 +250,15 @@ class Simulator:
             date = cur_dt.strftime('%Y-%m-%d')
             existing = doctor_info['schedule'].get(date, [])
             h = start_hour
-            while h + time_unit <= end_hour + 1e-9:
-                slot = [h, h + time_unit]
+            while True:
+                next_h = float(Decimal(str(h)) + Decimal(str(time_unit)))
+                if next_h > end_hour + 1e-9:
+                    break
+                slot = [h, next_h]
                 if not any(slot[0] < e[1] - 1e-9 and e[0] < slot[1] - 1e-9 for e in existing):
                     past_date, past_slot = date, slot
                     break
-                h += time_unit
+                h = next_h
             if past_slot is not None:
                 break
             cur_dt += timedelta(days=1)
