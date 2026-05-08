@@ -11,7 +11,11 @@ from langchain.agents import AgentExecutor
 from langchain_core.messages import HumanMessage, AIMessage
 
 from h_adminsim import SchedulingAdminStaffAgent
-from h_adminsim.registry.errors import ToolCallingError, DataNotFoundError, SchedulingError
+from h_adminsim.registry.errors import (
+    SchedulingError,
+    ToolCallingError, 
+    DataNotFoundError, 
+)
 from h_adminsim.registry import (
     STATUS_CODES,
     SCHEDULE_STATUS,
@@ -562,8 +566,11 @@ class OPFVSchedulingSimulation:
                 )
                 if isinstance(schedule, dict) or tries >= reasoning_max_tries:
                     break
-                else:
-                    tries += 1
+                tries += 1
+
+            if not isinstance(schedule, dict):
+                self.admin_staff_agent.reset_history(verbose=False)
+                raise SchedulingError(colorstr('red', 'Reasoning fallback failed to produce a valid schedule JSON.'))
 
             prediction = {
                 'type': 'tool',
@@ -803,142 +810,167 @@ class OPFVSchedulingSimulation:
 
         # Iterate over multiple preferences if exists
         preference_reject_prob = 0.0 if len(gt_data) <= 1 else self.preference_rejection_prob
-        for i, gt_patient_condition in enumerate(gt_data):
-            # For the rejection scenario
-            if i != 0:
-                self.update_patient_system_prompt(
-                    patient_condition=gt_patient_condition,
-                    rejected_preference=gt_data[i-1]['preference']
-                )
-
-            tries = 0
-            while 1:
-                # Obtain response from patient
-                patient_response = self.patient_agent(
-                    self.dialog_history['scheduling'][-1]["content"],
-                    using_multi_turn=True,
-                    verbose=False,
-                    **merged_patient_kwargs,
-                )
-                patient_token_stats = self.patient_agent.client.token_usages
-                self.dialog_history['scheduling'].append({"role": "Patient", "content": patient_response})
-                role = f"{colorstr('green', 'Patient')} ({gt_patient_condition['preference']})"
-                log(f"{role:<25}: {patient_response}")
-                
-                # Scheduling from staff
-                staff_known_data.update({'patient_intention': patient_response})
-                staff_response = self.scheduling(
-                    client,
-                    staff_known_data,
-                    doctor_information,
-                    chat_history=self._to_lc_history('scheduling'),
-                    reasoning_max_tries=reasoning_max_tries,
-                    callback=staff_token_callback,
-                    **merged_staff_kwargs
-                )
-                if self.scheduling_strategy == 'tool_calling':
-                    staff_token_stats = staff_token_callback.token_usage
-                else:
-                    for k, v in staff_response['token'].items():
-                        if k not in staff_token_stats:
-                            staff_token_stats[k] = deepcopy(v)
-                        else:
-                            staff_token_stats[k].extend(v)
-                
-                # Clarification message
-                if staff_response['type'] == 'text':
-                    response = staff_response['result']
-                    self.dialog_history['scheduling'].append({"role": "Staff", "content": response})
-                    role = f"{colorstr('blue', 'Staff')}"
-                    log(f"{role:<25}: {response}")
-                
-                # Tool calling result
-                elif staff_response['type'] == 'tool':
-                    pred_schedule = staff_response['result']
-                    
-                    # Response formatting
-                    try:
-                        if natural_express:
-                            _schedule = pred_schedule['schedule']
-                            _doctor = list(_schedule.keys())[0]
-                            _date, _st, _tr = _schedule[_doctor]['date'], _schedule[_doctor]['start'], _schedule[_doctor]['end']
-                            _format = random.choice(self.admin_staff_agent.natural_schedule_suggestion) \
-                                if isinstance(self.admin_staff_agent.natural_schedule_suggestion, list) \
-                                    else self.admin_staff_agent.natural_schedule_suggestion
-                            response = _format.format(
-                                doctor=_doctor, date=_date, start=_st, end=_tr
-                            )
-                        else:
-                            response = self.admin_staff_agent.schedule_suggestion.format(schedule=pred_schedule)
-                    except:
-                        try:
-                            response = self.admin_staff_agent.schedule_suggestion.format(schedule=pred_schedule)
-                        except:
-                            response = str(pred_schedule)
-                    
-                    self.dialog_history['scheduling'].append({"role": "Staff", "content": response})
-                    role = f"{colorstr('blue', 'Staff')}"
-                    log(f"{role:<25}: {response}")
-                    break
-                
-                tries += 1
-                if tries > max_inferences:
-                    result_dict = {
-                        'gt': [gt_patient_condition],
-                        'pred': [None],
-                        'status': [False],
-                        'status_code': [STATUS_CODES['simulation']],
-                        'dialog': [preprocess_dialog(self.dialog_history['scheduling'])]
-                    }
-                    token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
-                    return doctor_information, result_dict, token_usage
-            
-            # Sanity check
-            ## No GT case
-            if self.sanity_checker is None:
-                status, status_code = True, STATUS_CODES['correct']
-            ## GT existing case
-            else:
-                status, status_code = self.sanity_checker.schedule_check(
-                    prediction=pred_schedule,
-                    gt_patient_condition=gt_patient_condition,
-                    doctor_information=doctor_information,
-                    environment=self.environment
-                )
-
-            if not status:
-                break
-
-            # Preference rejection logic
-            ## Rejection case
-            _schedule = pred_schedule['schedule']
-            _doctor = list(_schedule.keys())[0]
-            _date = _schedule[_doctor]['date']
-            if random.random() < preference_reject_prob and i != len(gt_data) - 1 and \
-                gt_data[i+1]['preferred_doctor'] != _doctor and gt_data[i+1]['valid_from'] != _date:  # Avoid overlap with next preferred doctor or next preferred date
-                preference_reject_prob *= self.preference_rejection_prob_decay
-            ## Non-rejection case
-            else:
-                if natural_express:
+        try:
+            for i, gt_patient_condition in enumerate(gt_data):
+                # For the rejection scenario
+                if i != 0:
                     self.update_patient_system_prompt(
-                        new_system_prompt=self.patient_satisfaction_system_prompt
+                        patient_condition=gt_patient_condition,
+                        rejected_preference=gt_data[i-1]['preference']
                     )
+
+                tries = 0
+                while 1:
+                    # Obtain response from patient
                     patient_response = self.patient_agent(
-                        self.natural_end_phrase.format(schedule=self.dialog_history['scheduling'][-1]['content']),
+                        self.dialog_history['scheduling'][-1]["content"],
                         using_multi_turn=True,
                         verbose=False,
                         **merged_patient_kwargs,
                     )
                     patient_token_stats = self.patient_agent.client.token_usages
-                
-                else:
-                    patient_response = self.end_phrase
+                    self.dialog_history['scheduling'].append({"role": "Patient", "content": patient_response})
+                    role = f"{colorstr('green', 'Patient')} ({gt_patient_condition['preference']})"
+                    log(f"{role:<25}: {patient_response}")
 
-                self.dialog_history['scheduling'].append({"role": "Patient", "content": patient_response})
-                role = f"{colorstr('green', 'Patient')} ({gt_data[i]['preference']})"
-                log(f"{role:<25}: {patient_response}")
-                
-                break
+                    # Scheduling from staff
+                    staff_known_data.update({'patient_intention': patient_response})
+                    staff_response = self.scheduling(
+                        client,
+                        staff_known_data,
+                        doctor_information,
+                        chat_history=self._to_lc_history('scheduling'),
+                        reasoning_max_tries=reasoning_max_tries,
+                        callback=staff_token_callback,
+                        **merged_staff_kwargs
+                    )
+                    if self.scheduling_strategy == 'tool_calling':
+                        staff_token_stats = staff_token_callback.token_usage
+                    else:
+                        for k, v in staff_response['token'].items():
+                            if k not in staff_token_stats:
+                                staff_token_stats[k] = deepcopy(v)
+                            else:
+                                staff_token_stats[k].extend(v)
+
+                    # Clarification message
+                    if staff_response['type'] == 'text':
+                        response = staff_response['result']
+                        self.dialog_history['scheduling'].append({"role": "Staff", "content": response})
+                        role = f"{colorstr('blue', 'Staff')}"
+                        log(f"{role:<25}: {response}")
+
+                    # Tool calling result
+                    elif staff_response['type'] == 'tool':
+                        pred_schedule = staff_response['result']
+
+                        # Response formatting
+                        try:
+                            if natural_express:
+                                _schedule = pred_schedule['schedule']
+                                _doctor = list(_schedule.keys())[0]
+                                _date, _st, _tr = _schedule[_doctor]['date'], _schedule[_doctor]['start'], _schedule[_doctor]['end']
+                                _format = random.choice(self.admin_staff_agent.natural_schedule_suggestion) \
+                                    if isinstance(self.admin_staff_agent.natural_schedule_suggestion, list) \
+                                        else self.admin_staff_agent.natural_schedule_suggestion
+                                response = _format.format(
+                                    doctor=_doctor, date=_date, start=_st, end=_tr
+                                )
+                            else:
+                                response = self.admin_staff_agent.schedule_suggestion.format(schedule=pred_schedule)
+                        except:
+                            try:
+                                response = self.admin_staff_agent.schedule_suggestion.format(schedule=pred_schedule)
+                            except:
+                                response = str(pred_schedule)
+
+                        self.dialog_history['scheduling'].append({"role": "Staff", "content": response})
+                        role = f"{colorstr('blue', 'Staff')}"
+                        log(f"{role:<25}: {response}")
+                        break
+
+                    tries += 1
+                    if tries > max_inferences:
+                        result_dict = {
+                            'gt': [gt_patient_condition],
+                            'pred': [None],
+                            'status': [False],
+                            'status_code': [STATUS_CODES['simulation']],
+                            'dialog': [preprocess_dialog(self.dialog_history['scheduling'])]
+                        }
+                        token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
+                        return doctor_information, result_dict, token_usage
+
+                # Sanity check
+                ## No GT case
+                if self.sanity_checker is None:
+                    status, status_code = True, STATUS_CODES['correct']
+                ## GT existing case
+                else:
+                    status, status_code = self.sanity_checker.schedule_check(
+                        prediction=pred_schedule,
+                        gt_patient_condition=gt_patient_condition,
+                        doctor_information=doctor_information,
+                        environment=self.environment
+                    )
+
+                if not status:
+                    break
+
+                # Preference rejection logic
+                ## Rejection case
+                _schedule = pred_schedule['schedule']
+                _doctor = list(_schedule.keys())[0]
+                _date = _schedule[_doctor]['date']
+                if random.random() < preference_reject_prob and i != len(gt_data) - 1 and \
+                    gt_data[i+1]['preferred_doctor'] != _doctor and gt_data[i+1]['valid_from'] != _date:  # Avoid overlap with next preferred doctor or next preferred date
+                    preference_reject_prob *= self.preference_rejection_prob_decay
+                ## Non-rejection case
+                else:
+                    if natural_express:
+                        self.update_patient_system_prompt(
+                            new_system_prompt=self.patient_satisfaction_system_prompt
+                        )
+                        patient_response = self.patient_agent(
+                            self.natural_end_phrase.format(schedule=self.dialog_history['scheduling'][-1]['content']),
+                            using_multi_turn=True,
+                            verbose=False,
+                            **merged_patient_kwargs,
+                        )
+                        patient_token_stats = self.patient_agent.client.token_usages
+
+                    else:
+                        patient_response = self.end_phrase
+
+                    self.dialog_history['scheduling'].append({"role": "Patient", "content": patient_response})
+                    role = f"{colorstr('green', 'Patient')} ({gt_data[i]['preference']})"
+                    log(f"{role:<25}: {patient_response}")
+
+                    break
+
+        except SchedulingError:
+            result_dict = {
+                'gt': [gt_patient_condition],
+                'pred': [None],
+                'status': [False],
+                'status_code': [STATUS_CODES['format']],
+                'dialog': [preprocess_dialog(self.dialog_history['scheduling'])]
+            }
+            log("Simulation completed.", color=True)
+            token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
+            return doctor_information, result_dict, token_usage
+
+        # Otherwise
+        except Exception as e:
+            status_code = STATUS_CODES['unexpected'].format(e=e)
+            log(status_code, level='warning')
+            result_dict = {
+                'gt': [gt_patient_condition],
+                'pred': [None],
+                'status': [False],
+                'status_code': [status_code],
+                'dialog': [preprocess_dialog(self.dialog_history['scheduling'])]
+            }
 
         # Oranize the result
         ## Defaults to failure case dictionary
