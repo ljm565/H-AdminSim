@@ -320,7 +320,8 @@ class SchedulingRule:
                                 after_iso: str,
                                 forbidden_dates: set,
                                 extra_busy: Optional[dict] = None,
-                                on_date: Optional[str] = None) -> list:
+                                on_date: Optional[str] = None,
+                                patient_busy: Optional[dict] = None) -> list:
         """
         Enumerate candidate (device, date, start_iso, end_iso) windows for a single test.
 
@@ -330,11 +331,12 @@ class SchedulingRule:
 
         Args:
             test_info (dict): One entry from `filtered_test_device_information['test'][code]`.
-            after_iso (str): Earliest acceptable ISO start time.
+            after_iso (str): Earliest acceptable ISO start time considering priority and depends_on conditions.
             forbidden_dates (set): Dates blocked by an already-placed test in `avoid_same_day`.
-            extra_busy (Optional[dict]): `{device_name: {date: [[start_hr, end_hr], ...]}}`
-                                         of slots booked earlier in this call. Defaults to None.
+            extra_busy (Optional[dict]): `{device_name: {date: [[start_hr, end_hr], ...]}}` of slots booked earlier in this call. Defaults to None.
             on_date (Optional[str]): If set, only enumerate candidates on this YYYY-MM-DD date.
+            patient_busy (Optional[dict]): `{date: [[start_hr, end_hr], ...]}` of intervals during which the patient is already occupied by previously-placed tests. 
+                                           Applied to every device (a patient cannot be at two devices at once). Defaults to None.
 
         Returns:
             list[tuple[str, str, str, str]]: `(device_name, date, start_iso, end_iso)` tuples
@@ -344,19 +346,19 @@ class SchedulingRule:
         duration = test_info['duration_hour']
         min_time_slot_n = max(1, int(Decimal(str(duration)) / Decimal(str(self._TIME_UNIT))))
         all_time_segments = convert_time_to_segment(self._START_HOUR, self._END_HOUR, self._TIME_UNIT)
+        patient_busy = patient_busy or {}
 
         for device_name, device_info in test_info.get('devices', {}).items():
             device_schedule = device_info.get('schedule', {})
             extra = (extra_busy or {}).get(device_name, {})
-            dates = sorted(set(device_schedule.keys()) | set(extra.keys()))
 
-            for date in dates:
+            for date in sorted(set(device_schedule.keys())):
                 if on_date is not None and date != on_date:
                     continue
                 if date in forbidden_dates:
                     continue
 
-                fixed_intervals = list(device_schedule.get(date, [])) + list(extra.get(date, []))
+                fixed_intervals = list(device_schedule.get(date, [])) + list(extra.get(date, [])) + list(patient_busy.get(date, []))
                 fixed_segments = sum(
                     [convert_time_to_segment(self._START_HOUR, self._END_HOUR, self._TIME_UNIT, fs)
                      for fs in fixed_intervals],
@@ -368,6 +370,8 @@ class SchedulingRule:
 
                 runs = [run for run in group_consecutive_segments(free_time) if len(run) >= min_time_slot_n]
                 for run in runs:
+                    # Keep both endpoints of each run as candidates: the earliest and the latest slot for the feasibility
+                    earliest_idx = None
                     for i in range(len(run) - min_time_slot_n + 1):
                         window = run[i:i + min_time_slot_n]
                         start_hr, end_hr = convert_segment_to_time(
@@ -375,9 +379,23 @@ class SchedulingRule:
                         )
                         start_iso = get_iso_time(start_hr, date, utc_offset=self._utc_offset)
                         end_iso = get_iso_time(end_hr, date, utc_offset=self._utc_offset)
-                        # Keep slots with start_iso >= after_iso (semantic, not string-format dependent)
                         if compare_iso_time(after_iso, start_iso):
                             continue
+                        candidates.append((device_name, date, start_iso, end_iso))
+                        earliest_idx = i
+                        break
+
+                    if earliest_idx is None:
+                        continue
+
+                    latest_idx = len(run) - min_time_slot_n
+                    if latest_idx != earliest_idx:
+                        window = run[latest_idx:latest_idx + min_time_slot_n]
+                        start_hr, end_hr = convert_segment_to_time(
+                            self._START_HOUR, self._END_HOUR, self._TIME_UNIT, window
+                        )
+                        start_iso = get_iso_time(start_hr, date, utc_offset=self._utc_offset)
+                        end_iso = get_iso_time(end_hr, date, utc_offset=self._utc_offset)
                         candidates.append((device_name, date, start_iso, end_iso))
 
         candidates.sort(key=lambda x: (x[2], x[0]))
@@ -597,9 +615,21 @@ class SchedulingRule:
                 recurse(idx + 1)
                 return
 
-            after_iso = compute_after_iso(code)
-            forbidden = {assigned[a]['date'] for a in avoid.get(code, set()) if a in assigned}
-            candidates = self._enumerate_device_slots(info, after_iso, forbidden, just_booked)
+            # To set time constraints
+            after_iso = compute_after_iso(code) # To meet priority and depends_on conditions
+            forbidden = {assigned[a]['date'] for a in avoid.get(code, set()) if a in assigned}  # To meet avoid_same_day condition
+
+            # To avoid already placed schedules
+            patient_busy = defaultdict(list)
+            for placed in assigned.values():
+                patient_busy[placed['date']].append(
+                    [iso_to_hour(placed['start']), iso_to_hour(placed['end'])]
+                )
+
+            # Device check
+            candidates = self._enumerate_device_slots(
+                info, after_iso, forbidden, just_booked, patient_busy=patient_busy,
+            )
 
             for device, date, start_iso, end_iso in candidates:
                 ready = add_hours_to_iso(end_iso, info.get('result_hours', 0))
