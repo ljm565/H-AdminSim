@@ -599,10 +599,13 @@ class HospitalEnvironment:
         """
         if status:
             self.update_fhir(fhir_resources)
-            self.update_current_time()
-            self.patient_schedules.append(patient_schedule)
-            self.update_patient_status()
-            self.booking_num[patient_schedule['attending_physician']] += 1
+            
+            # To avoid None case of follow-up appointment
+            if patient_schedule['schedule']:
+                self.update_current_time()
+                self.patient_schedules.append(patient_schedule)
+                self.update_patient_status()
+                self.booking_num[patient_schedule['attending_physician']] += 1
 
         self.reset_variable()
  

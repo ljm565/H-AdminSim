@@ -370,9 +370,12 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                         }
                     }
                 )[0]
-            fhir_appointment = DataConverter.get_fhir_appointment(data={'metadata': deepcopy(self._metadata),
-                                                                        'department': deepcopy(self._department_data),
-                                                                        'information': deepcopy(prediction)})
+            
+            # To avoid None case of follow-up appointment
+            if prediction['schedule']:
+                fhir_appointment = DataConverter.get_fhir_appointment(data={'metadata': deepcopy(self._metadata),
+                                                                            'department': deepcopy(self._department_data),
+                                                                            'information': deepcopy(prediction)})
             
         environment.update_env(
             status=status, 
@@ -422,6 +425,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
         test_information = environment.get_general_test_info_from_fhir() if self.fhir_integration else agent_test_data.get('test')
         gt_idx, fv_patient_info = self.get_first_visit_patient_information(gt, environment)
         code_to_test_name = {test['code']: test['name'] for _, tests in test_information.items() for test in tests}
+        device_to_schedule = {device: info['schedule'] for _, tests in test_information.items() for test in tests for device, info in test['devices'].items()}
         results = init_result_dict()
         self.reset_token_data()
 
@@ -512,64 +516,31 @@ class OutpatientFollowUpScheduling(OutpatientTask):
 
         # Update the simulation environment and the doctor information in the agent test data
         if status:
-            doctor_information[prediction['attending_physician']]['schedule'][prediction['date']].append(prediction['schedule'])
-            doctor_information[prediction['attending_physician']]['schedule'][prediction['date']].sort()
+            # Test schedule
+            for entry in prediction['test']:
+                (device, info), = entry.items()
+                date, slot = info['date'], [info['start'], info['end']]
+                dev_schedule = device_to_schedule[device]
+                dev_schedule[date].append(slot)
+                dev_schedule[date].sort()
+                        
+            # Follow-up visit consultation
+            if prediction['schedule']:
+                doctor_information[prediction['attending_physician']]['schedule'][prediction['date']].append(prediction['schedule'])
+                doctor_information[prediction['attending_physician']]['schedule'][prediction['date']].sort()
         
         self.update_env(
             status=status,
             prediction=prediction,
             environment=environment,
-            patient_information=patient_info,
         )
         agent_test_data['doctor'] = doctor_information
+        agent_test_data['test'] = test_information
 
         # Append results
         for key in result_dict.keys():
             results[key] += result_dict[key]
         results['token'].append(self.token_stats)
         #######################################################################################################################################
-        
-        # Other events
-        ## Simulate the schedule cancellation requests
-        if random.random() < self.schedule_cancellation_prob:
-            doctor_information, result_dict = self.cancellation_request(
-                doctor_information=doctor_information,
-                environment=environment,
-                verbose=verbose,
-            )
-            if result_dict is not None:
-                agent_test_data['doctor'] = doctor_information
-                results['gt'].extend(result_dict['gt'])
-                results['pred'].extend(result_dict['pred'])
-                results['status'].extend(result_dict['status'])
-                results['status_code'].extend(result_dict['status_code'])
-                results['dialog'].extend(result_dict['dialog'])
-                results['token'].extend([{}]*len(result_dict['gt']))
-
-                if verbose:
-                    log(f'Pred  : {result_dict["pred"]}')
-                    log(f'Status: {result_dict["status_code"]}')
-                    log(f'Final Status: {result_dict["status_code"]}\n\n\n')
-        
-        ## Simulate the resecheduling requests
-        if random.random() < self.request_early_schedule_prob:
-            doctor_information, result_dict = self.rescheduling_request(
-                doctor_information=doctor_information,
-                environment=environment, 
-                verbose=verbose
-            )
-            if result_dict is not None:
-                agent_test_data['doctor'] = doctor_information
-                results['gt'].extend(result_dict['gt'])
-                results['pred'].extend(result_dict['pred'])
-                results['status'].extend(result_dict['status'])
-                results['status_code'].extend(result_dict['status_code'])
-                results['dialog'].extend(result_dict['dialog'])
-                results['token'].extend([{}]*len(result_dict['gt']))
-
-                if verbose:
-                    log(f'Pred  : {result_dict["pred"]}')
-                    log(f'Status: {result_dict["status_code"]}')
-                    log(f'Final Status: {result_dict["status_code"]}\n\n\n')
 
         return results
