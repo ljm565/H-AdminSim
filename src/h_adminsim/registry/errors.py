@@ -26,14 +26,14 @@ STATUS_CODES = {
     },
     'test_retrieve': {
         'identify': 'test_retrieve: fail to identify requested schedule',
-        'type': 'test_retrieve: unexpected tool calling result'
     },
     'test_schedule': {
         'format': 'test_schedule: incorrect format',
         'coverage': 'test_schedule: required tests not all covered',
         'schedule': 'test_schedule: invalid schedule',
         'duration': 'test_schedule: wrong duration',
-        'conflict': 'test_schedule: device conflict',
+        'priority': 'test_schedule: invalid priority order',
+        'conflict': 'test_schedule: time conflict',
         'dependency': 'test_schedule: dependency violated',
         'avoid_same_day': 'test_schedule: avoid_same_day violated',
         'preference': {

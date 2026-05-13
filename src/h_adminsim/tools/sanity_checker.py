@@ -234,204 +234,165 @@ class SanityChecker:
 
         Args:
             prediction (Union[str, dict]): Tool / reasoning output of the form
-                `{'test_schedule': [{<device_code>: {'date', 'start', 'end'}}, ...],
-                'fu_schedule': {<doctor_name>: {'date', 'start', 'end'}} | None,
-                'all_results_ready_at': iso_str}`.
-            gt_patient_condition (dict): GT containing at least `required_tests` (list with `test_code`),
-                `preference` ('asap' | 'batch') and `attending_physician`.
-            test_device_information (dict): Filtered output of
-                `HospitalEnvironment.get_test_device_schedule` covering all required tests.
+                                           `{'test_schedule': [{<device_code>: {'date', 'start', 'end'}}, ...],
+                                           'fu_schedule': {<doctor_name>: {'date', 'start', 'end'}} | None,
+                                           'all_results_ready_at': iso_str}`.
+            gt_patient_condition (dict): GT containing at least `required_tests` (list with `test_code`), `preference` ('asap' | 'batch') and `attending_physician`.
+            test_device_information (dict): Filtered output of `HospitalEnvironment.get_test_device_schedule` covering all required tests.
             environment (HospitalEnvironment): Provides `current_time` and `_utc_offset`.
-            doctor_information (Optional[dict], optional): Department-filtered output of
-                `HospitalEnvironment.get_doctor_schedule`. Required when `rule` is provided
-                to validate the follow-up consultation slot. Defaults to None.
+            doctor_information (Optional[dict], optional): Dictionary of doctor data including their existing schedules.
+                                                           Each key is a doctor's name, and each value includes a 'schedule' field.
             rule (Optional[object], optional): A `SchedulingRule` instance used to evaluate
-                preference optimality via `schedule_tests_asap` / `schedule_tests_batch` and
-                the earliest follow-up consultation slot via `physician_filter`.
-                Skips preference and follow-up comparison if not provided.
+                                               preference optimality via `schedule_tests_asap` / `schedule_tests_batch` and
+                                               the earliest follow-up consultation slot via `physician_filter`.
+                                               Skips preference and follow-up comparison if not provided.
 
         Returns:
             Tuple[bool, str]: (passed, status_code).
         """
         ts_codes = STATUS_CODES['test_schedule']
+        test_information = test_device_information['test']
 
         ############################ Format ############################
+        necessary_keys = ['test_schedule', 'test_visit_dates', 'fu_schedule', 'all_results_ready_at']
         if not isinstance(prediction, dict):
             return False, ts_codes['format']
-        if 'test_schedule' not in prediction or 'all_results_ready_at' not in prediction:
+        if not all(nk in prediction for nk in necessary_keys):
             return False, ts_codes['format']
-        schedule = prediction['test_schedule']
-        if not isinstance(schedule, list) or not schedule:
+        
+        test_schedule = prediction['test_schedule']
+        if not isinstance(test_schedule, list) or not test_schedule:
             return False, ts_codes['format']
-        for entry in schedule:
+        for entry in test_schedule:
             if not isinstance(entry, dict) or len(entry) != 1:
                 return False, ts_codes['format']
 
         ############################ Coverage ############################
-        # Each schedule entry is keyed by `device_code` (matches postprocessing
-        # output: `values['device']` from SchedulingRule._backtrack_schedule).
-        required_codes = {t['test_code'] for t in gt_patient_condition.get('required_tests', [])}
-        test_index = test_device_information.get('test', {})
-        if not required_codes.issubset(set(test_index.keys())):
+        # Check predicted test coverage
+        gt_test_codes = {t['test_code'] for t in gt_patient_condition['required_tests']}
+        try:
+            pred_test_codes = {info['code'] for test in prediction['test_schedule'] for info in test.values() }
+            if not pred_test_codes.issubset(gt_test_codes):
+                return False, ts_codes['coverage']
+        except KeyError:
             return False, ts_codes['format']
 
-        # Compute the rule-based optimum once so coverage and preference checks share it.
-        # When the optimum itself is partial (window cannot fit every required test), the achievable subset becomes the expected coverage target.
+        ############################ Test Schedule validity ############################
+        prev_priority, prev_end_time = -1, None
+        result_ready_iso_by_test, date_by_test = {}, {}
+        utc_offset = environment._utc_offset
+        try:
+            for entry in test_schedule:
+                for device, schedule_info in entry.items():
+                    tc, pr = schedule_info['code'], schedule_info['priority']
+                    date, start, end = str(schedule_info['date']), float(schedule_info['start']), float(schedule_info['end'])
+                    start_iso = get_iso_time(start, date, utc_offset=utc_offset)
+                    end_iso = get_iso_time(end, date, utc_offset=utc_offset)
+
+                    # Schedule validity
+                    if not (start < end and start >= self._START_HOUR and end <= self._END_HOUR):
+                        return False, ts_codes['schedule']
+                    
+                    # Start must be later than current_time
+                    if not compare_iso_time(start_iso, environment.current_time):
+                        return False, ts_codes['schedule']
+                    
+                    # Test start_time must be later than the previous end_time
+                    if prev_end_time is not None and compare_iso_time(prev_end_time, start_iso):
+                        return False, ts_codes['schedule']
+                    prev_end_time = end_iso
+                    
+                    # Duration check
+                    device_duration = test_information[tc]['duration_hour']
+                    if Decimal(str(end)) - Decimal(str(start)) != Decimal(str(device_duration)):
+                        return False, ts_codes['duration']
+                    
+                    # Priority check
+                    if prev_priority > pr:
+                        return False, ts_codes['priority']
+                    prev_priority = pr
+
+                    # Time conflict
+                    fixed = test_information[tc]['devices'][device]['schedule'][date]
+                    fixed_intervals = [
+                        [s['start'], s['end']] if isinstance(s, dict) else s for s in fixed
+                    ]
+                    pred_segments = convert_time_to_segment(
+                        self._START_HOUR, self._END_HOUR, self._TIME_UNIT, [start, end]
+                    )
+                    fixed_segments = sum(
+                        [convert_time_to_segment(self._START_HOUR, self._END_HOUR, self._TIME_UNIT, fs)
+                        for fs in fixed_intervals], [],
+                    )
+                    if set(pred_segments) & set(fixed_segments):
+                        return False, ts_codes['conflict']
+                    
+                    # Update conditions
+                    result_ready_iso_by_test[tc] = schedule_info['result_ready_at']
+                    date_by_test[tc] = date
+        except:
+            return False, ts_codes['format']
+
+        ############################ Dependency / avoid_same_day ############################
+        for entry in test_schedule:
+            for device, schedule_info in entry.items():
+                tc = schedule_info['code']
+                start_iso = get_iso_time(schedule_info['start'], schedule_info['date'], utc_offset=utc_offset)
+
+                # Test dependency condition
+                for dep in test_information[tc]['depends_on']:
+                    if dep in result_ready_iso_by_test and compare_iso_time(result_ready_iso_by_test[dep], start_iso):
+                        return False, ts_codes['dependency']
+                
+                # Avoid same day condition
+                for other in test_information[tc]['avoid_same_day']:
+                    if other in date_by_test and date_by_test[other] == date_by_test[tc]:
+                        return False, ts_codes['avoid_same_day']
+
+        ############################ Schedule optimality ############################
+        # Compute the rule-based optimum only after the predicted schedule has passed all validity checks.
         optimal = None
-        optimal_scheduled = required_codes
-        expected_partial = False
         if rule is not None:
             preference = gt_patient_condition.get('preference')
-            test_codes_list = list(required_codes)
+            test_codes_list = list(gt_test_codes)
             if preference == 'asap':
                 optimal = rule.schedule_tests_asap(test_device_information, test_codes_list)
             elif preference == 'batch':
                 optimal = rule.schedule_tests_batch(test_device_information, test_codes_list)
-            if optimal is not None and optimal.get('status') == 'partial':
-                optimal_scheduled = set(optimal.get('tests', {}).keys())
-                expected_partial = True
 
-        # device_code -> {test_code, ...}: which required tests can run on this device?
-        device_to_tests = {}
-        for tc in required_codes:
-            for dev_code in test_index[tc].get('devices', {}):
-                device_to_tests.setdefault(dev_code, set()).add(tc)
-
-        # Map each scheduled entry to exactly one required test_code via its device
-        entries = []  # list of (test_code, dev_code, slot_dict)
-        scheduled_codes = set()
-        for entry in schedule:
-            dev_code = next(iter(entry))
-            slot = entry[dev_code]
-            candidates = device_to_tests.get(dev_code, set()) - scheduled_codes
-            if len(candidates) != 1:
-                return False, ts_codes['format']
-            tc = next(iter(candidates))
-            entries.append((tc, dev_code, slot))
-            scheduled_codes.add(tc)
-
-        if expected_partial:
-            if scheduled_codes != optimal_scheduled:
-                return False, ts_codes['coverage']
-        else:
-            if scheduled_codes != required_codes:
-                return False, ts_codes['coverage']
-
-        ############################ Per-entry validity ############################
-        utc_offset = environment._utc_offset
-        for tc, dev_code, slot in entries:
-            info = test_index[tc]
-            try:
-                start = float(slot['start'])
-                end   = float(slot['end'])
-                date  = str(slot['date'])
-            except (KeyError, TypeError, ValueError):
-                return False, ts_codes['format']
-
-            # Duration must equal duration_hour exactly (Decimal-safe)
-            if Decimal(str(end)) - Decimal(str(start)) != Decimal(str(info['duration_hour'])):
-                return False, ts_codes['duration']
-
-            # Time bounds
-            if not (start < end and start >= self._START_HOUR and end <= self._END_HOUR):
-                return False, ts_codes['schedule']
-
-            # Start must be later than current_time
-            start_iso = get_iso_time(start, date, utc_offset=utc_offset)
-            if not compare_iso_time(start_iso, environment.current_time):
-                return False, ts_codes['schedule']
-
-            # Device must support this test and the date must exist on the device
-            device_block = info.get('devices', {}).get(dev_code)
-            if device_block is None:
-                return False, ts_codes['format']
-            device_dates = device_block.get('schedule', {})
-            if date not in device_dates:
-                return False, ts_codes['schedule']
-
-            # Device conflict — handle both [[s, e], ...] and [{start, end}, ...] forms
-            fixed = device_dates[date]
-            fixed_intervals = [
-                [s['start'], s['end']] if isinstance(s, dict) else s for s in fixed
-            ]
-            pred_segments = convert_time_to_segment(
-                self._START_HOUR, self._END_HOUR, self._TIME_UNIT, [start, end]
-            )
-            fixed_segments = sum(
-                [convert_time_to_segment(self._START_HOUR, self._END_HOUR, self._TIME_UNIT, fs)
-                 for fs in fixed_intervals], [],
-            )
-            if set(pred_segments) & set(fixed_segments):
-                return False, ts_codes['conflict']
-
-        ############################ Dependency / avoid_same_day ############################
-        start_iso_by_test       = {}
-        result_ready_iso_by_test = {}
-        date_by_test            = {}
-        for tc, _, slot in entries:
-            info = test_index[tc]
-            start_iso_by_test[tc] = get_iso_time(float(slot['start']), str(slot['date']), utc_offset=utc_offset)
-            end_iso = get_iso_time(float(slot['end']), str(slot['date']), utc_offset=utc_offset)
-            result_ready_iso_by_test[tc] = add_hours_to_iso(end_iso, info.get('result_hours', 0))
-            date_by_test[tc] = str(slot['date'])
-
-        for tc, _, _ in entries:
-            info = test_index[tc]
-            for dep in info.get('depends_on', []) or []:
-                if dep in result_ready_iso_by_test and \
-                   compare_iso_time(result_ready_iso_by_test[dep], start_iso_by_test[tc]):
-                    return False, ts_codes['dependency']
-            for other in info.get('avoid_same_day', []) or []:
-                if other in date_by_test and date_by_test[other] == date_by_test[tc]:
-                    return False, ts_codes['avoid_same_day']
-
-        ############################ Preference optimality ############################
-        if optimal is not None:
+        if optimal:
             preference = gt_patient_condition.get('preference')
-            if preference == 'asap':
-                if optimal.get('all_results_ready_at') is not None and \
-                   compare_iso_time(prediction['all_results_ready_at'], optimal['all_results_ready_at']):
+            if preference == 'batch':
+                pred_distinct_dates = prediction['test_visit_dates']
+                opt_distinct_dates  = optimal['test_visit_dates']
+                if len(pred_distinct_dates) > len(opt_distinct_dates):
+                    return False, ts_codes['preference']['batch']
+                
+            try:
+                if optimal['all_results_ready_at'] is not None and compare_iso_time(prediction['all_results_ready_at'], optimal['all_results_ready_at']):
                     return False, ts_codes['preference']['asap']
-            elif preference == 'batch':
-                pred_distinct_dates = len(set(date_by_test.values()))
-                opt_distinct_dates  = len(optimal.get('test_visit_dates', []))
-                if opt_distinct_dates and pred_distinct_dates > opt_distinct_dates:
-                    return False, ts_codes['preference']['batch']
-                if pred_distinct_dates == opt_distinct_dates and \
-                   optimal.get('all_results_ready_at') is not None and \
-                   compare_iso_time(prediction['all_results_ready_at'], optimal['all_results_ready_at']):
-                    return False, ts_codes['preference']['batch']
+            except:
+                return False, ts_codes['format']
 
-        ############################ Follow-up consultation optimality ############################
-        # Verify the predicted follow-up appointment is the earliest available slot
-        # for the attending physician at or after `all_results_ready_at`.
+        ############################ Follow-up consultation optimality ############################        
         if rule is not None and doctor_information is not None:
-            attending_physician = gt_patient_condition.get('attending_physician')
-            pred_fu = prediction.get('fu_schedule')
-            if attending_physician:
-                optimal_fu_slots = rule.physician_filter(
-                    doctor_information, attending_physician, prediction['all_results_ready_at']
-                )
-                optimal_fu = rule.find_earliest_time(optimal_fu_slots)
-                opt_doctors = optimal_fu.get('doctor', [])
-                opt_iso = optimal_fu.get('schedule', [])
+            attending_physician = gt_patient_condition['attending_physician']
+            pred_fu = prediction['fu_schedule']
+            if pred_fu:
+                # Check attending phyisician
+                pred_doctor = next(iter(pred_fu))
+                if pred_doctor != attending_physician:
+                    return False, STATUS_CODES['preference']['physician']
 
-                if opt_doctors and opt_iso:
-                    if not isinstance(pred_fu, dict) or not pred_fu:
-                        return False, ts_codes['fu_schedule']
-                    pred_doctor = next(iter(pred_fu))
-                    pred_slot = pred_fu[pred_doctor]
-                    try:
-                        pred_iso = get_iso_time(
-                            float(pred_slot['start']), str(pred_slot['date']), utc_offset=utc_offset
-                        )
-                    except (KeyError, TypeError, ValueError):
-                        return False, ts_codes['fu_schedule']
-                    if pred_doctor != opt_doctors[0] or pred_iso != opt_iso[0]:
-                        return False, ts_codes['fu_schedule']
-                else:
-                    # No available slot exists; prediction must reflect that.
-                    if isinstance(pred_fu, dict) and pred_fu:
-                        return False, ts_codes['fu_schedule']
+                # Check whether the schedule is the earliest or not
+                is_earliest = self.__check_is_earliest(
+                    {'schedule': pred_fu}, 
+                    {**gt_patient_condition, 'preference': 'doctor', 'valid_from': None},
+                    doctor_information,
+                    environment,
+                )
+
+                if not is_earliest:
+                    return False, STATUS_CODES['preference']['asap']
 
         return True, STATUS_CODES['correct']

@@ -8,7 +8,6 @@ Respond in JSON format only, as shown in the examples below.
 * End_hour: {END_HOUR}
 * Time unit: {TIME_UNIT}
 * Current time: {CURRENT_TIME}
-* UTC offset: {UTC_OFFSET}
 
 
 ## Patient information:
@@ -59,21 +58,20 @@ NOTE: Same reading rule as the device schedules — each ``schedule`` field list
 8. Optimization based on the patient's preference:
     * If the preference is **ASAP**, minimize the latest ``result_ready_at`` across the test set (i.e., complete the slowest test as early as possible). Multiple visit dates are acceptable.
     * If the preference is **Batch**, minimize the number of distinct visit dates first; among feasible groupings, prefer the one whose final ``result_ready_at`` is earliest.
-9. The top-level ``all_results_ready_at`` field is the latest per-test (end + ``result_hours``) ISO 8601 timestamp across the schedule, computed using the given UTC offset.
-10. Output the patient's scheduled tests as a list under the ``test_schedule`` key in the JSON format shown below. Each list item is an object whose single key is the **device code** (one of the keys under ``devices`` in the corresponding test entry) and whose value is ``{{date, start, end}}`` with ``start`` and ``end`` expressed in float hours. Each required test must appear exactly once across the list (i.e., exactly one of the test's devices is booked).
-11. The top-level ``fu_schedule`` field is the follow-up consultation appointment with ``{ATTENDING_PHYSICIAN}``. Choose the **earliest available** slot in the doctor's schedule whose start time is at or after ``all_results_ready_at``. The slot duration must equal the doctor's ``outpatient_duration`` and must not overlap with any of the doctor's already-occupied intervals on that date. Output as ``{{<doctor_name>: {{date, start, end}}}}`` with ``start`` and ``end`` expressed in float hours. If no such slot exists within the provided schedule horizon, set ``fu_schedule`` to the string ``"none"``.
+9. Output the patient's scheduled tests as a list under the ``test_schedule`` key in the JSON format shown below. Each list item is an object whose single key is the **device code** (one of the keys under ``devices`` in the corresponding test entry) and whose value is ``{{date, start, end}}`` with ``start`` and ``end`` expressed in float hours. Each required test must appear exactly once across the list (i.e., exactly one of the test's devices is booked).
+10. The top-level ``fu_schedule`` field is the follow-up consultation appointment with ``{ATTENDING_PHYSICIAN}``. Choose the **earliest available** slot in the doctor's schedule whose start time is at or after the latest per-test result-ready time across the schedule (each test's ``end + result_hours``). The slot duration must equal the doctor's ``outpatient_duration`` and must not overlap with any of the doctor's already-occupied intervals on that date. Output as ``{{<doctor_name>: {{date, start, end}}}}`` with ``start`` and ``end`` expressed in float hours. If no such slot exists within the provided schedule horizon, set ``fu_schedule`` to the string ``"none"``.
 
 
 ## Answer format examples:
 Example 1 (ASAP):
 ```json
-{{"test_schedule": [{{"IMCAR-T02-1": {{"date": "2025-06-13", "start": 9.0, "end": 9.5}}}}, {{"IMCAR-T03-0": {{"date": "2025-06-13", "start": 10.0, "end": 10.5}}}}], "all_results_ready_at": "2025-06-13T12:30:00+09:00", "fu_schedule": {{"Dr. Rosendo Libbey": {{"date": "2025-06-13", "start": 14.0, "end": 14.5}}}}}}
+{{"test_schedule": [{{"IMCAR-T02-1": {{"date": "2025-06-13", "start": 9.0, "end": 9.5}}}}, {{"IMCAR-T03-0": {{"date": "2025-06-13", "start": 10.0, "end": 10.5}}}}], "fu_schedule": {{"Dr. Rosendo Libbey": {{"date": "2025-06-13", "start": 14.0, "end": 14.5}}}}}}
 ```
 Example 2 (Batch):
 ```json
-{{"test_schedule": [{{"IMGAS-T01-2": {{"date": "2025-06-14", "start": 13.0, "end": 14.0}}}}, {{"IMALL-T01-1": {{"date": "2025-06-14", "start": 14.5, "end": 15.0}}}}], "all_results_ready_at": "2025-06-15T09:00:00+09:00", "fu_schedule": {{"Dr. Adrian Hardester": {{"date": "2025-06-15", "start": 9.5, "end": 10.0}}}}}}
+{{"test_schedule": [{{"IMGAS-T01-2": {{"date": "2025-06-14", "start": 13.0, "end": 14.0}}}}, {{"IMALL-T01-1": {{"date": "2025-06-14", "start": 14.5, "end": 15.0}}}}], "fu_schedule": {{"Dr. Adrian Hardester": {{"date": "2025-06-15", "start": 9.5, "end": 10.0}}}}}}
 ```
 Example 3 (no follow-up slot available within the schedule horizon):
 ```json
-{{"test_schedule": [{{"IMPUL-T04-0": {{"date": "2025-06-20", "start": 16.0, "end": 17.0}}}}], "all_results_ready_at": "2025-06-22T11:00:00+09:00", "fu_schedule": "none"}}
+{{"test_schedule": [{{"IMPUL-T04-0": {{"date": "2025-06-20", "start": 16.0, "end": 17.0}}}}], "fu_schedule": "none"}}
 ```

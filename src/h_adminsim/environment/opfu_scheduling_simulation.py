@@ -151,16 +151,25 @@ class OPFUSchedulingSimulation:
     @staticmethod
     def postprocessing(strategy: str,
                        data: Union[str, dict],
-                       filtered_doctor_information: Optional[dict] = None) -> Union[str, dict]:
+                       filtered_doctor_information: Optional[dict] = None,
+                       required_tests: Optional[list] = None,
+                       filtered_test_device_information: Optional[dict] = None,
+                       utc_offset: Optional[str] = None) -> Union[str, dict]:
         """
         Attempts to parse the given text as JSON. If parsing succeeds, returns a dictionary;
         otherwise, returns the original string.
 
         Args:
             strategy (str): Scheduling strategy. It must be either `reasoning` or `tool_calling`.
-            data (Union[str, dict]): The text output to post-process, potentially a JSON-formatted string. 
-            filtered_doctor_information (Optional[dict], optional): Department-filtered doctor information 
+            data (Union[str, dict]): The text output to post-process, potentially a JSON-formatted string.
+            filtered_doctor_information (Optional[dict], optional): Department-filtered doctor information
                                                                     to postprocess the schedule by tool_calling strategy.
+            required_tests (Optional[list], optional): Required-test metadata used by the reasoning branch
+                                                       to enrich each test_schedule entry.
+            filtered_test_device_information (Optional[dict], optional): Test device information used by the
+                                                                         reasoning branch to map device codes
+                                                                         back to test codes.
+            utc_offset (Optional[str], optional): UTC offset used by the reasoning branch to build ISO timestamps.
 
         Returns:
             Union[str, dict]: A dictionary if the text is valid JSON, otherwise the original string.
@@ -179,15 +188,43 @@ class OPFUSchedulingSimulation:
                 else:
                     text_dict = data
 
-                assert {'test_schedule', 'all_results_ready_at'} <= set(text_dict.keys())
+                assert 'test_schedule' in text_dict
                 assert isinstance(text_dict['test_schedule'], list)
+
+                code_to_test = {t['test_code']: t for t in (required_tests or [])}
+                device_to_code = {
+                    dev: code
+                    for code, info in (filtered_test_device_information or {}).get('test', {}).items()
+                    for dev in info.get('devices', {})
+                }
+
+                latest, test_visit_dates = None, []
                 for entry in text_dict['test_schedule']:
                     assert isinstance(entry, dict) and len(entry) == 1
                     dev = next(iter(entry))
-                    entry[dev]['start'] = float(entry[dev]['start'])
-                    entry[dev]['end']   = float(entry[dev]['end'])
-                    entry[dev]['date']  = str(entry[dev]['date'])
-                text_dict['all_results_ready_at'] = str(text_dict['all_results_ready_at'])
+                    slot = entry[dev]
+                    start = float(slot['start'])
+                    end = float(slot['end'])
+                    date = str(slot['date'])
+                    code = device_to_code[dev]
+                    t = code_to_test[code]
+                    end_iso = get_iso_time(end, date, utc_offset)
+                    result_ready_at = add_hours_to_iso(end_iso, t['result_hours'])
+                    entry[dev] = {
+                        'name': t['name'],
+                        'code': code,
+                        'device': dev,
+                        'date': date,
+                        'start': start,
+                        'end': end,
+                        'result_ready_at': result_ready_at,
+                        'priority': t['priority'],
+                    }
+                    test_visit_dates.append(date)
+                    if latest is None or compare_iso_time(result_ready_at, latest):
+                        latest = result_ready_at
+                text_dict['test_visit_dates'] = test_visit_dates
+                text_dict['all_results_ready_at'] = latest
 
                 # Optional follow-up consultation slot
                 fu = text_dict.get('fu_schedule')
@@ -208,7 +245,12 @@ class OPFUSchedulingSimulation:
                 return str(data)
         
         elif strategy == 'tool_calling':
-            schedule = {'test_schedule': [], 'fu_schedule': None, 'all_results_ready_at': data['all_results_ready_at']}
+            schedule = {
+                'test_schedule': [], 
+                'test_visit_dates': data['test_visit_dates'], 
+                'fu_schedule': None, 
+                'all_results_ready_at': data['all_results_ready_at']
+            }
             
             # Follow-up visit schedule post-processing
             fu_schedule = data['fu_schedule']
@@ -331,7 +373,7 @@ class OPFUSchedulingSimulation:
                     # Patient information not found case: -> text
                     if st is None and idx['pred'] == -1:
                         prediction['type'] = 'text'
-                        prediction['result'] = "Sorry, we couldn't find a matching information. Could you please check your details again?"
+                        prediction['result'] = "Sorry, we couldn't find a matching information. Could you please check your details again (patient and doctor names)?"
                         return prediction
 
                     if st is None:  # No GT, retrieved
@@ -362,7 +404,7 @@ class OPFUSchedulingSimulation:
                     )
                     test_schedules = OPFUSchedulingSimulation.postprocessing(
                         strategy='tool_calling',
-                        data=prediction['result'],
+                        data=res,
                         filtered_doctor_information=filtered_doctor_information,
                     )
                     prediction['result'] = test_schedules
@@ -380,20 +422,24 @@ class OPFUSchedulingSimulation:
                 raise TypeError(colorstr("red", "Error: Unexpected return type from scheduling method."))
 
         # If tool calling fails, fallback to LLM-based scheduling
-        except ToolCallingError:
+        except:
             # Fallback only applies after retrieve_patient_tests has populated required_tests.
             if not known_condition.get('required_tests'):
-                raise
+                raise ToolCallingError(colorstr('red', 'Reasoning fallback without test retrieval.'))
 
             if self.scheduling_strategy == 'tool_calling':
                 log('Failed to select an appropriate tool. Falling back to reasoning-based scheduling.', level='warning')
 
             required_test_codes = [t['test_code'] for t in known_condition['required_tests']]
-            filtered_test_devices = self.environment.get_test_device_schedule(
-                test_device_information=test_device_information if not self.fhir_integration else None,
+            filtered_doctor_information = self.environment.get_doctor_schedule(
+                doctor_information=doctor_information,
+                department=department,
+                fhir_integration=self.fhir_integration and doctor_information is None,
+            )
+            filtered_test_device_information = self.environment.get_test_device_schedule(
+                test_device_information=test_device_information,
                 test_code=required_test_codes,
-                fhir_integration=self.fhir_integration,
-                express_detail=True,
+                fhir_integration=self.fhir_integration and test_device_information is None,
             )
             user_prompt = self.admin_staff_agent.scheduling_user_prompt_template.format(
                 START_HOUR=self._START_HOUR,
@@ -406,12 +452,12 @@ class OPFUSchedulingSimulation:
                 PREFERENCE=known_condition['patient_intention'],
                 DAY=self._DAY,
                 TESTS=json.dumps(known_condition['required_tests'], indent=2),
-                TEST_DEVICES=json.dumps(filtered_test_devices, indent=2),
+                TEST_DEVICES=json.dumps(filtered_test_device_information, indent=2),
                 DOCTOR_SCHEDULES=json.dumps(filtered_doctor_information, indent=2),
             )
 
             tries, schedule = 0, None
-            while True:
+            while 1:
                 schedule = self.admin_staff_agent(
                     user_prompt,
                     using_multi_turn=False,
@@ -421,14 +467,22 @@ class OPFUSchedulingSimulation:
                 schedule = OPFUSchedulingSimulation.postprocessing(
                     strategy='reasoning',
                     data=schedule,
+                    filtered_doctor_information=filtered_doctor_information,
+                    required_tests=known_condition['required_tests'],
+                    filtered_test_device_information=filtered_test_device_information,
+                    utc_offset=self.environment._utc_offset,
                 )
                 if isinstance(schedule, dict) or tries >= reasoning_max_tries:
                     break
                 tries += 1
 
+            if not isinstance(schedule, dict):
+                self.admin_staff_agent.reset_history(verbose=False)
+                raise SchedulingError(colorstr('red', 'Reasoning fallback failed to produce a valid schedule JSON.'))
+
             prediction = {
                 'type': 'tool',
-                'result': schedule if isinstance(schedule, dict) else {'test_schedule': [], 'fu_schedule': None, 'all_results_ready_at': ''},
+                'result': schedule,
                 'raw': None,
                 'token': deepcopy(self.admin_staff_agent.client.token_usages),
             }
@@ -467,8 +521,9 @@ class OPFUSchedulingSimulation:
             **kwargs: Shared keyword arguments passed to both agents.
 
         Returns:
-            Tuple[dict, dict, dict]: 
+            Tuple[dict, dict, dict, dict]: 
                 - Doctor information.
+                - Test information
                 - Result dictionary after scheduling a new appointment.
                 - Token statistics.
         """
@@ -689,7 +744,7 @@ class OPFUSchedulingSimulation:
                             'dialog': [preprocess_dialog(self.dialog_history['test_scheduling'])]
                         }
                         token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
-                        return doctor_information, result_dict, token_usage
+                        return doctor_information, test_device_information, result_dict, token_usage
 
                 # Sanity check
                 ## No GT case
@@ -701,7 +756,7 @@ class OPFUSchedulingSimulation:
                         prediction=pred_schedule,
                         gt_patient_condition=gt_patient_condition,
                         test_device_information=filtered_test_device_information,
-                        doctor_information=filtered_doctor_information,
+                        doctor_information=doctor_information,
                         environment=self.environment,
                         rule=self.rules,
                     )
@@ -741,8 +796,44 @@ class OPFUSchedulingSimulation:
             result_dict['dialog'].append(preprocess_dialog(self.dialog_history['test_scheduling']))
             log("Simulation completed.", color=True)
             token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
-            return doctor_information, result_dict, token_usage
+            return doctor_information, test_device_information, result_dict, token_usage
+        
+        except ToolCallingError:
+            result_dict = {
+                'gt': [gt_patient_condition],
+                'pred': [None],
+                'status': [False],
+                'status_code': [STATUS_CODES['test_retrieve']['identify']],
+                'dialog': [preprocess_dialog(self.dialog_history['test_scheduling'])]
+            }
+            log("Simulation completed.", color=True)
+            token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
+            return doctor_information, test_device_information, result_dict, token_usage
 
+        except SchedulingError:
+            result_dict = {
+                'gt': [gt_patient_condition],
+                'pred': [None],
+                'status': [False],
+                'status_code': [STATUS_CODES['format']],
+                'dialog': [preprocess_dialog(self.dialog_history['test_scheduling'])]
+            }
+            log("Simulation completed.", color=True)
+            token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
+            return doctor_information, test_device_information, result_dict, token_usage
+        
+        # Otherwise
+        except Exception as e:
+            status_code = STATUS_CODES['unexpected'].format(e=e)
+            log(status_code, level='warning')
+            result_dict = {
+                'gt': [gt_patient_condition],
+                'pred': [None],
+                'status': [False],
+                'status_code': [status_code],
+                'dialog': [preprocess_dialog(self.dialog_history['test_scheduling'])]
+            }
+        
         # Organize the result for the regular success / failure path
         result_dict = {
             'gt': [gt_patient_condition],
