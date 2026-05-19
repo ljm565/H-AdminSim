@@ -1,5 +1,5 @@
 Below is information about the hospital's operating hours, the patient's required tests, and the test devices including their currently occupied schedules.
-Schedule every required test into an available device slot, respecting all dependencies and constraints, and according to the patient's scheduling preference.
+Place every required test that can feasibly be booked into an available device slot, respecting all dependencies and constraints, and following the patient's scheduling preference.
 Respond in JSON format only, as shown in the examples below.
 
 
@@ -12,7 +12,6 @@ Respond in JSON format only, as shown in the examples below.
 
 ## Patient information:
 * Department: {DEPARTMENT}
-* Attending physician (must be used for the follow-up consultation): {ATTENDING_PHYSICIAN}
 * Patient utterance expressing scheduling preference: {PREFERENCE}
 * Tips:
     * ASAP case: All required tests must finish (including the time required for results to be ready) as early as possible, even if the patient must visit the hospital on multiple distinct days.
@@ -28,50 +27,73 @@ NOTE: ``priority`` is a hard time-ordering constraint. If priority(A) < priority
 ```
 
 
-## Example of how to read schedules:
-* [9.0, 10.25]: Indicates an occupied (booked) slot from 9:00 to 10:15.
-* [10.5, 17.0]: Indicates an occupied (booked) slot from 10:30 to 17:00.
+## How to read the schedule fields below (READ CAREFULLY):
+Every ``schedule`` field is a per-date dictionary listing the time intervals that are **already OCCUPIED (booked)** on that date — NOT the available slots.
+* ``"2025-06-13": []`` — the list is empty, meaning **no occupied intervals**, so the device/doctor is **FULLY AVAILABLE for the entire operating-hours window on that date**. Every minute of that day is bookable. An empty list is NOT a signal that the day is unavailable — it is the opposite.
+* ``"2025-06-13": [[9.0, 10.25]]`` — occupied from 9:00 to 10:15; all other times within operating hours are available.
+* ``"2025-06-13": [[10.5, 17.0]]`` — occupied from 10:30 to 17:00; all other times within operating hours are available.
+* ``"2025-06-13": [[9.0, 19.0]]`` — the entire operating-hours window is one occupied block; the day is **fully booked**, no slot available.
+* Only dates that appear as keys in the schedule are bookable. Never invent a date that is not listed.
 
 
 ## Test device information and their {DAY}-day schedules:
-NOTE: Each ``schedule`` field lists the time intervals already occupied per date for each device. Any time range NOT included in the list should be considered available for new scheduling. Time slots **must** be assigned only for dates that exist in the schedule.
 ```json
 {TEST_DEVICES}
 ```
 
+## Test scheduling constraints (what makes a schedule valid):
+A predicted test slot ``{{date, start, end}}`` on device ``D`` for test ``T`` is valid only if **all** of the following hold:
+1. **Single placement.** Each required test appears at most once across the output list, on exactly one of its supporting devices listed under ``T.devices``.
+2. **Operating hours.** ``start < end``, ``Start_hour <= start``, and ``end <= End_hour``.
+3. **Later than current time.** The ISO timestamp built from ``date`` + ``start`` must be strictly later than ``Current time``. Past dates and earlier-on-today slots are invalid even if they are not occupied.
+4. **Exact duration.** ``end - start`` (in the hospital's ``Time unit``) must equal ``T.duration_hour`` exactly. No rounding, no overrun, no shortening.
+5. **Device availability.** The chosen ``[start, end]`` interval must not overlap with any occupied interval listed under ``D.schedule[date]`` for that date — not even by a single time unit.
+6. **Priority is a hard time-order constraint.** For any two tests A and B with priority(A) < priority(B), A's end time must be at or before B's start time (using ISO timestamps so this holds across dates).
+7. **Dependencies.** For every predecessor P listed in ``T.depends_on``, T's start ISO timestamp must be at or after ``P.end + P.result_hours`` (the moment P's result is ready).
+8. **Avoid-same-day.** For every test ``X`` listed in ``T.avoid_same_day``, ``T.date`` must differ from ``X.date``.
+9. **List ordering — non-decreasing priority.** The output list must be sorted so that priorities are non-decreasing along the list (i.e., item i's priority <= item i+1's priority).
+10. **List ordering — global chronological.** The output list must also be sorted by ISO start timestamp, globally across all dates (i.e., item i's end ISO <= item i+1's start ISO). This is a strict, hard requirement enforced by the downstream validator.
 
-## Doctor information and their {DAY}-day schedules:
-NOTE: Same reading rule as the device schedules — each ``schedule`` field lists already-occupied intervals per date, and any time range NOT included is available. Use this section only to choose the follow-up consultation slot for ``{ATTENDING_PHYSICIAN}``; do not assign tests here.
-```json
-{DOCTOR_SCHEDULES}
-```
+## Partial scheduling is allowed (and expected when needed):
+Schedule as many of the required tests as you can while satisfying every constraint above. If a particular test cannot be placed anywhere in the provided horizon (e.g., its only supporting devices are fully booked, or no slot satisfies its ``depends_on`` window), **omit that test entirely from the output list**. Do NOT invent a slot, do NOT shrink ``duration_hour``, do NOT use a date that is not in the schedule. Omitted tests will be re-scheduled by a later process. (An empty ``test_schedule`` list is acceptable only if no test at all could be placed.)
 
 
-## Test scheduling instructions:
-1. Every required test must be scheduled exactly once on one of its supporting devices listed under ``devices``.
-2. Each test slot's start time must be later than the ``current time`` (ISO format) and must lie within the hospital operating hours (``Start_hour`` to ``End_hour``).
-3. ``end - start`` for each scheduled test must equal that test's ``duration_hour`` (using the hospital's ``Time unit``).
-4. The chosen device slot must not overlap with any of the device's currently occupied intervals on the chosen date.
-5. ``priority`` is a hard time-ordering constraint: a test with a lower ``priority`` must finish before a test with a higher ``priority`` starts.
-6. ``depends_on`` is a hard time-ordering constraint: for each predecessor P listed in ``depends_on``, the dependent test's start time must be at or after P.end + P.``result_hours`` (i.e., after P's result is ready).
-7. ``avoid_same_day``: tests listed in this field must not share a date with the current test.
-8. Optimization based on the patient's preference:
-    * If the preference is **ASAP**, minimize the latest ``result_ready_at`` across the test set (i.e., complete the slowest test as early as possible). Multiple visit dates are acceptable.
-    * If the preference is **Batch**, minimize the number of distinct visit dates first; among feasible groupings, prefer the one whose final ``result_ready_at`` is earliest.
-9. Output the patient's scheduled tests as a list under the ``test_schedule`` key in the JSON format shown below. Each list item is an object whose single key is the **device code** (one of the keys under ``devices`` in the corresponding test entry) and whose value is ``{{date, start, end}}`` with ``start`` and ``end`` expressed in float hours. Each required test must appear exactly once across the list (i.e., exactly one of the test's devices is booked).
-10. The top-level ``fu_schedule`` field is the follow-up consultation appointment with ``{ATTENDING_PHYSICIAN}``. Choose the **earliest available** slot in the doctor's schedule whose start time is at or after the latest per-test result-ready time across the schedule (each test's ``end + result_hours``). The slot duration must equal the doctor's ``outpatient_duration`` and must not overlap with any of the doctor's already-occupied intervals on that date. Output as ``{{<doctor_name>: {{date, start, end}}}}`` with ``start`` and ``end`` expressed in float hours. If no such slot exists within the provided schedule horizon, set ``fu_schedule`` to the string ``"none"``.
+## Optimization based on the patient's preference:
+* **ASAP**: minimize the latest ``end + result_hours`` across the placed tests (i.e., make the slowest result-ready time as early as possible). Multiple visit dates are acceptable.
+* **Batch**: minimize the number of distinct visit dates first; among feasible groupings, prefer the one whose final ``end + result_hours`` is earliest.
+
+
+## Step-by-step procedure (follow this when reasoning):
+1. **Topologically order the tests.** Sort the required tests by ``priority`` ascending; within the same priority, place predecessors (anything listed in another test's ``depends_on``) before their dependents.
+2. **Place each test in that order.** For the current test T:
+   a. Walk through each supporting device ``D`` in ``T.devices``.
+   b. Walk through D's listed dates in chronological order. Remember: a date with ``[]`` is fully free; treat any free interval of length ``T.duration_hour`` that fits within operating hours as a candidate.
+   c. Reject any candidate slot that (i) starts at or before ``Current time``, (ii) overlaps an occupied interval, (iii) starts before any already-placed test of strictly lower priority ends, (iv) starts before ``predecessor.end + predecessor.result_hours`` for any predecessor in ``depends_on``, or (v) lands on a date that conflicts with ``avoid_same_day``.
+   d. Among the remaining candidates, pick:
+      * For **ASAP**: the earliest start ISO timestamp overall.
+      * For **Batch**: a slot on a date already used by another placed test if such a slot exists and is valid; otherwise the earliest start ISO timestamp.
+   e. If no candidate exists for T after scanning all devices and dates, OMIT T (do not place it).
+3. **Sort the final list** by ISO start timestamp ascending. Because step 1 ordered by priority and step 2c forbids out-of-priority placements, this will automatically satisfy both ordering rules (#9, #10).
+
+
+## Output format:
+Respond with ONE JSON object containing only the key ``test_schedule``. Its value is a list. Each list item is an object with exactly one key (the **device code**, one of the keys under ``T.devices``); the value is ``{{"date", "start", "end"}}`` with ``start`` and ``end`` expressed in float hours.
+
+Do NOT include ``fu_schedule``, ``test_visit_dates``, ``all_results_ready_at``, or any other top-level field. Do NOT wrap the JSON in commentary.
 
 
 ## Answer format examples:
-Example 1 (ASAP):
+Example 1 (ASAP, all tests placed):
 ```json
-{{"test_schedule": [{{"IMCAR-T02-1": {{"date": "2025-06-13", "start": 9.0, "end": 9.5}}}}, {{"IMCAR-T03-0": {{"date": "2025-06-13", "start": 10.0, "end": 10.5}}}}], "fu_schedule": {{"Dr. Rosendo Libbey": {{"date": "2025-06-13", "start": 14.0, "end": 14.5}}}}}}
+{{"test_schedule": [{{"IMCAR-T02-1": {{"date": "2025-06-13", "start": 9.0, "end": 9.5}}}}, {{"IMCAR-T03-0": {{"date": "2025-06-13", "start": 10.0, "end": 10.5}}}}]}}
 ```
-Example 2 (Batch):
+
+Example 2 (Batch, multiple tests on the same date):
 ```json
-{{"test_schedule": [{{"IMGAS-T01-2": {{"date": "2025-06-14", "start": 13.0, "end": 14.0}}}}, {{"IMALL-T01-1": {{"date": "2025-06-14", "start": 14.5, "end": 15.0}}}}], "fu_schedule": {{"Dr. Adrian Hardester": {{"date": "2025-06-15", "start": 9.5, "end": 10.0}}}}}}
+{{"test_schedule": [{{"IMGAS-T01-2": {{"date": "2025-06-14", "start": 13.0, "end": 14.0}}}}, {{"IMALL-T01-1": {{"date": "2025-06-14", "start": 14.5, "end": 15.0}}}}]}}
 ```
-Example 3 (no follow-up slot available within the schedule horizon):
+
+Example 3 (partial — one test could not be placed within the horizon and is omitted):
 ```json
-{{"test_schedule": [{{"IMPUL-T04-0": {{"date": "2025-06-20", "start": 16.0, "end": 17.0}}}}], "fu_schedule": "none"}}
+{{"test_schedule": [{{"IMPUL-T04-0": {{"date": "2025-06-20", "start": 16.0, "end": 17.0}}}}]}}
 ```

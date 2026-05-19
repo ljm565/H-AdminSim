@@ -154,7 +154,9 @@ class OPFUSchedulingSimulation:
                        filtered_doctor_information: Optional[dict] = None,
                        required_tests: Optional[list] = None,
                        filtered_test_device_information: Optional[dict] = None,
-                       utc_offset: Optional[str] = None) -> Union[str, dict]:
+                       utc_offset: Optional[str] = None,
+                       rule: Optional[SchedulingRule] = None,
+                       attending_physician: Optional[str] = None) -> Union[str, dict]:
         """
         Attempts to parse the given text as JSON. If parsing succeeds, returns a dictionary;
         otherwise, returns the original string.
@@ -170,6 +172,11 @@ class OPFUSchedulingSimulation:
                                                                          reasoning branch to map device codes
                                                                          back to test codes.
             utc_offset (Optional[str], optional): UTC offset used by the reasoning branch to build ISO timestamps.
+            rule (Optional[SchedulingRule], optional): `SchedulingRule` instance used by the reasoning branch to
+                                               deterministically compute the follow-up consultation slot
+                                               via `physician_filter` + `find_earliest_time`.
+            attending_physician (Optional[str], optional): Name of the patient's attending physician; used by
+                                                            the reasoning branch when computing `fu_schedule`.
 
         Returns:
             Union[str, dict]: A dictionary if the text is valid JSON, otherwise the original string.
@@ -198,7 +205,7 @@ class OPFUSchedulingSimulation:
                     for dev in info.get('devices', {})
                 }
 
-                latest, test_visit_dates = None, []
+                latest, test_visit_dates = None, set()
                 for entry in text_dict['test_schedule']:
                     assert isinstance(entry, dict) and len(entry) == 1
                     dev = next(iter(entry))
@@ -220,25 +227,39 @@ class OPFUSchedulingSimulation:
                         'result_ready_at': result_ready_at,
                         'priority': t['priority'],
                     }
-                    test_visit_dates.append(date)
+                    test_visit_dates.add(date)
                     if latest is None or compare_iso_time(result_ready_at, latest):
                         latest = result_ready_at
-                text_dict['test_visit_dates'] = test_visit_dates
+                text_dict['test_visit_dates'] = list(test_visit_dates)
                 text_dict['all_results_ready_at'] = latest
 
-                # Optional follow-up consultation slot
-                fu = text_dict.get('fu_schedule')
-                if isinstance(fu, str) and fu.lower() == 'none':
-                    fu = None
-                if isinstance(fu, dict) and fu:
-                    doctor = next(iter(fu))
-                    assert isinstance(fu[doctor], dict)
-                    fu[doctor]['start'] = float(fu[doctor]['start'])
-                    fu[doctor]['end']   = float(fu[doctor]['end'])
-                    fu[doctor]['date']  = str(fu[doctor]['date'])
-                    text_dict['fu_schedule'] = fu
-                else:
-                    text_dict['fu_schedule'] = None
+                # Follow-up consultation slot — computed deterministically here, NOT taken from the LLM.
+                text_dict['fu_schedule'] = None
+                if (
+                    rule is not None
+                    and attending_physician
+                    and filtered_doctor_information
+                    and latest is not None
+                ):
+                    candidates = rule.physician_filter(
+                        filtered_doctor_information,
+                        preferred_doctor=attending_physician,
+                        min_time=latest,
+                    )
+                    earliest = rule.find_earliest_time(candidates)
+                    if earliest['doctor'] and earliest['schedule']:
+                        doctor = earliest['doctor'][0]
+                        iso = earliest['schedule'][0]
+                        duration = filtered_doctor_information['doctor'][doctor]['outpatient_duration']
+                        st_hour = iso_to_hour(iso)
+                        end_hour = float(Decimal(str(st_hour)) + Decimal(str(duration)))
+                        text_dict['fu_schedule'] = {
+                            doctor: {
+                                'date': iso_to_date(iso),
+                                'start': st_hour,
+                                'end': end_hour,
+                            }
+                        }
                 return text_dict
 
             except:
@@ -262,7 +283,7 @@ class OPFUSchedulingSimulation:
                 schedule['fu_schedule'] = {doctor: {'date': date, 'start': st_hour, 'end': tr_hour}}
             
             # Test post-processing
-            required_tests = data['tests']
+            required_tests = data['test_schedule']
             for _, values in required_tests.items():
                 device_code = values['device']
                 st_hour, tr_hour = iso_to_hour(values['start']), iso_to_hour(values['end'])
@@ -422,7 +443,8 @@ class OPFUSchedulingSimulation:
                 raise TypeError(colorstr("red", "Error: Unexpected return type from scheduling method."))
 
         # If tool calling fails, fallback to LLM-based scheduling
-        except:
+        except Exception as e:
+            log(f'Exception occured: {e}', 'warning')
             # Fallback only applies after retrieve_patient_tests has populated required_tests.
             if not known_condition.get('required_tests'):
                 raise ToolCallingError(colorstr('red', 'Reasoning fallback without test retrieval.'))
@@ -441,19 +463,17 @@ class OPFUSchedulingSimulation:
                 test_code=required_test_codes,
                 fhir_integration=self.fhir_integration and test_device_information is None,
             )
+            current_time = f"{self.environment.current_time} (Date: {iso_to_date(self.environment.current_time)}, Time: {round(iso_to_hour(self.environment.current_time), 3)})"
             user_prompt = self.admin_staff_agent.scheduling_user_prompt_template.format(
                 START_HOUR=self._START_HOUR,
                 END_HOUR=self._END_HOUR,
                 TIME_UNIT=self._TIME_UNIT,
-                CURRENT_TIME=self.environment.current_time,
-                UTC_OFFSET=self.environment._utc_offset,
+                CURRENT_TIME=current_time,
                 DEPARTMENT=department,
-                ATTENDING_PHYSICIAN=known_condition.get('attending_physician', ''),
                 PREFERENCE=known_condition['patient_intention'],
                 DAY=self._DAY,
                 TESTS=json.dumps(known_condition['required_tests'], indent=2),
                 TEST_DEVICES=json.dumps(filtered_test_device_information, indent=2),
-                DOCTOR_SCHEDULES=json.dumps(filtered_doctor_information, indent=2),
             )
 
             tries, schedule = 0, None
@@ -471,6 +491,8 @@ class OPFUSchedulingSimulation:
                     required_tests=known_condition['required_tests'],
                     filtered_test_device_information=filtered_test_device_information,
                     utc_offset=self.environment._utc_offset,
+                    rule=self.rules,
+                    attending_physician=known_condition.get('attending_physician'),
                 )
                 if isinstance(schedule, dict) or tries >= reasoning_max_tries:
                     break
@@ -870,263 +892,3 @@ class OPFUSchedulingSimulation:
         token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
 
         return doctor_information, test_device_information, result_dict, token_usage
-
-
-    # def scheduling_simulate_stream(self,
-    #                                gt_data: dict,
-    #                                staff_known_data: dict,
-    #                                doctor_information: Optional[dict] = None,
-    #                                verbose: bool = False,
-    #                                max_inferences: int = 5,
-    #                                natural_express: bool = True,
-    #                                reasoning_max_tries: int = 3,
-    #                                patient_kwargs: dict = {},
-    #                                staff_kwargs: dict = {},
-    #                                **kwargs):
-    #     """
-    #     Simulate a multi-turn outpatient scheduling dialogue between a patient agent and an administrative staff agent.
-
-    #     Args:
-    #         gt_data (dict): Ground-truth patient condition(s) for each dialogue turn.
-    #         staff_known_data (dict): Patient information known to the staff agent.
-    #         doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s) involved, 
-    #                                                        including availability and other relevant details. Defaults to None.
-    #         verbose (bool, optional): Whether to log detailed simulation outputs. Defaults to False.
-    #         max_inferences (int, optional): Maximum number of dialogue turns.
-    #         natural_express (bool, optional): Whether express new schedule as natural or not. Defaults to True.
-    #         reasoning_max_tries (int, optional): Reasoning fallback maximum number of retries. Defaults to 3.
-    #         patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent.
-    #         staff_kwargs (dict, optional): Additional keyword arguments passed to the staff scheduling function.
-    #         **kwargs: Shared keyword arguments passed to both agents.
-    #     """
-    #     # Sanity Check
-    #     if not self.fhir_integration:
-    #         assert doctor_information is not None, colorstr("red", f"Doctor information must be provided if you don't use FHIR.")
-
-    #     # Initialize agents and result dictionary
-    #     staff_token_callback = TokenUsageCallback()
-    #     self._init_agents(verbose=verbose)
-    #     staff_token_stats = {}
-    #     filtered_doctor_information = self.environment.get_doctor_schedule(
-    #         doctor_information=doctor_information if not self.fhir_integration else None,
-    #         department=staff_known_data['department'],
-    #         fhir_integration=self.fhir_integration,
-    #     )
-    #     client = self.admin_staff_agent.build_agent(
-    #         rule=self.rules, 
-    #         doctor_info=filtered_doctor_information
-    #     )
-    #     merged_patient_kwargs = {**patient_kwargs, **kwargs}
-    #     merged_staff_kwargs = {**staff_kwargs, **kwargs}
-        
-    #     # Start conversation
-    #     staff_greet = self.admin_staff_agent.appn_greet
-    #     self.dialog_history['test_scheduling'].append({"role": "Staff", "content": staff_greet})
-    #     role = f"{colorstr('blue', 'Staff')}"
-    #     log(f"{role:<25}: {staff_greet}")
-
-    #     # Iterate over multiple preferences if exists
-    #     preference_reject_prob = 0.0 if len(gt_data) <= 1 else self.preference_rejection_prob
-    #     for i, gt_patient_condition in enumerate(gt_data):
-    #         # For the rejection scenario
-    #         if i != 0:
-    #             self.update_patient_system_prompt(
-    #                 patient_condition=gt_patient_condition,
-    #                 rejected_preference=gt_data[i-1]['preference']
-    #             )
-
-    #         tries = 0
-    #         while 1:
-    #             # Obtain response from patient
-    #             patient_response = run_with_retry(
-    #                 self.patient_agent,
-    #                 self.dialog_history['test_scheduling'][-1]["content"],
-    #                 using_multi_turn=True,
-    #                 verbose=False,
-    #                 max_retries=5,
-    #                 **merged_patient_kwargs,
-    #             )
-    #             self.dialog_history['test_scheduling'].append({"role": "Patient", "content": patient_response})
-    #             role = f"{colorstr('green', 'Patient')} ({gt_patient_condition['preference']})"
-    #             log(f"{role:<25}: {patient_response}")
-    #             yield 'Patient', preprocess_utterance(patient_response), None
-                
-    #             # Scheduling from staff
-    #             staff_known_data.update({'patient_intention': patient_response})
-    #             staff_response = run_with_retry(
-    #                 self.scheduling,
-    #                 client,
-    #                 staff_known_data,
-    #                 doctor_information,
-    #                 chat_history=self._to_lc_history('test_scheduling'),
-    #                 reasoning_max_tries=reasoning_max_tries,
-    #                 callback=staff_token_callback,
-    #                 **merged_staff_kwargs
-    #             )
-    #             if self.scheduling_strategy == 'tool_calling':
-    #                 staff_token_stats = staff_token_callback.token_usage
-    #             else:
-    #                 for k, v in staff_response['token'].items():
-    #                     if k not in staff_token_stats:
-    #                         staff_token_stats[k] = deepcopy(v)
-    #                     else:
-    #                         staff_token_stats[k].extend(v)  # 두 번째~: extend
-                
-    #             # Clarification message
-    #             if staff_response['type'] == 'text':
-    #                 response = staff_response['result']
-    #                 self.dialog_history['test_scheduling'].append({"role": "Staff", "content": response})
-    #                 role = f"{colorstr('blue', 'Staff')}"
-    #                 log(f"{role:<25}: {response}")
-    #                 yield 'Staff', preprocess_utterance(response), None
-                
-    #             # Tool calling result
-    #             elif staff_response['type'] == 'tool':
-    #                 pred_schedule = staff_response['result']
-                    
-    #                 # Response formatting
-    #                 try:
-    #                     if natural_express:
-    #                         _schedule = pred_schedule['schedule']
-    #                         _doctor = list(_schedule.keys())[0]
-    #                         date, st, tr = _schedule[_doctor]['date'], _schedule[_doctor]['start'], _schedule[_doctor]['end']
-    #                         _format = random.choice(self.admin_staff_agent.natural_schedule_suggestion) \
-    #                             if isinstance(self.admin_staff_agent.natural_schedule_suggestion, list) \
-    #                                 else self.admin_staff_agent.natural_schedule_suggestion
-    #                         response = _format.format(
-    #                             doctor=_doctor, date=date, start=st, end=tr
-    #                         )
-    #                     else:
-    #                         response = self.admin_staff_agent.schedule_suggestion.format(schedule=pred_schedule)
-    #                 except:
-    #                     try:
-    #                         response = self.admin_staff_agent.schedule_suggestion.format(schedule=pred_schedule)
-    #                     except:
-    #                         response = str(pred_schedule)
-                    
-    #                 self.dialog_history['test_scheduling'].append({"role": "Staff", "content": response})
-    #                 role = f"{colorstr('blue', 'Staff')}"
-    #                 log(f"{role:<25}: {response}")
-    #                 yield 'Staff', preprocess_utterance(response), pred_schedule
-    #                 break
-
-    #             tries += 1
-    #             if tries > max_inferences:
-    #                 return
-            
-    #         # Preference rejection logic
-    #         ## Rejection case
-    #         _schedule = pred_schedule['schedule']
-    #         _doctor = list(_schedule.keys())[0]
-    #         _date = _schedule[_doctor]['date']
-    #         if random.random() < preference_reject_prob and i != len(gt_data) - 1 and \
-    #             gt_data[i+1]['preferred_doctor'] != _doctor and gt_data[i+1]['valid_from'] != _date:  # Avoid overlap with next preferred doctor or next preferred date
-    #             preference_reject_prob *= self.preference_rejection_prob_decay
-            
-    #         ## Non-rejection case
-    #         else:
-    #             if natural_express:
-    #                 final_preference = gt_patient_condition.get('preference')
-    #                 final_preferred_condition = gt_patient_condition.get('valid_from') if final_preference == 'date' \
-    #                     else gt_patient_condition.get('preferred_doctor')
-
-    #                 if final_preference.lower() == 'asap':
-    #                     self.update_patient_system_prompt(
-    #                         new_system_prompt=self.patient_satisfaction_system_prompt
-    #                     )
-    #                     patient_response = run_with_retry(
-    #                         self.patient_agent,
-    #                         self.natural_end_phrase.format(schedule=self.dialog_history['test_scheduling'][-1]['content']),
-    #                         using_multi_turn=True,
-    #                         verbose=False,
-    #                         max_retries=5,
-    #                         **merged_patient_kwargs,
-    #                     )
-    #                     self.dialog_history['test_scheduling'].append({"role": "Patient", "content": patient_response})
-    #                     role = f"{colorstr('green', 'Patient')} ({gt_data[i]['preference']})"
-    #                     log(f"{role:<25}: {patient_response}")
-    #                     yield 'Patient', preprocess_utterance(patient_response), None
-
-    #                 else:
-    #                     # doctor or date preference - evaluate with retry
-    #                     accept_tries = 0
-    #                     while accept_tries <= max_inferences:
-    #                         self.update_patient_system_prompt(
-    #                             new_system_prompt=self.patient_evaluation_system_prompt.format(
-    #                                 preference=final_preference,
-    #                                 preferred_condition=final_preferred_condition
-    #                             )
-    #                         )
-    #                         eval_phrase = self.patient_schedule_evaluation_phrase.format(
-    #                             schedule=self.dialog_history['test_scheduling'][-1]['content'],
-    #                             preference=final_preference,
-    #                             preferred_condition=final_preferred_condition
-    #                         )
-
-    #                         patient_response = run_with_retry(
-    #                             self.patient_agent,
-    #                             eval_phrase,
-    #                             using_multi_turn=True,
-    #                             verbose=False,
-    #                             max_retries=5,
-    #                             **merged_patient_kwargs,
-    #                         )
-
-    #                         self.dialog_history['test_scheduling'].append({"role": "Patient", "content": patient_response})
-    #                         role = f"{colorstr('green', 'Patient')} ({gt_data[i]['preference']})"
-    #                         log(f"{role:<25}: {patient_response}")
-    #                         yield 'Patient', preprocess_utterance(patient_response), None
-
-    #                         if '#ACCEPT' in patient_response:
-    #                             break
-
-    #                         # Not accepted - retry tool calling
-    #                         staff_known_data.update({'patient_intention': patient_response})
-    #                         staff_response = run_with_retry(
-    #                             self.scheduling,
-    #                             client,
-    #                             staff_known_data,
-    #                             doctor_information,
-    #                             chat_history=self._to_lc_history('test_scheduling'),
-    #                             reasoning_max_tries=reasoning_max_tries,
-    #                             callback=staff_token_callback,
-    #                             **merged_staff_kwargs
-    #                         )
-    #                         if staff_response['type'] == 'tool':
-    #                             pred_schedule = staff_response['result']
-    #                             _schedule = pred_schedule['schedule']
-    #                             _doctor = list(_schedule.keys())[0]
-    #                             _date = _schedule[_doctor]['date']
-    #                             try:
-    #                                 date, st, tr = _schedule[_doctor]['date'], _schedule[_doctor]['start'], _schedule[_doctor]['end']
-    #                                 _format = random.choice(self.admin_staff_agent.natural_schedule_suggestion) \
-    #                                     if isinstance(self.admin_staff_agent.natural_schedule_suggestion, list) \
-    #                                         else self.admin_staff_agent.natural_schedule_suggestion
-    #                                 response = _format.format(doctor=_doctor, date=date, start=st, end=tr)
-    #                             except:
-    #                                 try:
-    #                                     response = self.admin_staff_agent.schedule_suggestion.format(schedule=pred_schedule)
-    #                                 except:
-    #                                     response = str(pred_schedule)
-    #                             self.dialog_history['test_scheduling'].append({"role": "Staff", "content": response})
-    #                             role = f"{colorstr('blue', 'Staff')}"
-    #                             log(f"{role:<25}: {response}")
-    #                             yield 'Staff', preprocess_utterance(response), pred_schedule
-                            
-    #                         elif staff_response['type'] == 'text':
-    #                             response = staff_response['result']
-    #                             self.dialog_history['test_scheduling'].append({"role": "Staff", "content": response})
-    #                             role = f"{colorstr('blue', 'Staff')}"
-    #                             log(f"{role:<25}: {response}")
-    #                             yield 'Staff', preprocess_utterance(response), None
-
-    #                         accept_tries += 1
-
-    #             else:
-    #                 patient_response = self.end_phrase
-    #                 self.dialog_history['test_scheduling'].append({"role": "Patient", "content": patient_response})
-    #                 role = f"{colorstr('green', 'Patient')} ({gt_data[i]['preference']})"
-    #                 log(f"{role:<25}: {patient_response}")
-    #                 yield 'Patient', preprocess_utterance(patient_response), None
-
-    #             break

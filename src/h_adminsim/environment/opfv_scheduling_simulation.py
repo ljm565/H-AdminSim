@@ -528,7 +528,9 @@ class OPFVSchedulingSimulation:
                 raise TypeError(colorstr("red", "Error: Unexpected return type from scheduling method."))
 
         # If tool calling fails, fallback to LLM-based scheduling
-        except:
+        except Exception as e:
+            log(f'Exception occured: {e}', 'warning')
+            
             if self.scheduling_strategy == 'tool_calling':
                 log('Failed to select an appropriate tool. Falling back to reasoning-based scheduling.', level='warning')
             
@@ -540,11 +542,12 @@ class OPFVSchedulingSimulation:
                 fhir_integration=self.fhir_integration and doctor_information is None,
                 express_detail=True
             )
+            current_time = f"{self.environment.current_time} (Date: {iso_to_date(self.environment.current_time)}, Time: {round(iso_to_hour(self.environment.current_time), 3)})"
             user_prompt = self.admin_staff_agent.scheduling_user_prompt_template.format(
                 START_HOUR=self._START_HOUR,
                 END_HOUR=self._END_HOUR,
                 TIME_UNIT=self._TIME_UNIT,
-                CURRENT_TIME=self.environment.current_time,
+                CURRENT_TIME=current_time,
                 DEPARTMENT=department,
                 PREFERENCE=known_condition['patient_intention'], 
                 RESCHEDULING_FLAG=reschedule_desc,

@@ -680,7 +680,7 @@ class SchedulingRule:
             unscheduled_search (list): Codes the backtracker could not place.
 
         Returns:
-            dict: `{'tests', 'test_visit_dates', 'all_results_ready_at', 'unscheduled', 'status'}`.
+            dict: `{'test_schedule', 'test_visit_dates', 'all_results_ready_at', 'unscheduled', 'status'}`.
         """
         unscheduled = sorted(set(unscheduled_input) | set(unscheduled_search))
         test_visit_dates = sorted({a['date'] for a in placed.values()})
@@ -690,7 +690,7 @@ class SchedulingRule:
                 all_ready = a['result_ready_at']
         status = 'partial' if unscheduled else 'ok'
         return {
-            'tests': placed,
+            'test_schedule': placed,
             'test_visit_dates': test_visit_dates,
             'all_results_ready_at': all_ready,
             'unscheduled': unscheduled,

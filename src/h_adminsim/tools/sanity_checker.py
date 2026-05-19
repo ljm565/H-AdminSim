@@ -360,6 +360,11 @@ class SanityChecker:
             elif preference == 'batch':
                 optimal = rule.schedule_tests_batch(test_device_information, test_codes_list)
 
+            # Simple post-processing
+            for _test in optimal['test_schedule'].values():
+                _test['start'] = iso_to_hour(_test['start'])
+                _test['end'] = iso_to_hour(_test['end'])
+
         if optimal:
             preference = gt_patient_condition.get('preference')
             if preference == 'batch':
@@ -371,6 +376,10 @@ class SanityChecker:
             try:
                 if optimal['all_results_ready_at'] is not None and compare_iso_time(prediction['all_results_ready_at'], optimal['all_results_ready_at']):
                     return False, ts_codes['preference']['asap']
+                
+                if len(optimal['test_schedule']) > len(prediction['test_schedule']):
+                    return False, ts_codes['coverage']
+            
             except:
                 return False, ts_codes['format']
 
