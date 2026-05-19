@@ -438,14 +438,30 @@ class HospitalEnvironment:
                         self.booking_num[pred['attending_physician']] += 1
             
             self.waiting_list = sorted([(i, s) for i, s in enumerate(self.patient_schedules) if s['waiting_order'] >= 0], key=lambda x: x[1]['waiting_order'])
-            
-            log(f"Resumed hospital time set to {self.current_time}.")
-            log(f"Resumed hospital environment with {len(self.patient_schedules)} patient schedules.")
-            log(f"Resumed waiting list with {len(self.waiting_list)} patient schedules.")
-            log(f"Current booking numbers per doctor: {self.booking_num}")
 
-            self.update_current_time()
-            self.update_patient_status()
+        if 'follow_up_visit_scheduling' in agent_results:
+            statuses = [x for y in agent_results['follow_up_visit_scheduling']['status'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
+            preds = [x for y in agent_results['follow_up_visit_scheduling']['pred'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
+            for status, pred in zip(statuses, preds):
+                if isinstance(status, bool) and status:
+                    # Mirror update_env: skip patient_schedules append and booking_num when follow-up has no doctor visit
+                    if not pred.get('schedule'):
+                        continue
+
+                    if 'patient' in pred:
+                        self.patient_schedules.append(pred)
+                        self.current_time = pred['last_updated_time']
+
+                    if 'status' in pred and not pred['status'] == SCHEDULE_STATUS['cancelled']:
+                        self.booking_num[pred['attending_physician']] += 1
+
+        log(f"Resumed hospital time set to {self.current_time}.")
+        log(f"Resumed hospital environment with {len(self.patient_schedules)} patient schedules.")
+        log(f"Resumed waiting list with {len(self.waiting_list)} patient schedules.")
+        log(f"Current booking numbers per doctor: {self.booking_num}")
+
+        self.update_current_time()
+        self.update_patient_status()
     
 
     def schedule_cancel_event(self, idx: int, verbose: bool = False):
