@@ -367,6 +367,13 @@ class Simulator:
                         done_patients[task_name].add(done['patient'])
                     except (KeyError, TypeError):
                         continue
+            elif task_name == 'follow_up_visit_scheduling':
+                done_patients[task_name] = set()
+                for done in result['gt']:
+                    try:
+                        done_patients[task_name].add(done['patient_fv']['patient'])
+                    except (KeyError, TypeError):
+                        continue
         
         # Updated doctor schedules based on the resumed results
         if 'first_visit_scheduling' in agent_results:
@@ -377,6 +384,27 @@ class Simulator:
                 if status and 'status' in pred and pred['status'] != SCHEDULE_STATUS['cancelled']:
                     fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].append(pred['schedule'])
                     fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].sort()
+            
+        if 'follow_up_visit_scheduling' in agent_results:
+            fixed_schedule = agent_simulation_data['doctor']
+            test_information = agent_simulation_data['test']
+            device_to_schedule = {device: info['schedule'] for _, tests in test_information.items() for test in tests for device, info in test['devices'].items()}
+            statuses = [x for y in agent_results['follow_up_visit_scheduling']['status'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
+            preds = [x for y in agent_results['follow_up_visit_scheduling']['pred'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
+            for status, pred in zip(statuses, preds):
+                if status and 'status' in pred and pred['status'] != SCHEDULE_STATUS['cancelled']:
+                    # Resume test-device schedule for follow-up patients
+                    for entry in pred['test']:
+                        (device, info), = entry.items()
+                        date, slot = info['date'], [info['start'], info['end']]
+                        dev_schedule = device_to_schedule[device]
+                        dev_schedule[date].append(slot)
+                        dev_schedule[date].sort()
+                    
+                    # Resume doctor schedule for follow-up patients
+                    if pred['schedule']:
+                        fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].append(pred['schedule'])
+                        fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].sort()
         
         for task, patients in done_patients.items():
             log(f"{task:<20}: {colorstr(len(patients))} patient(s) resumed")
@@ -436,7 +464,7 @@ class Simulator:
                 first_queue = [x for x in agent_simulation_data['agent_data'] if x[0]['visit_type'] == 'first_visit']
                 pending = dict(agent_simulation_data.get('_pending_followups', {}))
                 ready = list(agent_simulation_data.get('_ready_followups', []))
-                processed_first_patients = set()
+                processed_first_patients = set(done_patients.get('first_visit_scheduling', set()))
 
                 while first_queue or ready or pending:
                     Simulator._promote_eligible_followups(pending, ready, environment, processed_first_patients)
