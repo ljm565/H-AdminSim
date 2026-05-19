@@ -30,14 +30,13 @@ class SchedulingRule:
                  fhir_integration: bool = False):
         # Initialize parameters
         self.environment = environment
-        self._current_time = self.environment.current_time
+        self.current_time = self.environment.current_time
         self._utc_offset = self.environment._utc_offset
         self._metadata = metadata
         self._department_data = department_data
         self._START_HOUR = self._metadata.get('time').get('start_hour')
         self._END_HOUR = self._metadata.get('time').get('end_hour')
         self._TIME_UNIT = self._metadata.get('time').get('interval_hour')
-        self.current_time = environment.current_time
         self.fhir_integration = fhir_integration
 
 
@@ -79,7 +78,7 @@ class SchedulingRule:
                         time_slot = valid_time[i:i+min_time_slot_n]
                         free_max_st, _ = convert_segment_to_time(self._START_HOUR, self._END_HOUR, self._TIME_UNIT, [time_slot[0]])
                         free_max_st_iso = get_iso_time(free_max_st, date, utc_offset=self._utc_offset)
-                        if compare_iso_time(free_max_st_iso, self._current_time):
+                        if compare_iso_time(free_max_st_iso, self.current_time):
                             candidate_schedules.add(f"{preferred_doctor};;;{free_max_st_iso}")
         
         candidate_schedules = list(candidate_schedules)
@@ -129,7 +128,7 @@ class SchedulingRule:
                                 time_slot = valid_time[i:i+min_time_slot_n]
                                 free_max_st, _ = convert_segment_to_time(self._START_HOUR, self._END_HOUR, self._TIME_UNIT, [time_slot[0]])
                                 free_max_st_iso = get_iso_time(free_max_st, date, utc_offset=self._utc_offset)
-                                if compare_iso_time(free_max_st_iso, self._current_time):
+                                if compare_iso_time(free_max_st_iso, self.current_time):
                                     candidate_schedules.add(f"{doctor};;;{free_max_st_iso}")
 
         return list(candidate_schedules)
@@ -168,7 +167,7 @@ class SchedulingRule:
                             time_slot = valid_time[i:i+min_time_slot_n]
                             free_max_st, _ = convert_segment_to_time(self._START_HOUR, self._END_HOUR, self._TIME_UNIT, [time_slot[0]])
                             free_max_st_iso = get_iso_time(free_max_st, date, utc_offset=self._utc_offset)
-                            if compare_iso_time(free_max_st_iso, self._current_time):
+                            if compare_iso_time(free_max_st_iso, self.current_time):
                                 candidate_schedules.add(f"{doctor};;;{free_max_st_iso}")
 
         return list(candidate_schedules)
@@ -379,7 +378,7 @@ class SchedulingRule:
                         )
                         start_iso = get_iso_time(start_hr, date, utc_offset=self._utc_offset)
                         end_iso = get_iso_time(end_hr, date, utc_offset=self._utc_offset)
-                        if compare_iso_time(after_iso, start_iso):
+                        if compare_iso_time(after_iso, start_iso) or not compare_iso_time(start_iso, self.current_time):
                             continue
                         candidates.append((device_name, date, start_iso, end_iso))
                         earliest_idx = i
@@ -396,6 +395,8 @@ class SchedulingRule:
                         )
                         start_iso = get_iso_time(start_hr, date, utc_offset=self._utc_offset)
                         end_iso = get_iso_time(end_hr, date, utc_offset=self._utc_offset)
+                        if not compare_iso_time(start_iso, self.current_time):
+                            continue
                         candidates.append((device_name, date, start_iso, end_iso))
 
         candidates.sort(key=lambda x: (x[2], x[0]))
@@ -555,7 +556,7 @@ class SchedulingRule:
         def compute_after_iso(code):
             info = tests[code]
             priority = info.get('priority', 0)
-            after_iso = self._current_time
+            after_iso = self.current_time
             for placed in assigned.values():
                 if placed['priority'] < priority and compare_iso_time(placed['end'], after_iso):
                     after_iso = placed['end']

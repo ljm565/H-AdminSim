@@ -3,6 +3,7 @@ from typing import Tuple, Union, Optional
 
 from h_adminsim.registry import STATUS_CODES
 from h_adminsim.environment.hospital import HospitalEnvironment
+from h_adminsim.utils import colorstr
 from h_adminsim.utils.common_utils import *
 
 
@@ -71,7 +72,8 @@ class SanityChecker:
                             prediction: dict, 
                             gt_patient_condition: dict, 
                             doctor_information: dict, 
-                            environment: HospitalEnvironment) -> bool:
+                            environment: HospitalEnvironment,
+                            min_time: Optional[str] = None ) -> bool:
         """
         Check if the predicted schedule is the earliest possible option.
 
@@ -80,6 +82,7 @@ class SanityChecker:
             gt_patient_condition (dict): Ground truth patient conditions used only for sanity checks.
             doctor_information (dict): Dictionary containing doctors' schedules and availability.
             environment (HospitalEnvironment): Environment object containing current time and UTC offset.
+            min_time (Optional[str], optional): The earliest acceptable ISO time. Defaults to None.
 
         Returns:
             bool: True if the predicted schedule is the earliest available, False otherwise.
@@ -97,6 +100,14 @@ class SanityChecker:
         pred_date = prediction['schedule'][pred_doctor_name]['date']
         current_time = environment.current_time
         utc_offset = environment._utc_offset
+
+        # Lower-bound validity assertions on the prediction itself.
+        pred_start_iso = get_iso_time(pred_start, pred_date, utc_offset=utc_offset)
+        assert compare_iso_time(pred_start_iso, current_time), \
+            colorstr("red", f"Predicted start ({pred_start_iso}) must be after current_time ({current_time})")
+        if min_time is not None:
+            assert not compare_iso_time(min_time, pred_start_iso), \
+                colorstr("red", f"Predicted start ({pred_start_iso}) must be at or after min_time ({min_time})")
 
         # Time segments
         prediction_schedule_segments = convert_time_to_segment(self._START_HOUR,
@@ -129,11 +140,27 @@ class SanityChecker:
                 if len(free_time):
                     valid_time_segments = [seg for seg in group_consecutive_segments(free_time) if len(seg) >= min_time_slot_n]
                     for valid_time in valid_time_segments:
-                        if (valid_time[0] < prediction_schedule_segments[0] and pred_date == date) or (len(valid_time) and compare_iso_time(pred_date, date)):
-                            free_max_st, _ = convert_segment_to_time(self._START_HOUR, self._END_HOUR, self._TIME_UNIT, [valid_time[0]])
-                            free_max_st_iso = get_iso_time(free_max_st, date, utc_offset=utc_offset)
-                            if compare_iso_time(free_max_st_iso, current_time):
-                                return False
+                        earlier_than_pred = (
+                            (pred_date == date and valid_time[0] < prediction_schedule_segments[0])
+                            or compare_iso_time(pred_date, date)
+                        )
+                        if not earlier_than_pred:
+                            continue
+
+                        for seg_idx in valid_time:
+                            if pred_date == date and seg_idx >= prediction_schedule_segments[0]:
+                                break
+                            if valid_time[-1] - seg_idx + 1 < min_time_slot_n:
+                                break
+
+                            seg_start, _ = convert_segment_to_time(self._START_HOUR, self._END_HOUR, self._TIME_UNIT, [seg_idx])
+                            seg_start_iso = get_iso_time(seg_start, date, utc_offset=utc_offset)
+                            if not compare_iso_time(seg_start_iso, current_time):
+                                continue
+                            if min_time is not None and compare_iso_time(min_time, seg_start_iso):
+                                continue
+
+                            return False
         return True
     
 
@@ -395,13 +422,14 @@ class SanityChecker:
 
                 # Check whether the schedule is the earliest or not
                 is_earliest = self.__check_is_earliest(
-                    {'schedule': pred_fu}, 
+                    {'schedule': pred_fu},
                     {**gt_patient_condition, 'preference': 'doctor', 'valid_from': None},
                     doctor_information,
                     environment,
+                    min_time=prediction.get('all_results_ready_at'),
                 )
 
                 if not is_earliest:
-                    return False, STATUS_CODES['preference']['asap']
+                    return False, ts_codes['fu_schedule']
 
         return True, STATUS_CODES['correct']
