@@ -425,14 +425,20 @@ class HospitalEnvironment:
                                     about doctors, patients, and other hospital resources.
             agent_results (dict): Previously saved results from the agent's simulation.
         """
+        new_time = None
         if 'first_visit_scheduling' in agent_results:
             statuses = [x for y in agent_results['first_visit_scheduling']['status'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
             preds = [x for y in agent_results['first_visit_scheduling']['pred'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
             for status, pred in zip(statuses, preds):
                 if isinstance(status, bool) and status:
+                    # Mirror update_env: skip when schedule is empty (e.g., follow-up with no doctor visit)
+                    if not pred.get('schedule'):
+                        continue
+                    
                     if 'patient' in pred:
                         self.patient_schedules.append(pred)
-                        self.current_time = pred['last_updated_time']
+                        if new_time is None or compare_iso_time(pred['last_updated_time'], new_time):
+                            new_time = pred['last_updated_time']
                     
                     if 'status' in pred and not pred['status'] == SCHEDULE_STATUS['cancelled']:
                         self.booking_num[pred['attending_physician']] += 1
@@ -444,24 +450,25 @@ class HospitalEnvironment:
             preds = [x for y in agent_results['follow_up_visit_scheduling']['pred'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
             for status, pred in zip(statuses, preds):
                 if isinstance(status, bool) and status:
-                    # Mirror update_env: skip patient_schedules append and booking_num when follow-up has no doctor visit
+                    # Mirror update_env: skip when schedule is empty (e.g., follow-up with no doctor visit)
                     if not pred.get('schedule'):
                         continue
 
                     if 'patient' in pred:
                         self.patient_schedules.append(pred)
-                        self.current_time = pred['last_updated_time']
+                        if new_time is None or compare_iso_time(pred['last_updated_time'], new_time):
+                            new_time = pred['last_updated_time']
 
                     if 'status' in pred and not pred['status'] == SCHEDULE_STATUS['cancelled']:
                         self.booking_num[pred['attending_physician']] += 1
+        if new_time:
+            self.update_current_time(new_time)
 
         log(f"Resumed hospital time set to {self.current_time}.")
         log(f"Resumed hospital environment with {len(self.patient_schedules)} patient schedules.")
         log(f"Resumed waiting list with {len(self.waiting_list)} patient schedules.")
         log(f"Current booking numbers per doctor: {self.booking_num}")
 
-        self.update_current_time()
-        self.update_patient_status()
     
 
     def schedule_cancel_event(self, idx: int, verbose: bool = False):
@@ -564,6 +571,7 @@ class HospitalEnvironment:
             min_iso_time = self.current_time
             max_iso_time = (str_to_datetime(self.current_time) + timedelta(hours=self.avg_gap)).isoformat(timespec='seconds')
             self.current_time = generate_random_iso_time_between(min_iso_time, max_iso_time)
+            self.update_patient_status()
         else:
             self.current_time = new_time
             self.update_patient_status()
@@ -618,9 +626,8 @@ class HospitalEnvironment:
             
             # To avoid None case of follow-up appointment
             if patient_schedule['schedule']:
-                self.update_current_time()
                 self.patient_schedules.append(patient_schedule)
-                self.update_patient_status()
+                self.update_current_time()
                 self.booking_num[patient_schedule['attending_physician']] += 1
 
         self.reset_variable()
