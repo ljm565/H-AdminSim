@@ -542,8 +542,12 @@ class HospitalEnvironment:
         """
         # Update new FHIR resources
         for resource_type, resource in fhir_resources.items():
-            if resource and resource_type.lower() in ['patient', 'appointment']:
-                self.fhir_manager.create(resource_type, resource, verbose=False)
+            if not resource or resource_type.lower() not in ['patient', 'appointment']:
+                continue
+            items = resource if isinstance(resource, list) else [resource]
+            for item in items:
+                if item:
+                    self.fhir_manager.create(resource_type, item, verbose=False)
                 
 
     def delete_fhir(self, fhir_resources: dict):
@@ -581,24 +585,58 @@ class HospitalEnvironment:
         """
         Update the status of each patient based on the current hospital time.
         """
+        def _update_status(st_iso_time: Optional[str] = None, 
+                           tr_iso_time: Optional[str] = None,
+                           is_not_yet: Optional[bool] = False) -> str:
+            """
+            Update the status.
+
+            Args:
+                st_iso_time (Optional[str], optional): Start time of the schedule in ISO format. Defaults to None.
+                tr_iso_time (Optional[str], optional): End time of the schedule in ISO format. Defaults to None.
+                is_not_yet (Optional[bool], optional): Flag indicating if the schedule is not yet started. Defaults to False.
+
+            Returns:
+                str: The updated status of the schedule.
+            """
+            if is_not_yet:
+                return SCHEDULE_STATUS['not_yet']
+            else:
+                if compare_iso_time(self.current_time, tr_iso_time):
+                    return SCHEDULE_STATUS['completed']
+                elif compare_iso_time(st_iso_time, self.current_time):
+                    return SCHEDULE_STATUS['scheduled']
+                else: 
+                    return SCHEDULE_STATUS['in_progress']
+            
         for schedule in self.patient_schedules:
+            # Update doctor consultation status
             if schedule.get('waiting_order', -1) < 0:
                 schedule['waiting_order'] = -1
 
             if schedule.get('status') == SCHEDULE_STATUS['cancelled']:
                 continue
-
-            tmp_st_iso_time = get_iso_time(schedule['schedule'][0], date=schedule['date'], utc_offset=self._utc_offset)
-            tmp_tr_iso_time = get_iso_time(schedule['schedule'][-1], date=schedule['date'], utc_offset=self._utc_offset)
-
-            if compare_iso_time(self.current_time, tmp_tr_iso_time):
-                status = SCHEDULE_STATUS['completed']
-            elif compare_iso_time(tmp_st_iso_time, self.current_time):
-                status = SCHEDULE_STATUS['scheduled']
-            else: 
-                status = SCHEDULE_STATUS['in_progress']
             
-            schedule['status'] = status
+            # To avoid None case of follow-up appointment
+            if schedule.get('schedule'):
+                tmp_st_iso_time = get_iso_time(schedule['schedule'][0], date=schedule['date'], utc_offset=self._utc_offset)
+                tmp_tr_iso_time = get_iso_time(schedule['schedule'][-1], date=schedule['date'], utc_offset=self._utc_offset)
+                schedule['status'] = _update_status(tmp_st_iso_time, tmp_tr_iso_time)
+            else:
+                schedule['status'] = _update_status(is_not_yet=True)
+
+            # Update test schedule status
+            for test_info in schedule.get('test') or []:
+                if test_info.get('status') == SCHEDULE_STATUS['cancelled']:
+                    continue
+                
+                # To avoid None case
+                if test_info.get('schedule'):
+                    tmp_st_iso_time = get_iso_time(test_info['schedule'][0], date=test_info['date'], utc_offset=self._utc_offset)
+                    tmp_tr_iso_time = get_iso_time(test_info['schedule'][-1], date=test_info['date'], utc_offset=self._utc_offset)
+                    test_info['status'] = _update_status(tmp_st_iso_time, tmp_tr_iso_time)
+                else:
+                    test_info['status'] = _update_status(is_not_yet=True)
 
 
     def reset_variable(self):
@@ -623,11 +661,11 @@ class HospitalEnvironment:
         """
         if status:
             self.update_fhir(fhir_resources)
+            self.patient_schedules.append(patient_schedule)
+            self.update_current_time()
             
             # To avoid None case of follow-up appointment
             if patient_schedule['schedule']:
-                self.patient_schedules.append(patient_schedule)
-                self.update_current_time()
                 self.booking_num[patient_schedule['attending_physician']] += 1
 
         self.reset_variable()

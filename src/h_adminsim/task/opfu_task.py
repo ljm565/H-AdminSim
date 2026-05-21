@@ -518,8 +518,8 @@ class OutpatientFollowUpScheduling(OutpatientTask):
         if status:
             # Test schedule
             for entry in prediction['test']:
-                (device, info), = entry.items()
-                date, slot = info['date'], [info['start'], info['end']]
+                device = entry['device']
+                date, slot = entry['date'], entry['schedule']
                 dev_schedule = device_to_schedule[device]
                 dev_schedule[date].append(slot)
                 dev_schedule[date].sort()

@@ -288,17 +288,17 @@ class SanityChecker:
             return False, ts_codes['format']
         
         test_schedule = prediction['test_schedule']
-        if not isinstance(test_schedule, list) or not test_schedule:
+        if not isinstance(test_schedule, list):
             return False, ts_codes['format']
-        for entry in test_schedule:
-            if not isinstance(entry, dict) or len(entry) != 1:
+        for schedule_info in test_schedule:
+            if not isinstance(schedule_info, dict):
                 return False, ts_codes['format']
 
         ############################ Coverage ############################
         # Check predicted test coverage
         gt_test_codes = {t['test_code'] for t in gt_patient_condition['required_tests']}
         try:
-            pred_test_codes = {info['code'] for test in prediction['test_schedule'] for info in test.values() }
+            pred_test_codes = {test['code'] for test in prediction['test_schedule']}
             if not pred_test_codes.issubset(gt_test_codes):
                 return False, ts_codes['coverage']
         except KeyError:
@@ -309,72 +309,71 @@ class SanityChecker:
         result_ready_iso_by_test, date_by_test = {}, {}
         utc_offset = environment._utc_offset
         try:
-            for entry in test_schedule:
-                for device, schedule_info in entry.items():
-                    tc, pr = schedule_info['code'], schedule_info['priority']
-                    date, start, end = str(schedule_info['date']), float(schedule_info['start']), float(schedule_info['end'])
-                    start_iso = get_iso_time(start, date, utc_offset=utc_offset)
-                    end_iso = get_iso_time(end, date, utc_offset=utc_offset)
+            for schedule_info in test_schedule:
+                tc, pr = schedule_info['code'], schedule_info['priority']
+                date, start, end = str(schedule_info['date']), float(schedule_info['start']), float(schedule_info['end'])
+                start_iso = get_iso_time(start, date, utc_offset=utc_offset)
+                end_iso = get_iso_time(end, date, utc_offset=utc_offset)
+                device = schedule_info['device']
 
-                    # Schedule validity
-                    if not (start < end and start >= self._START_HOUR and end <= self._END_HOUR):
-                        return False, ts_codes['schedule']
-                    
-                    # Start must be later than current_time
-                    if not compare_iso_time(start_iso, environment.current_time):
-                        return False, ts_codes['schedule']
-                    
-                    # Test start_time must be later than the previous end_time
-                    if prev_end_time is not None and compare_iso_time(prev_end_time, start_iso):
-                        return False, ts_codes['schedule']
-                    prev_end_time = end_iso
-                    
-                    # Duration check
-                    device_duration = test_information[tc]['duration_hour']
-                    if Decimal(str(end)) - Decimal(str(start)) != Decimal(str(device_duration)):
-                        return False, ts_codes['duration']
-                    
-                    # Priority check
-                    if prev_priority > pr:
-                        return False, ts_codes['priority']
-                    prev_priority = pr
+                # Schedule validity
+                if not (start < end and start >= self._START_HOUR and end <= self._END_HOUR):
+                    return False, ts_codes['schedule']
+                
+                # Start must be later than current_time
+                if not compare_iso_time(start_iso, environment.current_time):
+                    return False, ts_codes['schedule']
+                
+                # Test start_time must be later than the previous end_time
+                if prev_end_time is not None and compare_iso_time(prev_end_time, start_iso):
+                    return False, ts_codes['schedule']
+                prev_end_time = end_iso
+                
+                # Duration check
+                device_duration = test_information[tc]['duration_hour']
+                if Decimal(str(end)) - Decimal(str(start)) != Decimal(str(device_duration)):
+                    return False, ts_codes['duration']
+                
+                # Priority check
+                if prev_priority > pr:
+                    return False, ts_codes['priority']
+                prev_priority = pr
 
-                    # Time conflict
-                    fixed = test_information[tc]['devices'][device]['schedule'][date]
-                    fixed_intervals = [
-                        [s['start'], s['end']] if isinstance(s, dict) else s for s in fixed
-                    ]
-                    pred_segments = convert_time_to_segment(
-                        self._START_HOUR, self._END_HOUR, self._TIME_UNIT, [start, end]
-                    )
-                    fixed_segments = sum(
-                        [convert_time_to_segment(self._START_HOUR, self._END_HOUR, self._TIME_UNIT, fs)
-                        for fs in fixed_intervals], [],
-                    )
-                    if set(pred_segments) & set(fixed_segments):
-                        return False, ts_codes['conflict']
-                    
-                    # Update conditions
-                    result_ready_iso_by_test[tc] = schedule_info['result_ready_at']
-                    date_by_test[tc] = date
+                # Time conflict
+                fixed = test_information[tc]['devices'][device]['schedule'][date]
+                fixed_intervals = [
+                    [s['start'], s['end']] if isinstance(s, dict) else s for s in fixed
+                ]
+                pred_segments = convert_time_to_segment(
+                    self._START_HOUR, self._END_HOUR, self._TIME_UNIT, [start, end]
+                )
+                fixed_segments = sum(
+                    [convert_time_to_segment(self._START_HOUR, self._END_HOUR, self._TIME_UNIT, fs)
+                    for fs in fixed_intervals], [],
+                )
+                if set(pred_segments) & set(fixed_segments):
+                    return False, ts_codes['conflict']
+                
+                # Update conditions
+                result_ready_iso_by_test[tc] = schedule_info['result_ready_at']
+                date_by_test[tc] = date
         except:
             return False, ts_codes['format']
 
         ############################ Dependency / avoid_same_day ############################
-        for entry in test_schedule:
-            for device, schedule_info in entry.items():
-                tc = schedule_info['code']
-                start_iso = get_iso_time(schedule_info['start'], schedule_info['date'], utc_offset=utc_offset)
+        for schedule_info in test_schedule:
+            tc = schedule_info['code']
+            start_iso = get_iso_time(schedule_info['start'], schedule_info['date'], utc_offset=utc_offset)
 
-                # Test dependency condition
-                for dep in test_information[tc]['depends_on']:
-                    if dep in result_ready_iso_by_test and compare_iso_time(result_ready_iso_by_test[dep], start_iso):
-                        return False, ts_codes['dependency']
-                
-                # Avoid same day condition
-                for other in test_information[tc]['avoid_same_day']:
-                    if other in date_by_test and date_by_test[other] == date_by_test[tc]:
-                        return False, ts_codes['avoid_same_day']
+            # Test dependency condition
+            for dep in test_information[tc]['depends_on']:
+                if dep in result_ready_iso_by_test and compare_iso_time(result_ready_iso_by_test[dep], start_iso):
+                    return False, ts_codes['dependency']
+            
+            # Avoid same day condition
+            for other in test_information[tc]['avoid_same_day']:
+                if other in date_by_test and date_by_test[other] == date_by_test[tc]:
+                    return False, ts_codes['avoid_same_day']
 
         ############################ Schedule optimality ############################
         # Compute the rule-based optimum only after the predicted schedule has passed all validity checks.

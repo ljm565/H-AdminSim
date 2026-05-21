@@ -25,6 +25,7 @@ SCHEDULE_STATUS = {
     'in_progress': 'in_progress',
     'completed': 'completed',
     'cancelled': 'cancelled',
+    'not_yet': 'not_yet',
 }
 DEPARTMENT_NORMALIZATION = {
     'rheumatory': 'rheumatology',

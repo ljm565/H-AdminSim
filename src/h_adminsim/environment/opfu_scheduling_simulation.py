@@ -205,7 +205,7 @@ class OPFUSchedulingSimulation:
                     for dev in info.get('devices', {})
                 }
 
-                latest, test_visit_dates = None, set()
+                latest, test_visit_dates, test_schedule = None, set(), []
                 for entry in text_dict['test_schedule']:
                     assert isinstance(entry, dict) and len(entry) == 1
                     dev = next(iter(entry))
@@ -217,7 +217,7 @@ class OPFUSchedulingSimulation:
                     t = code_to_test[code]
                     end_iso = get_iso_time(end, date, utc_offset)
                     result_ready_at = add_hours_to_iso(end_iso, t['result_hours'])
-                    entry[dev] = {
+                    test_schedule.append({
                         'name': t['name'],
                         'code': code,
                         'device': dev,
@@ -226,7 +226,7 @@ class OPFUSchedulingSimulation:
                         'end': end,
                         'result_ready_at': result_ready_at,
                         'priority': t['priority'],
-                    }
+                    })
                     test_visit_dates.add(date)
                     if latest is None or compare_iso_time(result_ready_at, latest):
                         latest = result_ready_at
@@ -285,14 +285,12 @@ class OPFUSchedulingSimulation:
             # Test post-processing
             required_tests = data['test_schedule']
             for _, values in required_tests.items():
-                device_code = values['device']
                 st_hour, tr_hour = iso_to_hour(values['start']), iso_to_hour(values['end'])
                 tmp_schedule = {**values}
                 tmp_schedule['start'] = st_hour
                 tmp_schedule['end'] = tr_hour
-                schedule['test_schedule'].append(
-                    {device_code: tmp_schedule}
-                )
+                schedule['test_schedule'].append(tmp_schedule)
+            
             return schedule
 
 
@@ -701,16 +699,15 @@ class OPFUSchedulingSimulation:
 
                                 # Build a humanized summary of every test slot
                                 parts = []
-                                for entry in pred_test_schedules:
-                                    for _, slot in entry.items():
-                                        parts.append(
-                                            f"{slot['name']} on {slot['date']} from {slot['start']} to {slot['end']}"
-                                        )
+                                for test_info in pred_test_schedules:
+                                    parts.append(
+                                        f"{test_info['name']} on {test_info['date']} from {test_info['start']} to {test_info['end']}"
+                                    )
 
                                 # Notify the patient of any required tests that the agent could not
                                 # fit within the simulation window (no deferred booking is attempted).
                                 required_test_codes = {t['test_code'] for t in gt_patient_condition.get('required_tests', [])}
-                                unscheduled_tests = {value['name'] for entry in pred_test_schedules for value in entry.values() if value['code'] not in required_test_codes}
+                                unscheduled_tests = {test_info['name'] for test_info in pred_test_schedules if test_info['code'] not in required_test_codes}
                                 if unscheduled_tests:
                                     parts.append(
                                         f"however, the scheduling for {', '.join(sorted(unscheduled_tests))} test(s) will be arranged later"
@@ -868,6 +865,11 @@ class OPFUSchedulingSimulation:
             try:
                 fu_slot = pred_schedule['fu_schedule']
                 fu_schedule = fu_slot[next(iter(fu_slot))] if fu_slot else None
+                
+                # Post-process the schedule format
+                for item in pred_schedule['test_schedule']:
+                    item['schedule'] = [item.pop('start'), item.pop('end')]
+                
                 prediction = {
                     'visit_type': 'follow_up_visit',
                     'patient': staff_known_data['patient_fv']['patient'],
