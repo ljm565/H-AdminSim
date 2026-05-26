@@ -352,6 +352,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
         """
         # POST/PUT to FHIR
         fhir_patient, fhir_appointment = None, None
+        fhir_test_appointments = []
         if status and self.fhir_integration:
             if patient_information is not None:
                 fhir_patient = DataConverter.data_to_patient(
@@ -360,7 +361,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                         'department': deepcopy(self._department_data),
                         'patient': {
                             prediction['patient']: {
-                                'department': prediction['department'], 
+                                'department': prediction['department'],
                                 'gender': patient_information['gender'],
                                 'telecom': [{'system': 'phone', 'value': patient_information['phone_number'], 'use': 'mobile'}],
                                 'birthDate': personal_id_to_birth_date(patient_information['personal_id']),
@@ -370,17 +371,28 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                         }
                     }
                 )[0]
-            
+
             # To avoid None case of follow-up appointment
             if prediction['schedule']:
-                fhir_appointment = DataConverter.get_fhir_appointment(data={'metadata': deepcopy(self._metadata),
-                                                                            'department': deepcopy(self._department_data),
-                                                                            'information': deepcopy(prediction)})
-            
+                fhir_appointment = DataConverter.get_fhir_appointment(data={
+                    'metadata': deepcopy(self._metadata),
+                    'department': deepcopy(self._department_data),
+                    'information': deepcopy(prediction)
+                })
+
+            # Tests can be booked even when the follow-up consultation slot is out of range
+            if prediction.get('test'):
+                fhir_test_appointments = DataConverter.get_fhir_test_appointments(data={
+                    'metadata': deepcopy(self._metadata),
+                    'department': deepcopy(self._department_data),
+                    'information': deepcopy(prediction),
+                })
+
+        appointments = ([fhir_appointment] if fhir_appointment else []) + fhir_test_appointments
         environment.update_env(
-            status=status, 
+            status=status,
             patient_schedule=prediction,
-            fhir_resources={'Patient': fhir_patient, 'Appointment': fhir_appointment}
+            fhir_resources={'Patient': fhir_patient, 'Appointment': appointments}
         )
             
 

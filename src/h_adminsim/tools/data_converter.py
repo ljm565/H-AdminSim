@@ -21,6 +21,54 @@ class DataConverter:
         self.fhir_url = config.fhir_url
         data_dir = os.path.join(config.project, config.data_name, 'data')
         self.data_files = get_files(data_dir, ext='json')
+
+
+    @staticmethod
+    def _build_test_appointment(hospital_name: str,
+                                patient_id: str,
+                                patient_name: str,
+                                device_name: str,
+                                date: str,
+                                schedule_time_range: list,
+                                start_hour: float,
+                                end_hour: float,
+                                interval_hour: float,
+                                utc_offset: str) -> dict:
+        """
+        Build a single Device-based test `Appointment` resource (Device + Patient).
+
+        Args:
+            hospital_name (str): Hospital identifier used to compute the device ID.
+            patient_id (str): Pre-resolved patient FHIR ID for the Patient participant.
+            patient_name (str): Patient's full name, used as the participant display label.
+            device_name (str): Device identifier; used both for ID generation and as the participant display label.
+            date (str): Test date (ISO `YYYY-MM-DD`).
+            schedule_time_range (list[float]): Start/end hour pair describing the test window (e.g. `[10.0, 10.5]`).
+                                               Discretized into segments via `interval_hour`.
+            start_hour (float): Day-window start hour for segment indexing.
+            end_hour (float): Day-window end hour for segment indexing.
+            interval_hour (float): Time-slot granularity in hours.
+            utc_offset (str): UTC offset string used to render ISO `start`/`end` timestamps.
+
+        Returns:
+            dict: A FHIR Appointment resource with `status='booked'` and Device + Patient participants.
+        """
+        device_id = get_device_id(hospital_name, device_name)
+        participant = [
+            {"actor": {"reference": f"Device/{device_id}", "display": device_name}, "status": "accepted"},
+            {"actor": {"reference": f"Patient/{patient_id}", "display": patient_name}, "status": "accepted"}
+        ]
+        schedule_segments = convert_time_to_segment(start_hour, end_hour, interval_hour, schedule_time_range)
+        appointment_id = get_appointment_id(device_id, date, schedule_segments[0], schedule_segments[-1])
+        return {
+            'resourceType': 'Appointment',
+            'id': appointment_id,
+            'status': 'booked',
+            'start': get_iso_time(schedule_time_range[0], date, utc_offset),
+            'end': get_iso_time(schedule_time_range[-1], date, utc_offset),
+            'slot': [{'reference': f'Slot/{get_slot_id(device_id, date, seg)}'} for seg in schedule_segments],
+            'participant': participant,
+        }
     
 
     @staticmethod
@@ -743,28 +791,15 @@ class DataConverter:
                     # Tests: emit booked when a concrete date is present
                     required_tests = appn.get('required_tests', [])
                     for test in required_tests:
-                        device_id = get_device_id(hospital_name, test['device_name'])
-                        participant = [
-                            {"actor": {"reference": f"Device/{device_id}", "display": test['device_name']}, "status": "accepted"},
-                            {"actor": {"reference": f"Patient/{patient_id}", "display": patient_name}, "status": "accepted"}
-                        ]
-                        date = test['date']
-                        schedule_time_range = test['schedule']
-                        schedule_segments = convert_time_to_segment(start_hour, end_hour, interval_hour, schedule_time_range)
-                        appointment_id = get_appointment_id(device_id, date, schedule_segments[0], schedule_segments[-1])
-                        appointment_obj = {
-                            'resourceType': 'Appointment',
-                            'id': appointment_id,
-                            'status': 'booked',
-                            'start': get_iso_time(schedule_time_range[0], date, utc_offset),
-                            'end': get_iso_time(schedule_time_range[-1], date, utc_offset),
-                            'slot': [{'reference': f'Slot/{get_slot_id(device_id, date, seg)}'} for seg in schedule_segments],
-                            'participant': participant
-                        }
+                        appointment_obj = DataConverter._build_test_appointment(
+                            hospital_name, patient_id, patient_name,
+                            test['device_name'], test['date'], test['schedule'],
+                            start_hour, end_hour, interval_hour, utc_offset,
+                        )
                         appointments.append(appointment_obj)
 
                         if save_dir:
-                            save_path = os.path.join(save_dir, f'{appointment_id}.fhir.json')
+                            save_path = os.path.join(save_dir, f"{appointment_obj['id']}.fhir.json")
                             if sanity_check:
                                 assert not os.path.exists(save_path), colorstr("red", f"Same file exists: {save_path}")
                             json_save_fast(
@@ -833,9 +868,52 @@ class DataConverter:
                 }
             )[0]
             return gt_resource
-    
 
-    def __call__(self, 
+
+    @staticmethod
+    def get_fhir_test_appointments(data: dict) -> list:
+        """
+        Build Device-based FHIR Appointment resources for each prescribed test in a follow-up prediction.
+
+        Args:
+            data (dict): Expected to contain 'metadata', 'department', and 'information'.
+                'information' is the prediction dict whose 'test' key holds a list of
+                {device_name: {'name', 'date', 'start', 'end', 'code'}} single-key dicts.
+
+        Returns:
+            list[dict]: A list of FHIR Appointment resources (empty when no tests).
+        """
+        metadata = data['metadata']
+        department = data['department']
+        info = data['information']
+        if not info.get('test'):
+            return []
+
+        hospital_name = metadata['hospital_name']
+        country_code = metadata.get('country_code', 'KR')
+        time_zone = metadata.get('timezone', None)
+        utc_offset = get_utc_offset(country_code, time_zone)
+        start_hour = metadata['time']['start_hour']
+        end_hour = metadata['time']['end_hour']
+        interval_hour = metadata['time']['interval_hour']
+        patient_name = info['patient']
+        patient_id = get_individual_id(
+            hospital_name,
+            department[info['department']]['code'].lower(),
+            patient_name,
+        )
+
+        appointments = []
+        for t in info['test']:
+            appointments.append(DataConverter._build_test_appointment(
+                hospital_name, patient_id, patient_name,
+                t['device'], t['date'], t['schedule'],
+                start_hour, end_hour, interval_hour, utc_offset,
+            ))
+        return appointments
+
+
+    def __call__(self,
                  output_dir: str,
                  sanity_check: bool = False) -> list[Information]:
         """

@@ -141,7 +141,7 @@ class HospitalEnvironment:
                     x for x in self.fhir_manager.read_all('Appointment', verbose=False)
                     if hospital_id in x['resource']['id'] and 'Dr.' in x['resource']['id']
                 ]
-                valid_len = len(list(filter(lambda x: x['visit_type'] == 'first_visit' and x['status'] != SCHEDULE_STATUS['cancelled'], self.patient_schedules)))
+                valid_len = len(list(filter(lambda x: x['schedule'] is not None and x['status'] != SCHEDULE_STATUS['cancelled'], self.patient_schedules)))
                 assert len(self.fhir_appointment) == valid_len, f"Mismatch in appointment count: expected {valid_len}, got {len(self.fhir_appointment)}"
                 break
             except AssertionError as e:
@@ -215,7 +215,12 @@ class HospitalEnvironment:
                     x for x in self.fhir_manager.read_all('Appointment', verbose=False)
                     if hospital_id in x['resource']['id'] and 'Dr.' not in x['resource']['id']
                 ]
-                valid_len = len(list(filter(lambda x: x['visit_type'] == 'follow_up_visit' and x['status'] != SCHEDULE_STATUS['cancelled'], self.patient_schedules)))
+                valid_len = 0
+                for appn in self.patient_schedules:
+                    if appn['visit_type'] == 'follow_up_visit':
+                        for t in appn.get('test') or []:
+                            if t.get('status') != SCHEDULE_STATUS['cancelled']:
+                                valid_len += 1
                 assert len(self.fhir_appointment) == valid_len, f"Mismatch in appointment count: expected {valid_len}, got {len(self.fhir_appointment)}"
                 break
             except AssertionError as e:
