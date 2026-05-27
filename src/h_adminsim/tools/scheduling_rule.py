@@ -315,12 +315,16 @@ class SchedulingRule:
 
 
     def _enumerate_device_slots(self,
+                                mode: str,
                                 test_info: dict,
                                 after_iso: str,
                                 forbidden_dates: set,
                                 extra_busy: Optional[dict] = None,
                                 on_date: Optional[str] = None,
-                                patient_busy: Optional[dict] = None) -> list:
+                                patient_busy: Optional[dict] = None,
+                                is_last_test: bool = False,
+                                is_last_in_priority_cluster: bool = False,
+                                placed_dates: Optional[set] = None) -> list:
         """
         Enumerate candidate (device, date, start_iso, end_iso) windows for a single test.
 
@@ -329,6 +333,7 @@ class SchedulingRule:
         into the device's pre-existing fixed segments before computing free time.
 
         Args:
+            mode (str): 'asap' or 'batch' — whether this enumeration is for the ASAP scheduler or the batch scheduler. Affects tie-breaking of candidates.
             test_info (dict): One entry from `filtered_test_device_information['test'][code]`.
             after_iso (str): Earliest acceptable ISO start time considering priority and depends_on conditions.
             forbidden_dates (set): Dates blocked by an already-placed test in `avoid_same_day`.
@@ -336,6 +341,12 @@ class SchedulingRule:
             on_date (Optional[str]): If set, only enumerate candidates on this YYYY-MM-DD date.
             patient_busy (Optional[dict]): `{date: [[start_hr, end_hr], ...]}` of intervals during which the patient is already occupied by previously-placed tests. 
                                            Applied to every device (a patient cannot be at two devices at once). Defaults to None.
+            is_last_test (bool): Whether this is the last test in the sequence. Defaults to False.
+            is_last_in_priority_cluster (bool): ASAP-only optimization flag. True if no subsequent test in
+                                                `ordered` shares this test's priority. Defaults to False.
+            placed_dates (Optional[set]): Set of dates already used by previously-placed tests in this branch.
+                                          Only consulted when `is_last_test and mode == 'batch'` to keep at most one
+                                          candidate (existing-date earliest if any, else new-date earliest). Defaults to None.
 
         Returns:
             list[tuple[str, str, str, str]]: `(device_name, date, start_iso, end_iso)` tuples
@@ -348,6 +359,7 @@ class SchedulingRule:
         patient_busy = patient_busy or {}
 
         for device_name, device_info in test_info.get('devices', {}).items():
+            allocate_first_fit = False
             device_schedule = device_info.get('schedule', {})
             extra = (extra_busy or {}).get(device_name, {})
 
@@ -387,6 +399,12 @@ class SchedulingRule:
                     if earliest_idx is None:
                         continue
 
+                    # When earliest idx is allocated — skip `latest` emission for any case where the end-of-
+                    # function trim will collapse this (device, date) down to a single candidate anyway.
+                    if is_last_test or (mode == 'asap' and is_last_in_priority_cluster):
+                        allocate_first_fit = True
+                        break
+
                     latest_idx = len(run) - min_time_slot_n
                     if latest_idx != earliest_idx:
                         window = run[latest_idx:latest_idx + min_time_slot_n]
@@ -399,7 +417,28 @@ class SchedulingRule:
                             continue
                         candidates.append((device_name, date, start_iso, end_iso))
 
+                if allocate_first_fit and mode == 'asap':
+                    break
+
         candidates.sort(key=lambda x: (x[2], x[0]))
+
+        if mode == 'asap':
+            if is_last_in_priority_cluster:
+                candidates = candidates[:1]  # earliest dominates — see `is_last_in_priority_cluster` docstring
+        elif mode == 'batch':
+            if is_last_test:
+                placed = placed_dates or set()
+                existing_earliest, new_earliest = None, None
+                for c in candidates:
+                    if c[1] in placed:
+                        existing_earliest = c
+                        break
+                    if new_earliest is None:
+                        new_earliest = c
+                candidates = [existing_earliest] if existing_earliest else ([new_earliest] if new_earliest else [])
+        else:
+            raise ValueError(f"Invalid mode: {mode}")
+
         return candidates
 
 
@@ -607,6 +646,10 @@ class SchedulingRule:
                     best['objective'] = obj
                 return
 
+            is_last_test = idx == len(ordered) - 1
+            is_last_in_priority_cluster = is_last_test or (
+                tests[ordered[idx]].get('priority', 0) < tests[ordered[idx + 1]].get('priority', 0)
+            )
             code = ordered[idx]
             info = tests[code]
             deps = info.get('depends_on') or []
@@ -628,8 +671,13 @@ class SchedulingRule:
                 )
 
             # Device check
+            print(idx, info['duration_hour'], info['result_hours'], after_iso)
+            placed_dates_set = {a['date'] for a in assigned.values()} if is_last_test else None
             candidates = self._enumerate_device_slots(
-                info, after_iso, forbidden, just_booked, patient_busy=patient_busy,
+                mode, info, after_iso, forbidden, just_booked,
+                patient_busy=patient_busy, is_last_test=is_last_test,
+                is_last_in_priority_cluster=is_last_in_priority_cluster,
+                placed_dates=placed_dates_set,
             )
 
             for device, date, start_iso, end_iso in candidates:
