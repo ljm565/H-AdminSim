@@ -818,10 +818,11 @@ class OPFUSchedulingSimulation:
             return doctor_information, test_device_information, result_dict, token_usage
         
         except ToolCallingError:
+            status = False
             result_dict = {
                 'gt': [gt_patient_condition],
                 'pred': [None],
-                'status': [False],
+                'status': [status],
                 'status_code': [STATUS_CODES['test_retrieve']['identify']],
                 'dialog': [preprocess_dialog(self.dialog_history['test_scheduling'])]
             }
@@ -830,10 +831,11 @@ class OPFUSchedulingSimulation:
             return doctor_information, test_device_information, result_dict, token_usage
 
         except SchedulingError:
+            status = False
             result_dict = {
                 'gt': [gt_patient_condition],
                 'pred': [None],
-                'status': [False],
+                'status': [status],
                 'status_code': [STATUS_CODES['format']],
                 'dialog': [preprocess_dialog(self.dialog_history['test_scheduling'])]
             }
@@ -843,12 +845,13 @@ class OPFUSchedulingSimulation:
         
         # Otherwise
         except Exception as e:
+            status = False
             status_code = STATUS_CODES['unexpected'].format(e=e)
             log(status_code, level='warning')
             result_dict = {
                 'gt': [gt_patient_condition],
                 'pred': [None],
-                'status': [False],
+                'status': [status],
                 'status_code': [status_code],
                 'dialog': [preprocess_dialog(self.dialog_history['test_scheduling'])]
             }
