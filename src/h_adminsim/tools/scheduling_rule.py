@@ -617,8 +617,7 @@ class SchedulingRule:
             return (pu, num_dates, max_ready)
 
         def lb_with_placement(idx, ready, date):
-            # If we place `code` here and subsequently place every remaining test,
-            # final per-priority unscheduled equals past skipped (≥ 0 per slot).
+            # Place `code` here and assume subsequently place every remaining test at the best position
             pu = pu_tuple(idx)
             hyp_ready = max([a['result_ready_at'] for a in assigned.values()] + [ready])
             if mode == 'asap':
@@ -628,7 +627,7 @@ class SchedulingRule:
             return (pu, len(hyp_dates), hyp_ready)
 
         def lb_with_skip(idx):
-            # If we skip `code` and subsequently place every remaining test.
+            # Skip `code` and subsequently place every remaining test.
             cur_priority = tests[ordered[idx]].get('priority', 0)
             pu = pu_tuple(idx, extra_skip_priority=cur_priority)
             cur_max_ready = max([a['result_ready_at'] for a in assigned.values()] + [''])
@@ -683,7 +682,7 @@ class SchedulingRule:
             for device, date, start_iso, end_iso in candidates:
                 ready = add_hours_to_iso(end_iso, info.get('result_hours', 0))
 
-                # Branch-and-bound prune: a feasible completion can be no better than the LB
+                # Branch-and-bound prune: optimistic LB assumes remaining tests add nothing to the objective — skip the candidate if even that bound can't beat best.
                 if best['objective'] is not None:
                     lb = lb_with_placement(idx, ready, date)
                     if lb >= best['objective']:
@@ -707,6 +706,7 @@ class SchedulingRule:
             # Try skipping this test (partial fallback). Prune only if strictly worse.
             if best['objective'] is None:
                 recurse(idx + 1)
+            # Best is partial: recurse into the skip branch only if dropping this test could lex-beat best.
             else:
                 lb = lb_with_skip(idx)
                 if lb < best['objective']:
