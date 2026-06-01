@@ -342,8 +342,8 @@ class SchedulingRule:
             patient_busy (Optional[dict]): `{date: [[start_hr, end_hr], ...]}` of intervals during which the patient is already occupied by previously-placed tests. 
                                            Applied to every device (a patient cannot be at two devices at once). Defaults to None.
             is_last_test (bool): Whether this is the last test in the sequence. Defaults to False.
-            is_last_in_priority_cluster (bool): ASAP-only optimization flag. True if no subsequent test in
-                                                `ordered` shares this test's priority. Defaults to False.
+            is_last_in_priority_cluster (bool): True if no subsequent test in `ordered` shares this test's priority. 
+                                                ASAP additionally collapses to one globally earliest candidate; batch collapses to one earliest per date. Defaults to False.
             placed_dates (Optional[set]): Set of dates already used by previously-placed tests in this branch.
                                           Only consulted when `is_last_test and mode == 'batch'` to keep at most one
                                           candidate (existing-date earliest if any, else new-date earliest). Defaults to None.
@@ -395,13 +395,13 @@ class SchedulingRule:
                         candidates.append((device_name, date, start_iso, end_iso))
                         earliest_idx = i
                         break
-
+                    
+                    # If no available earliest slot, skip the latest slot check since it would be redundant
                     if earliest_idx is None:
                         continue
 
-                    # When earliest idx is allocated — skip `latest` emission for any case where the end-of-
-                    # function trim will collapse this (device, date) down to a single candidate anyway.
-                    if is_last_test or (mode == 'asap' and is_last_in_priority_cluster):
+                    # Skip `latest` emission whenever this test is last in its priority cluster: with no
+                    if is_last_in_priority_cluster:
                         allocate_first_fit = True
                         break
 
@@ -413,8 +413,6 @@ class SchedulingRule:
                         )
                         start_iso = get_iso_time(start_hr, date, utc_offset=self._utc_offset)
                         end_iso = get_iso_time(end_hr, date, utc_offset=self._utc_offset)
-                        if not compare_iso_time(start_iso, self.current_time):
-                            continue
                         candidates.append((device_name, date, start_iso, end_iso))
 
                 if allocate_first_fit and mode == 'asap':
@@ -426,6 +424,7 @@ class SchedulingRule:
             if is_last_in_priority_cluster:
                 candidates = candidates[:1]  # earliest dominates — see `is_last_in_priority_cluster` docstring
         elif mode == 'batch':
+            # If an existing date exists, the earliest of that date; otherwise, the earliest in the whole
             if is_last_test:
                 placed = placed_dates or set()
                 existing_earliest, new_earliest = None, None
@@ -436,6 +435,15 @@ class SchedulingRule:
                     if new_earliest is None:
                         new_earliest = c
                 candidates = [existing_earliest] if existing_earliest else ([new_earliest] if new_earliest else [])
+            elif is_last_in_priority_cluster:
+                # Remain the earliest candidate per date
+                seen_dates = set()
+                pruned = []
+                for c in candidates:    # already sorted by (start_iso, device)
+                    if c[1] not in seen_dates:
+                        pruned.append(c)
+                        seen_dates.add(c[1])
+                candidates = pruned
         else:
             raise ValueError(f"Invalid mode: {mode}")
 
