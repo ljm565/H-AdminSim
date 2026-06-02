@@ -624,10 +624,57 @@ class SchedulingRule:
                 return (pu, max_ready)
             return (pu, num_dates, max_ready)
 
-        def lb_with_placement(idx, ready, date):
-            # Place `code` here and assume subsequently place every remaining test at the best position
+        def _future_max_ready_lb(hypo_end, hypo_ready, hypo_pri, base_max_ready, start_idx):
+            """Accumulate per-future-test minimum-possible `result_ready_at` for `ordered[start_idx..]`,
+            assuming each is eventually placed at its earliest feasible time given only priority and
+            depends_on constraints (resource/avoid_same_day/patient_busy are ignored, all of which only
+            push starts later — so the bound stays a true lower bound).
+
+            `hypo_*` dicts seed the hypothetical placement state (existing assigned + possibly the
+            current candidate). They are mutated in place as each future test's LB is folded in,
+            allowing later tests in the same call to chain off earlier-computed bounds.
+            """
+            max_lb = base_max_ready
+            for j in range(start_idx, len(ordered)):
+                u_code = ordered[j]
+                if u_code in hypo_ready:
+                    continue
+                u_info = tests[u_code]
+                u_priority = u_info.get('priority', 0)
+                u_after = self.current_time
+                # Priority hard constraint: u must start after every lower-priority hypothetical end.
+                for c, e in hypo_end.items():
+                    if hypo_pri[c] < u_priority and compare_iso_time(e, u_after):
+                        u_after = e
+                # depends_on: u must start after each dep's result_ready_at (real or LB).
+                for dep in u_info.get('depends_on') or []:
+                    if dep in hypo_ready and compare_iso_time(hypo_ready[dep], u_after):
+                        u_after = hypo_ready[dep]
+                u_end_lb = add_hours_to_iso(u_after, u_info.get('duration_hour', 0))
+                u_lb_ready = add_hours_to_iso(u_end_lb, u_info.get('result_hours', 0))
+                hypo_end[u_code] = u_end_lb
+                hypo_ready[u_code] = u_lb_ready
+                hypo_pri[u_code] = u_priority
+                if compare_iso_time(u_lb_ready, max_lb):
+                    max_lb = u_lb_ready
+            return max_lb
+
+        def lb_with_placement(idx, ready, end_iso, date):
+            # Place `code` here and fold in the minimum-possible result_ready_at of every remaining test via `_future_max_ready_lb`
             pu = pu_tuple(idx)
-            hyp_ready = max([a['result_ready_at'] for a in assigned.values()] + [ready])
+            base = max([a['result_ready_at'] for a in assigned.values()] + [ready])
+
+            # Get hypothetical schedule states
+            hypo_end = {c: a['end'] for c, a in assigned.items()}
+            hypo_ready = {c: a['result_ready_at'] for c, a in assigned.items()}
+            hypo_pri = {c: a['priority'] for c, a in assigned.items()}
+            code = ordered[idx]
+            hypo_end[code] = end_iso
+            hypo_ready[code] = ready
+            hypo_pri[code] = tests[code].get('priority', 0)
+
+            hyp_ready = _future_max_ready_lb(hypo_end, hypo_ready, hypo_pri, base, idx + 1)
+
             if mode == 'asap':
                 return (pu, hyp_ready)
             hyp_dates = {a['date'] for a in assigned.values()}
@@ -635,13 +682,20 @@ class SchedulingRule:
             return (pu, len(hyp_dates), hyp_ready)
 
         def lb_with_skip(idx):
-            # Skip `code` and subsequently place every remaining test.
+            # Skip `code` (do not seed it into the hypothetical placement) but still fold in the minimum-possible result_ready_at of every remaining test
             cur_priority = tests[ordered[idx]].get('priority', 0)
             pu = pu_tuple(idx, extra_skip_priority=cur_priority)
-            cur_max_ready = max([a['result_ready_at'] for a in assigned.values()] + [''])
-            cur_dates = {a['date'] for a in assigned.values()}
+            base = max([a['result_ready_at'] for a in assigned.values()] + [self.current_time])
+
+            hypo_end = {c: a['end'] for c, a in assigned.items()}
+            hypo_ready = {c: a['result_ready_at'] for c, a in assigned.items()}
+            hypo_pri = {c: a['priority'] for c, a in assigned.items()}
+
+            cur_max_ready = _future_max_ready_lb(hypo_end, hypo_ready, hypo_pri, base, idx + 1)
+
             if mode == 'asap':
                 return (pu, cur_max_ready)
+            cur_dates = {a['date'] for a in assigned.values()}
             return (pu, len(cur_dates), cur_max_ready)
 
         def recurse(idx):
@@ -690,9 +744,9 @@ class SchedulingRule:
             for device, date, start_iso, end_iso in candidates:
                 ready = add_hours_to_iso(end_iso, info.get('result_hours', 0))
 
-                # Branch-and-bound prune: optimistic LB assumes remaining tests add nothing to the objective — skip the candidate if even that bound can't beat best.
+                # Branch-and-bound prune: LB folds in the minimum-possible `result_ready_at` of every remaining test (priority + depends_on chain)
                 if best['objective'] is not None:
-                    lb = lb_with_placement(idx, ready, date)
+                    lb = lb_with_placement(idx, ready, end_iso, date)
                     if lb >= best['objective']:
                         continue
 
