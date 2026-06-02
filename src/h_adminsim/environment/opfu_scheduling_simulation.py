@@ -230,6 +230,7 @@ class OPFUSchedulingSimulation:
                     test_visit_dates.add(date)
                     if latest is None or compare_iso_time(result_ready_at, latest):
                         latest = result_ready_at
+                text_dict['test_schedule'] = test_schedule
                 text_dict['test_visit_dates'] = list(test_visit_dates)
                 text_dict['all_results_ready_at'] = latest
 
