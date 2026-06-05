@@ -6,7 +6,7 @@ from sconf import Config
 from argparse import ArgumentParser
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
-from h_adminsim import SupervisorAgent
+from h_adminsim.agent import SupervisorAgent
 from h_adminsim.task.opfv_task import *
 from h_adminsim.task.opfu_task import *
 from h_adminsim.task.fhir_manager import FHIRManager

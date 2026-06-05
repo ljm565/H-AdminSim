@@ -9,7 +9,7 @@ from dotenv import load_dotenv, find_dotenv
 
 from patientsim import PatientAgent
 
-from h_adminsim import SchedulingAdminStaffAgent
+from h_adminsim.agent import SchedulingAdminStaffAgent
 from h_adminsim.task import OutpatientTask
 from h_adminsim.environment import OPFUSchedulingSimulation
 from h_adminsim.environment.hospital import HospitalEnvironment

@@ -8,7 +8,7 @@ from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor, as_completed
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
-from h_adminsim import SupervisorAgent
+from h_adminsim.agent import SupervisorAgent
 from h_adminsim.pipeline import Simulator
 from h_adminsim.task.opfv_task import *
 from h_adminsim.task.opfu_task import *

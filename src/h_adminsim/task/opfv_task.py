@@ -8,7 +8,7 @@ from dotenv import load_dotenv, find_dotenv
 
 from patientsim import PatientAgent
 
-from h_adminsim import (
+from h_adminsim.agent import (
     SupervisorAgent,
     IntakeAdminStaffAgent,
     SchedulingAdminStaffAgent,

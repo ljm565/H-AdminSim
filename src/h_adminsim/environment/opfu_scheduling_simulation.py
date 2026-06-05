@@ -10,7 +10,7 @@ from typing import Tuple, Union, Optional
 from langchain.agents import AgentExecutor
 from langchain_core.messages import HumanMessage, AIMessage
 
-from h_adminsim import SchedulingAdminStaffAgent
+from h_adminsim.agent import SchedulingAdminStaffAgent
 from h_adminsim.registry.errors import ToolCallingError, DataNotFoundError, SchedulingError
 from h_adminsim.registry import OPFU_PREFERENCE_PHRASE_PATIENT, OPFU_PREFERENCE_PHRASE_STAFF, STATUS_CODES
 from h_adminsim.environment.hospital import HospitalEnvironment

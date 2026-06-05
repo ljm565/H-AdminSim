@@ -2,7 +2,7 @@ from typing import Optional
 from patientsim import PatientAgent, CheckerAgent
 from patientsim.utils.common_utils import detect_op_termination
 
-from h_adminsim import IntakeAdminStaffAgent
+from h_adminsim.agent import IntakeAdminStaffAgent
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.common_utils import run_with_retry, preprocess_utterance
 

@@ -10,7 +10,7 @@ from typing import Tuple, Union, Optional
 from langchain.agents import AgentExecutor
 from langchain_core.messages import HumanMessage, AIMessage
 
-from h_adminsim import SchedulingAdminStaffAgent
+from h_adminsim.agent import SchedulingAdminStaffAgent
 from h_adminsim.registry.errors import (
     SchedulingError,
     ToolCallingError, 
