@@ -9,8 +9,8 @@ from dotenv import load_dotenv, find_dotenv
 
 from patientsim import PatientAgent
 
-from h_adminsim.agent import SchedulingAdminStaffAgent
 from h_adminsim.task import OutpatientTask
+from h_adminsim.agent import SchedulingAdminStaffAgent
 from h_adminsim.environment import OPFUSchedulingSimulation
 from h_adminsim.environment.hospital import HospitalEnvironment
 from h_adminsim.tools import DataConverter
@@ -46,9 +46,9 @@ class OutpatientFollowUpScheduling(OutpatientTask):
         load_dotenv(dotenv_path, override=True)
         self.name = 'follow_up_visit_scheduling'
         self.patient_model, self.patient_vllm_endpoint, self.patient_use_vllm \
-            = self._init_task_models(patient_model, patient_vllm_endpoint)
+            = init_task_models(patient_model, patient_vllm_endpoint)
         self.admin_staff_model, self.admin_staff_vllm_endpoint, self.admin_staff_use_vllm \
-            = self._init_task_models(admin_staff_model, admin_staff_vllm_endpoint)
+            = init_task_models(admin_staff_model, admin_staff_vllm_endpoint)
         
         # Initialize scheduling methods and a staff agent
         self.admin_staff_agent = SchedulingAdminStaffAgent(

@@ -53,24 +53,6 @@ class OutpatientTask:
                 self.token_stats['supervisor_token']['reasoning'].extend(supervisor_token['reasoning_tokens'])
     
     
-    def _init_task_models(self, model: str, vllm_endpoint: Optional[str] = None) -> Tuple[str, str, bool]:
-        """
-        Initialize the model for the task.
-
-        Args:
-            model (str): The model name.
-            vllm_endpoint (Optional[str], optional): The VLLM endpoint URL. Defaults to None.
-        
-        Returns:
-            Tuple[str, str, bool]: The model name, VLLM endpoint URL, vllm usage flag.
-        """
-        if any(keyword in model.lower() for keyword in ['gemini', 'gpt']):
-            return model, None, False
-        else:
-            assert vllm_endpoint is not None, colorstr("red", 'VLLM endpoint must be provided for non-Gemini/GPT models.')
-            return model, vllm_endpoint, True
-        
-    
     def get_patient_fhir_resource(self, 
                                   metadata: dict,
                                   department_data: dict,

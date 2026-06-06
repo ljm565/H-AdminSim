@@ -5,7 +5,6 @@ from decimal import getcontext
 from importlib import resources
 from typing import Tuple, Union, Optional
 from dotenv import load_dotenv, find_dotenv
-
 from patientsim import PatientAgent
 
 from h_adminsim.agent import (
@@ -47,9 +46,9 @@ class OutpatientFirstIntake(OutpatientTask):
         # Initialize variables
         self.name = 'first_visit_intake'
         self.patient_model, self.patient_vllm_endpoint, self.patient_use_vllm \
-            = self._init_task_models(patient_model, patient_vllm_endpoint)
+            = init_task_models(patient_model, patient_vllm_endpoint)
         self.admin_staff_model, self.admin_staff_vllm_endpoint, self.admin_staff_use_vllm \
-            = self._init_task_models(admin_staff_model, admin_staff_vllm_endpoint)
+            = init_task_models(admin_staff_model, admin_staff_vllm_endpoint)
         self.use_supervisor = True if isinstance(supervisor_agent, SupervisorAgent) else False
         self.supervisor_client = supervisor_agent if self.use_supervisor else None
         task_mechanism = 'Staff + Supervisor' if self.use_supervisor else 'Staff'
@@ -351,9 +350,9 @@ class OutpatientFirstScheduling(OutpatientTask):
         load_dotenv(dotenv_path, override=True)
         self.name = 'first_visit_scheduling'
         self.patient_model, self.patient_vllm_endpoint, self.patient_use_vllm \
-            = self._init_task_models(patient_model, patient_vllm_endpoint)
+            = init_task_models(patient_model, patient_vllm_endpoint)
         self.admin_staff_model, self.admin_staff_vllm_endpoint, self.admin_staff_use_vllm \
-            = self._init_task_models(admin_staff_model, admin_staff_vllm_endpoint)
+            = init_task_models(admin_staff_model, admin_staff_vllm_endpoint)
         
         # Initialize scheduling methods and a staff agent
         self.admin_staff_agent = SchedulingAdminStaffAgent(
