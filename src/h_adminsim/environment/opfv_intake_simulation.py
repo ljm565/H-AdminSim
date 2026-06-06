@@ -21,7 +21,6 @@ class OPFVIntakeSimulation:
         self.admin_staff_agent = admin_staff_agent
         self.checker_agent = checker_agent
         self.max_inferences = max_inferences
-        self.current_inference = 0  # Current inference index
         self._sanity_check()
 
 

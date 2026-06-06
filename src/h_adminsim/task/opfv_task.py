@@ -20,7 +20,6 @@ from h_adminsim.environment import (
 )
 from h_adminsim.environment.hospital import HospitalEnvironment
 from h_adminsim.tools.sanity_checker import SanityChecker
-from h_adminsim.tools import DataConverter, SchedulingRule
 from h_adminsim.registry import (
     STATUS_CODES,
     SCHEDULE_STATUS,
@@ -57,6 +56,7 @@ class OutpatientFirstIntake(OutpatientTask):
         self.max_inferences = intake_max_inference
         self.max_retries = max_retries
         self._init_last_task_prompt(admin_staff_last_task_user_prompt_path)
+        self.supervisor_reasoning_kwargs = {'reasoning_effort': 'low'} if self.use_supervisor and 'gpt-5' in self.supervisor_client.model.lower() else {}
         self.patient_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.patient_model.lower() else {}
         self.staff_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.admin_staff_model.lower() else {}
         log(f'Patient intake tasks are conducted by {colorstr(task_mechanism)}')
@@ -283,6 +283,7 @@ class OutpatientFirstIntake(OutpatientTask):
                 using_multi_turn=False,
                 verbose=False,
                 max_retries=self.max_retries,
+                **self.supervisor_reasoning_kwargs,
             )
         else:
             prediction_supervision = run_with_retry(

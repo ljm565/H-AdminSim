@@ -2,12 +2,12 @@ import os
 from importlib import resources
 from typing import Optional, Tuple
 
+from h_adminsim.agent import BaseAgent
 from h_adminsim.utils import colorstr, log
-from h_adminsim.client import GeminiClient, GPTClient, VLLMClient
 
 
 
-class SupervisorAgent:
+class SupervisorAgent(BaseAgent):
     def __init__(self,
                  target_task: str,
                  model: str,
@@ -16,22 +16,21 @@ class SupervisorAgent:
                  vllm_endpoint: Optional[str] = None,
                  system_prompt_path: Optional[str] = None,
                  user_prompt_path: Optional[str] = None,
-                 reasoning_effort: str = 'low',
+                 log_verbose: bool = True,
                  **kwargs):
         
-        # Initialize environment
-        self.target_task = target_task
-        self._init_env(**kwargs)
-        
-        # Initialize model, API client, and other parameters
-        self.model = model
-        self._init_model(
-            model=self.model,
+        super().__init__(
+            model=model,
             api_key=api_key,
             use_vllm=use_vllm,
             vllm_endpoint=vllm_endpoint,
-            reasoning_effort=reasoning_effort
+            **kwargs
         )
+        
+        # Initialize environment
+        self.target_task = target_task
+        assert self.target_task in ['first_visit_intake'], \
+            colorstr("red", f"Unsupported target task: {self.target_task}. Supported is `first_visit_intake`.")
         
         # Initialize prompt
         self.system_prompt, self.user_prompt_template = self._init_prompt(
@@ -39,58 +38,9 @@ class SupervisorAgent:
             user_prompt_path=user_prompt_path
         )
         
-        log(f"Supervisor agent for {self.target_task} initialized successfully", color=True)
+        if log_verbose:
+            log(f"Supervisor agent for {self.target_task} initialized successfully", color=True)
     
-
-    def _init_env(self, **kwargs):
-        """
-        Initialize the environment with default settings.
-        """
-        assert self.target_task in ['first_visit_intake'], \
-            colorstr("red", f"Unsupported target task: {self.target_task}. Supported is `first_visit_intake`.")
-
-
-    def _init_model(self,
-                    model: str,
-                    api_key: Optional[str] = None,
-                    use_vllm: bool = False,
-                    vllm_endpoint: Optional[str] = None,
-                    reasoning_effort: str = 'low'):
-        """
-        Initialize the model and API client based on the specified model type.
-
-        Args:
-            model (str): The administration office agent model to use.
-            api_key (Optional[str], optional): API key for the model. If not provided, it will be fetched from environment variables.
-                                               Defaults to None.
-            use_vllm (bool): Whether to use vLLM client.
-            vllm_endpoint (Optional[str], optional): Path to the vLLM server. Defaults to None.
-            reasoning_effort (str, optional): Reasoning effort level for the model. Defaults to 'low'.
-
-        Raises:
-            ValueError: If the specified model is not supported.
-        """
-        if 'gemini' in model.lower():
-            self.client = GeminiClient(model, api_key)
-            self.reasoning_kwargs = {}
-            if reasoning_effort:
-                log("'reasoning_effort' is not supported for Gemini models and will be ignored.", level='warning')
-        
-        elif 'gpt' in model.lower():       # TODO: Support o3, o4 models etc.
-            self.client = GPTClient(model, api_key)
-            self.reasoning_kwargs = {'reasoning_effort': reasoning_effort} if 'gpt-5' in model.lower() else {}
-            if 'gpt-5' not in model.lower() and reasoning_effort:
-                log(f"'reasoning_effort' is not supported for {model} model and will be ignored.", level='warning')
-        
-        elif use_vllm:
-            self.client = VLLMClient(model, vllm_endpoint)
-            self.reasoning_kwargs = {}
-            if reasoning_effort:
-                log("'reasoning_effort' is not supported for vLLM models and will be ignored.", level='warning')
-        
-        else:
-            raise ValueError(colorstr("red", f"Unsupported model: {model}. Supported models are 'gemini' and 'gpt'."))
-        
 
     def _init_prompt(self, 
                      system_prompt_path: Optional[str] = None, 
@@ -138,16 +88,6 @@ class SupervisorAgent:
                 user_prompt_template = f.read()
 
         return system_prompt, user_prompt_template
-    
-
-    def reset_history(self, verbose: bool = True):
-        """
-        Reset the conversation history.
-
-        Args:
-            verbose (bool): Whether to print verbose output. Defaults to True.
-        """
-        self.client.reset_history(verbose=verbose)
 
 
     def __call__(self,
@@ -166,12 +106,12 @@ class SupervisorAgent:
         Returns:
             str: The response from the patient agent.
         """
-        kwargs.update(self.reasoning_kwargs)
         response = self.client(
             user_prompt=user_prompt,
             system_prompt=self.system_prompt,
             using_multi_turn=using_multi_turn,
             verbose=verbose,
+            temperature=self.temperature,
             **kwargs
         )
         return response

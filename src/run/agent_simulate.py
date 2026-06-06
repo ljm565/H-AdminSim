@@ -50,7 +50,8 @@ def simulate(config, args, single_file=None):
             target_task='first_visit_intake',
             model=config.supervisor_model,
             use_vllm=use_vllm,
-            vllm_endpoint = config.vllm_url if use_vllm else None
+            vllm_endpoint = config.vllm_url if use_vllm else None,
+            temperature=0 if not 'gpt-5' in config.supervisor_model.lower() else 1
         )
         use_vllm = False if any(m in config.task_model.lower() for m in ['gpt', 'gemini']) else True
         _task = OutpatientFirstIntake(

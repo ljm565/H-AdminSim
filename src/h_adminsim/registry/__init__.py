@@ -3,3 +3,4 @@ from .variables import *
 from .models import *
 from .errors import STATUS_CODES
 from .phrases import *
+from .d_class import *

@@ -16,13 +16,13 @@ from fastapi import FastAPI, HTTPException
 
 import patientsim.utils as pu
 
+from h_adminsim.registry import PromptRequest
 from h_adminsim.registry.errors import ToolCallingError
 from h_adminsim.environment import OPFVSchedulingSimulation
 from h_adminsim.task.opfv_task import OutpatientFirstIntake
 from h_adminsim.environment.hospital import HospitalEnvironment
-from h_adminsim import IntakeAdminStaffAgent, SchedulingAdminStaffAgent
 from h_adminsim.tools import SchedulingRule, scheduling_tool_calling
-from h_adminsim.registry import PromptRequest
+from h_adminsim.agent import IntakeAdminStaffAgent, SchedulingAdminStaffAgent
 from h_adminsim.utils import log, colorstr, LOGGING_NAME
 from h_adminsim.utils.filesys_utils import json_load, json_save_fast
 

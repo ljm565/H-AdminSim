@@ -9,15 +9,15 @@ from langchain.agents import (
     create_openai_tools_agent, 
     create_tool_calling_agent, 
 )
-from patientsim.utils.common_utils import set_seed
-
+from h_adminsim.agent import BaseAgent
 from h_adminsim.utils import colorstr, log
+from h_adminsim.registry import ConversationState
 from h_adminsim.tools import SchedulingRule, create_tools
-from h_adminsim.client import GeminiClient, GPTClient, VLLMClient
 
 
 
-class SchedulingAdminStaffAgent:
+
+class SchedulingAdminStaffAgent(BaseAgent):
     def __init__(self,
                  target_task: str,
                  model: str,
@@ -31,19 +31,19 @@ class SchedulingAdminStaffAgent:
                  log_verbose: bool = True,
                  **kwargs):
         
-        # Initialize environment
-        self.target_task = target_task
-        self._init_env(**kwargs)
-        
-        # Initialize model, API client, and other parameters
-        self.model = model
-        self._init_model(
-            model=self.model,
+        super().__init__(
+            model=model,
             api_key=api_key,
             use_vllm=use_vllm,
             vllm_endpoint=vllm_endpoint,
+            **kwargs
         )
         
+        # Initialize environment
+        self.target_task = target_task
+        assert self.target_task in ['first_visit_scheduling', 'follow_up_visit_scheduling'], \
+            colorstr("red", f"Unsupported target task: {self.target_task}. Supported tasks are `first_visit_scheduling`, and `follow_up_visit_scheduling`.")
+
         # Initialize prompt
         self._init_prompt(
             system_prompt_path=system_prompt_path, 
@@ -60,11 +60,7 @@ class SchedulingAdminStaffAgent:
         """
         Initialize the environment with default settings.
         """
-        assert self.target_task in ['first_visit_intake', 'first_visit_scheduling', 'follow_up_visit_scheduling'], \
-            colorstr("red", f"Unsupported target task: {self.target_task}. Supported tasks are `first_visit_intake`, `first_visit_scheduling`, and `follow_up_visit_scheduling`.")
-
-        self.random_seed = kwargs.get('random_seed', None)
-        self.temperature = kwargs.get('temperature', 0.2)   # For various responses. If you want deterministic responses, set it to 0.
+        super()._init_env(**kwargs)
         self.general_greet = kwargs.get('general_greet', "How can I help you?")
         self.appn_greet = kwargs.get('appn_greet', "How would you like to schedule the appointment?")
         self.test_greet = kwargs.get('test_greet', "How would you like to schedule the test?")
@@ -104,39 +100,7 @@ class SchedulingAdminStaffAgent:
                 "How does this test plan sound: {schedule_summary}?",
             ]
         )
-        
-        # Set random seed for reproducibility
-        if self.random_seed:
-            set_seed(self.random_seed)
 
-
-    def _init_model(self,
-                    model: str,
-                    api_key: Optional[str] = None,
-                    use_vllm: bool = False,
-                    vllm_endpoint: Optional[str] = None):
-        """
-        Initialize the model and API client based on the specified model type.
-
-        Args:
-            model (str): The administration office agent model to use.
-            api_key (Optional[str], optional): API key for the model. If not provided, it will be fetched from environment variables.
-                                               Defaults to None.
-            use_vllm (bool): Whether to use vLLM client.
-            vllm_endpoint (Optional[str], optional): Path to the vLLM server. Defaults to None.
-
-        Raises:
-            ValueError: If the specified model is not supported.
-        """
-        if 'gemini' in model.lower():
-            self.client = GeminiClient(model, api_key)
-        elif 'gpt' in model.lower():       # TODO: Support o3, o4 models etc.
-            self.client = GPTClient(model, api_key)
-        elif use_vllm:
-            self.client = VLLMClient(model, vllm_endpoint)
-        else:
-            raise ValueError(colorstr("red", f"Unsupported model: {model}. Supported models are 'gemini' and 'gpt'."))
-        
 
     def _init_prompt(self, 
                      system_prompt_path: Optional[str] = None, 
@@ -217,16 +181,6 @@ class SchedulingAdminStaffAgent:
                 raise FileNotFoundError(colorstr("red", f"User prompt file not found: {sc_tool_calling_prompt_path}"))
             with open(sc_tool_calling_prompt_path, 'r') as f:
                 self.sc_tool_calling_prompt = f.read()
-    
-
-    def reset_history(self, verbose: bool = True):
-        """
-        Reset the conversation history.
-
-        Args:
-            verbose (bool): Whether to print verbose output. Defaults to True.
-        """
-        self.client.reset_history(verbose=verbose)
 
 
     def build_agent(self,
@@ -312,6 +266,23 @@ class SchedulingAdminStaffAgent:
             return_intermediate_steps=True,
         )
         return executor
+
+
+    def act(self, state: ConversationState) -> tuple[str, bool]:
+        """
+        MAS entry point: handle one scheduling turn from the shared conversation state.
+
+        Args:
+            state (ConversationState): Shared conversation state.
+
+        Returns:
+            tuple[str, bool]: ``(reply, is_done)``. Scheduling has no simple turn
+                budget, so completion currently defaults to ``False`` (the worker
+                keeps the floor); refine with a task-specific done-signal as needed.
+        """
+        user_prompt = state.messages[-1]["content"] if state.messages else ""
+        reply = self(user_prompt)
+        return reply, False
         
 
     def __call__(self,
