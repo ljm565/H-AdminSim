@@ -90,6 +90,19 @@ class SupervisorAgent(BaseAgent):
         return system_prompt, user_prompt_template
 
 
+    def act(self, state) -> tuple[str, bool]:
+        """
+        Not a MAS turn-taking agent.
+
+        ``SupervisorAgent`` is a post-hoc extractor invoked directly via
+        ``__call__``; it never participates in the MAS routing tree, so ``act``
+        is implemented only to satisfy the ``BaseAgent`` abstract contract.
+        """
+        raise NotImplementedError(
+            colorstr("red", "SupervisorAgent is not a MAS agent; call it directly via __call__.")
+        )
+
+
     def __call__(self,
                  user_prompt: str,
                  using_multi_turn: bool = False,

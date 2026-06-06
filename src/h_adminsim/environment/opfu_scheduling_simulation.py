@@ -81,7 +81,6 @@ class OPFUSchedulingSimulation:
             "Otherwise, briefly express dissatisfaction and state what you need instead."
         )
         self.end_phrase = "Thank you."
-        self._init_history()
 
     
     def _init_prompt(self, schedule_rejection_prompt_path: Optional[str] = None):
@@ -555,6 +554,7 @@ class OPFUSchedulingSimulation:
 
         # Initialize agents and result dictionary
         staff_token_callback = TokenUsageCallback()
+        self._init_history()
         self._init_agents(verbose=verbose)
         staff_token_stats = {}
         patient_info = self.environment.patient_schedules

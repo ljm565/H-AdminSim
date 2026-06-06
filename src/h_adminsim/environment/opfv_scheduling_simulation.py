@@ -62,6 +62,31 @@ class OPFVSchedulingSimulation:
         self.sanity_checker = sanity_checker
         self.rules = SchedulingRule(metadata, department_data, self.environment, self.fhir_integration)
         
+    
+    def _init_prompt(self, schedule_rejection_prompt_path: Optional[str] = None):
+        """
+        Initialize the schedule rejection system prompt for the administration staff agent.
+
+        Args:
+            schedule_rejection_prompt_path (Optional[str], optional): Path to a custom schedule rejection system prompt file. 
+                                                                      If not provided, the default system prompt will be used. Defaults to None.
+
+        Raises:
+            FileNotFoundError: If the specified system prompt file does not exist.
+        """
+        # Initialilze with the default system prompt
+        if not schedule_rejection_prompt_path:
+            prompt_file_name = "opfv_schedule_patient_rejected_system.txt"
+            file_path = resources.files("h_adminsim.assets.prompts").joinpath(prompt_file_name)
+            self.rejection_system_prompt_template = file_path.read_text()
+        
+        # User can specify a custom system prompt
+        else:
+            if not os.path.exists(schedule_rejection_prompt_path):
+                raise FileNotFoundError(colorstr("red", f"System prompt file not found: {schedule_rejection_prompt_path}"))
+            with open(schedule_rejection_prompt_path, 'r') as f:
+                self.rejection_system_prompt_template = f.read()
+
         # Additional prompts for streaming scheduling simulation
         self.patient_satisfaction_system_prompt = (
             "You are a patient looking to schedule an appointment. "
@@ -90,32 +115,6 @@ class OPFVSchedulingSimulation:
             "Otherwise, briefly express dissatisfaction and state what you need instead."
         )
         self.end_phrase = "Thank you."
-        self._init_history()
-
-    
-    def _init_prompt(self, schedule_rejection_prompt_path: Optional[str] = None):
-        """
-        Initialize the schedule rejection system prompt for the administration staff agent.
-
-        Args:
-            schedule_rejection_prompt_path (Optional[str], optional): Path to a custom schedule rejection system prompt file. 
-                                                                      If not provided, the default system prompt will be used. Defaults to None.
-
-        Raises:
-            FileNotFoundError: If the specified system prompt file does not exist.
-        """
-        # Initialilze with the default system prompt
-        if not schedule_rejection_prompt_path:
-            prompt_file_name = "opfv_schedule_patient_rejected_system.txt"
-            file_path = resources.files("h_adminsim.assets.prompts").joinpath(prompt_file_name)
-            self.rejection_system_prompt_template = file_path.read_text()
-        
-        # User can specify a custom system prompt
-        else:
-            if not os.path.exists(schedule_rejection_prompt_path):
-                raise FileNotFoundError(colorstr("red", f"System prompt file not found: {schedule_rejection_prompt_path}"))
-            with open(schedule_rejection_prompt_path, 'r') as f:
-                self.rejection_system_prompt_template = f.read()
 
 
     def _init_agents(self, verbose: bool = True):
@@ -791,6 +790,7 @@ class OPFVSchedulingSimulation:
 
         # Initialize agents and result dictionary
         staff_token_callback = TokenUsageCallback()
+        self._init_history()
         self._init_agents(verbose=verbose)
         staff_token_stats = {}
         filtered_doctor_information = self.environment.get_doctor_schedule(
@@ -1048,6 +1048,7 @@ class OPFVSchedulingSimulation:
 
         # Initialize agents and result dictionary
         result_dict = init_result_dict()
+        self._init_history()
         self._init_agents(verbose=verbose)
         patient_schedules = self.environment.patient_schedules if patient_schedules is None else patient_schedules
         doctor_information = self.environment.get_general_doctor_info_from_fhir() if self.fhir_integration else doctor_information
@@ -1196,6 +1197,7 @@ class OPFVSchedulingSimulation:
 
         # Initialize agents and result dictionary
         result_dict = init_result_dict()
+        self._init_history()
         self._init_agents(verbose=verbose)
         patient_schedules = self.environment.patient_schedules if patient_schedules is None else patient_schedules
         doctor_information = self.environment.get_general_doctor_info_from_fhir() if self.fhir_integration else doctor_information
@@ -1367,6 +1369,7 @@ class OPFVSchedulingSimulation:
 
         # Initialize agents and result dictionary
         staff_token_callback = TokenUsageCallback()
+        self._init_history()
         self._init_agents(verbose=verbose)
         staff_token_stats = {}
         filtered_doctor_information = self.environment.get_doctor_schedule(
