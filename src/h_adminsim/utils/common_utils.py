@@ -13,26 +13,6 @@ from h_adminsim.utils import Information, log, colorstr
 
 
 
-def init_task_models(model: str, 
-                     vllm_endpoint: Optional[str] = None) -> Tuple[str, str, bool]:
-    """
-    Initialize the model for the task.
-
-    Args:
-        model (str): The model name.
-        vllm_endpoint (Optional[str], optional): The VLLM endpoint URL. Defaults to None.
-    
-    Returns:
-        Tuple[str, str, bool]: The model name, VLLM endpoint URL, vllm usage flag.
-    """
-    if any(keyword in model.lower() for keyword in ['gemini', 'gpt']):
-        return model, None, False
-    else:
-        assert vllm_endpoint is not None, colorstr("red", 'VLLM endpoint must be provided for non-Gemini/GPT models.')
-        return model, vllm_endpoint, True
-
-
-
 def exponential_backoff(retry_count: int,
                         base_delay: int = 5,
                         max_delay: int = 65,
