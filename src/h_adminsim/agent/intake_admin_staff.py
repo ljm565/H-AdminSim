@@ -1,17 +1,17 @@
 import os
-from importlib import resources
 from typing import Optional
+from importlib import resources
+from patientsim.utils.common_utils import detect_op_termination
 
 from h_adminsim.agent import BaseAgent
 from h_adminsim.utils import colorstr, log
-from h_adminsim.registry import ConversationState
 
 
 
 class IntakeAdminStaffAgent(BaseAgent):
     def __init__(self,
                  model: str,
-                 department_list: list[str],
+                 department_list: Optional[list[str]] = None,
                  max_inferences: int = 5,
                  api_key: Optional[str] = None,
                  use_azure: bool = False,
@@ -35,16 +35,32 @@ class IntakeAdminStaffAgent(BaseAgent):
         )
         
         # Initialize environment
-        self.departments = ''.join([f'{i+1}. {department}\n' for i, department in enumerate(department_list)])
+        self.departments = ''   # Deferred; injected per-hospital via `set_departments`
         self.current_inference = 0  # Current inference index
         self.max_inferences = max_inferences    # Maximum number of inferences allowed
-        
+
         # Initialize prompt
         self._system_prompt_template = self._init_prompt(system_prompt_path)
-        self.build_prompt()
-        
+        if department_list is not None:
+            self.set_departments(department_list)
+        else:
+            self.build_prompt()
+
         if log_verbose:
             log("Intake adminStaffAgent initialized successfully", color=True)
+
+
+    def set_departments(self, department_list: list[str]):
+        """
+        Inject the (per-hospital) department list and re-render the system prompt.
+        Departments are only known at task call time, so the agent can be
+        constructed with departments deferred and have them set later.
+
+        Args:
+            department_list (list[str]): The list of available departments.
+        """
+        self.departments = ''.join([f'{i+1}. {department}\n' for i, department in enumerate(department_list)])
+        self.build_prompt()
     
 
     def _init_prompt(self, system_prompt_path: Optional[str] = None) -> str:
@@ -97,29 +113,42 @@ class IntakeAdminStaffAgent(BaseAgent):
             self.client.histories[0]['content'] = self.system_prompt
     
 
-    def act(self, state: ConversationState) -> tuple[str, bool]:
+    def act(self, 
+            user_prompt: str, 
+            using_multi_turn: bool = True,
+            verbose: bool = True,
+            sub_agents: Optional[dict] = None,
+            **kwargs) -> tuple[str, bool]:
         """
-        MAS entry point: handle one intake turn from the shared conversation state.
-
-        Pulls the latest user message from ``state``, calls the agent, and reports
-        whether intake is finished (the inference budget is exhausted).
+        Execute a single interaction step and determine whether the conversation should terminate.
 
         Args:
-            state (ConversationState): Shared conversation state.
+            user_prompt (str): The user prompt to send to the patient agent.
+            using_multi_turn (bool, optional): Whether to use multi-turn conversation. Defaults to True.
+            verbose (bool, optional): Whether to print verbose output. Defaults to True.
+            sub_agents (Optional[dict], optional): Optional dictionary of sub-agent descriptions to include in the system prompt. Defaults to None.
 
         Returns:
             tuple[str, bool]: ``(reply, is_done)``.
         """
-        user_prompt = state.messages[-1]["content"] if state.messages else ""
-        reply = self(user_prompt)
-        is_done = self.current_inference >= self.max_inferences
-        return reply, is_done
+        is_done = False
+        response = self(
+            user_prompt=user_prompt,
+            using_multi_turn=using_multi_turn,
+            verbose=verbose,
+            sub_agents=sub_agents,
+            **kwargs
+        )
+        if detect_op_termination(response) or self.current_inference >= self.max_inferences:
+            is_done = True
+        return response, is_done
 
 
     def __call__(self,
                  user_prompt: str,
                  using_multi_turn: bool = True,
                  verbose: bool = True,
+                 sub_agents: Optional[dict] = None,
                  **kwargs) -> str:
         """
         Call the patient agent with a user prompt and return the response.
@@ -128,6 +157,7 @@ class IntakeAdminStaffAgent(BaseAgent):
             user_prompt (str): The user prompt to send to the patient agent.
             using_multi_turn (bool, optional): Whether to use multi-turn conversation. Defaults to True.
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
+            sub_agents (Optional[dict], optional): Optional dictionary of sub-agent descriptions to include in the system prompt. Defaults to None.
 
         Returns:
             str: The response from the patient agent.

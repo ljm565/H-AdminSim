@@ -3,13 +3,12 @@ import json
 import random
 from decimal import getcontext
 from importlib import resources
-from typing import Tuple, Union, Optional
-from dotenv import load_dotenv, find_dotenv
 from patientsim import PatientAgent
+from dotenv import load_dotenv, find_dotenv
+from typing import Tuple, Union, Optional, TYPE_CHECKING
 
 from h_adminsim.agent import (
     SupervisorAgent,
-    IntakeAdminStaffAgent,
     SchedulingAdminStaffAgent,
 )
 from h_adminsim.task import OutpatientTask
@@ -26,29 +25,31 @@ from h_adminsim.registry import (
     OPFV_PREFERENCE_PHRASE_PATIENT,
 )
 from h_adminsim.utils import colorstr, log
+from h_adminsim.utils.mas_utils import *
 from h_adminsim.utils.fhir_utils import *
 from h_adminsim.utils.common_utils import *
+
+if TYPE_CHECKING:
+    from h_adminsim.pipeline import HospitalMAS
 
 
 
 class OutpatientFirstIntake(OutpatientTask):
     def __init__(self, 
                  patient_model: str,
-                 admin_staff_model: str,
+                 admin_staff_mas: "HospitalMAS",
                  supervisor_agent: Optional[SupervisorAgent] = None,
                  intake_max_inference: int = 5,
                  max_retries: int = 8,
                  admin_staff_last_task_user_prompt_path: Optional[str] = None,
-                 patient_vllm_endpoint: Optional[str] = None,
-                 admin_staff_vllm_endpoint: Optional[str] = None):
+                 patient_vllm_endpoint: Optional[str] = None):
         super().__init__()
         
         # Initialize variables
         self.name = 'first_visit_intake'
         self.patient_model, self.patient_vllm_endpoint, self.patient_use_vllm \
             = init_task_models(patient_model, patient_vllm_endpoint)
-        self.admin_staff_model, self.admin_staff_vllm_endpoint, self.admin_staff_use_vllm \
-            = init_task_models(admin_staff_model, admin_staff_vllm_endpoint)
+        self.admin_staff_mas = admin_staff_mas
         self.use_supervisor = True if isinstance(supervisor_agent, SupervisorAgent) else False
         self.supervisor_client = supervisor_agent if self.use_supervisor else None
         task_mechanism = 'Staff + Supervisor' if self.use_supervisor else 'Staff'
@@ -57,7 +58,7 @@ class OutpatientFirstIntake(OutpatientTask):
         self._init_last_task_prompt(admin_staff_last_task_user_prompt_path)
         self.supervisor_reasoning_kwargs = {'reasoning_effort': 'low'} if self.use_supervisor and 'gpt-5' in self.supervisor_client.model.lower() else {}
         self.patient_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.patient_model.lower() else {}
-        self.staff_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.admin_staff_model.lower() else {}
+        self.staff_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.admin_staff_mas.get_agent(self.name).model.lower() else {}
         log(f'Patient intake tasks are conducted by {colorstr(task_mechanism)}')
     
 
@@ -199,6 +200,7 @@ class OutpatientFirstIntake(OutpatientTask):
         """
         gt, test_data = data_pair
         departments = list(agent_test_data['department'].keys())
+        self.admin_staff_mas.get_agent('first_visit_intake').set_departments(departments)   # Lazily inject the department list
         results = init_result_dict()
         self.reset_token_data()
         sanity_checker = SanityChecker()
@@ -249,15 +251,11 @@ class OutpatientFirstIntake(OutpatientTask):
             chiefcomplaint=test_data['constraint']['symptom']['symptom'],
             temperature=0 if not 'gpt-5' in self.patient_model.lower() else 1
         )
-        admin_staff_agent = IntakeAdminStaffAgent(
-            self.admin_staff_model,
-            departments,
-            max_inferences=self.max_inferences,
-            use_vllm=self.admin_staff_use_vllm,
-            vllm_endpoint=self.admin_staff_vllm_endpoint,
-            temperature=0 if not 'gpt-5' in self.admin_staff_model.lower() else 1
+        sim_environment = OPFVIntakeSimulation(
+            patient_agent, 
+            self.admin_staff_mas, 
+            max_inferences=self.max_inferences
         )
-        sim_environment = OPFVIntakeSimulation(patient_agent, admin_staff_agent, max_inferences=self.max_inferences)
         output = run_with_retry(
             sim_environment.simulate,
             verbose=False,
@@ -286,7 +284,7 @@ class OutpatientFirstIntake(OutpatientTask):
             )
         else:
             prediction_supervision = run_with_retry(
-                admin_staff_agent,
+                self.admin_staff_mas.get_agent('first_visit_intake'),
                 self.last_task_user_prompt,
                 verbose=False,
                 max_retries=self.max_retries,
@@ -782,6 +780,7 @@ class OutpatientFirstScheduling(OutpatientTask):
             staff_known_data=staff_known_data,
             doctor_information=doctor_information,
             verbose=verbose,
+            max_inferences=self.max_inferences,
             patient_kwargs=self.patient_reasoning_kwargs,
             staff_kwargs=self.staff_reasoning_kwargs,
             max_retries=self.max_retries,

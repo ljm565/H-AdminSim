@@ -268,12 +268,14 @@ class SchedulingAdminStaffAgent(BaseAgent):
         return executor
 
 
-    def act(self, state: ConversationState) -> tuple[str, bool]:
+    def act(self, state: ConversationState, **kwargs) -> tuple[str, bool]:
         """
         MAS entry point: handle one scheduling turn from the shared conversation state.
 
         Args:
             state (ConversationState): Shared conversation state.
+            **kwargs: Per-call arguments forwarded to the underlying model call
+                (e.g. ``reasoning_effort``).
 
         Returns:
             tuple[str, bool]: ``(reply, is_done)``. Scheduling has no simple turn
@@ -281,7 +283,7 @@ class SchedulingAdminStaffAgent(BaseAgent):
                 keeps the floor); refine with a task-specific done-signal as needed.
         """
         user_prompt = state.messages[-1]["content"] if state.messages else ""
-        reply = self(user_prompt)
+        reply = self(user_prompt, **kwargs)
         return reply, False
         
 

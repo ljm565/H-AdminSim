@@ -1,24 +1,25 @@
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from patientsim import PatientAgent, CheckerAgent
-from patientsim.utils.common_utils import detect_op_termination
 
-from h_adminsim.agent import IntakeAdminStaffAgent
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.common_utils import run_with_retry, preprocess_utterance
 
+if TYPE_CHECKING:
+    from h_adminsim.pipeline import HospitalMAS
 
 
 
 class OPFVIntakeSimulation:
     def __init__(self, 
                  patient_agent: PatientAgent,
-                 admin_staff_agent: IntakeAdminStaffAgent,
+                 admin_staff_mas: "HospitalMAS",
                  checker_agent: Optional[CheckerAgent] = None,
                  max_inferences: int = 5):
 
         # Initialize simulation parameters
         self.patient_agent = patient_agent
-        self.admin_staff_agent = admin_staff_agent
+        self.admin_staff_mas = admin_staff_mas
+        self.intake_agent = admin_staff_mas.get_agent('first_visit_intake')
         self.checker_agent = checker_agent
         self.max_inferences = max_inferences
         self._sanity_check()
@@ -26,19 +27,19 @@ class OPFVIntakeSimulation:
 
     def _sanity_check(self):
         """
-        Verify and synchronize the maximum number of inference rounds 
+        Verify and synchronize the maximum number of inference rounds
         between the Administration Staff agent and the OP simulation.
 
-        If the configured values do not match, a warning is logged and 
-        the Administration Staff agent's configuration is updated to align with the 
+        If the configured values do not match, a warning is logged and
+        the Administration Staff agent's configuration is updated to align with the
         OP simulation. The system prompt is also rebuilt accordingly.
         """
-        if not self.admin_staff_agent.max_inferences == self.max_inferences:
+        if not self.intake_agent.max_inferences == self.max_inferences:
             log("The maximum number of inferences between the Administration Staff agent and the OP simulation does not match.", level="warning")
             log(f"The simulation will start with the value ({self.max_inferences}) configured in the OP simulation, \
                 and the Administration Staff agent system prompt will be updated accordingly.", level="warning")
-            self.admin_staff_agent.max_inferences = self.max_inferences
-            self.admin_staff_agent.build_prompt()
+            self.intake_agent.max_inferences = self.max_inferences
+            self.intake_agent.build_prompt()
 
         if self.checker_agent:
             assert self.checker_agent.visit_type == self.patient_agent.visit_type, \
@@ -53,7 +54,7 @@ class OPFVIntakeSimulation:
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
         """
         self.patient_agent.reset_history(verbose=verbose)
-        self.admin_staff_agent.reset_history(verbose=verbose)
+        self.admin_staff_mas.reset(verbose=verbose)
 
 
     def simulate(self, 
@@ -83,11 +84,12 @@ class OPFVIntakeSimulation:
         
         if verbose:
             log(f"Patient prompt:\n{self.patient_agent.system_prompt}")
-            log(f"Administration staff prompt:\n{self.admin_staff_agent.system_prompt}")
+            log(f"Administration staff prompt:\n{self.intake_agent.system_prompt}")
 
         # Start conversation
-        staff_greet = self.admin_staff_agent.staff_greet
+        staff_greet = self.admin_staff_mas.root.agent.staff_greet
         dialog_history = [{"role": "Staff", "content": staff_greet}]
+        self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
         role = f"{colorstr('blue', 'Staff')}   [0%]"
         log(f"{role:<23}: {staff_greet}")
 
@@ -109,7 +111,7 @@ class OPFVIntakeSimulation:
             log(f"{role:<23}: {patient_response}")
 
             # Obtain response from staff
-            staff_response = self.admin_staff_agent(
+            staff_response, is_done = self.admin_staff_mas.chat(
                 user_prompt=dialog_history[-1]["content"] + "\nThis is the final turn. Now, you must provide your top5 differential diagnosis." \
                     if inference_idx == self.max_inferences - 1 else dialog_history[-1]["content"],
                 using_multi_turn=True,
@@ -121,7 +123,7 @@ class OPFVIntakeSimulation:
             log(f"{role:<23}: {staff_response}")
 
             # If early termination is detected, break the loop
-            if detect_op_termination(staff_response):
+            if is_done:
                 break
 
             elif self.checker_agent:
@@ -138,7 +140,7 @@ class OPFVIntakeSimulation:
         output = {
             "dialog_history": dialog_history,
             "patient_token_usage": self.patient_agent.client.token_usages,
-            "admin_staff_token_usage": self.admin_staff_agent.client.token_usages,
+            "admin_staff_token_usage": self.admin_staff_mas.aggregate_token_usages(),
         }
         return output
     
@@ -170,11 +172,12 @@ class OPFVIntakeSimulation:
         
         if verbose:
             log(f"Patient prompt:\n{self.patient_agent.system_prompt}")
-            log(f"Administration staff prompt:\n{self.admin_staff_agent.system_prompt}")
+            log(f"Administration staff prompt:\n{self.intake_agent.system_prompt}")
 
         # Start conversation
-        staff_greet = self.admin_staff_agent.staff_greet
+        staff_greet = self.admin_staff_mas.root.agent.staff_greet
         dialog_history = [{"role": "Staff", "content": staff_greet}]
+        self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
         role = f"{colorstr('blue', 'Staff')}   [0%]"
         log(f"{role:<23}: {staff_greet}")
         yield 'Staff', preprocess_utterance(staff_greet)
@@ -199,8 +202,8 @@ class OPFVIntakeSimulation:
             yield 'Patient', preprocess_utterance(patient_response)
 
             # Obtain response from staff
-            staff_response = run_with_retry(
-                self.admin_staff_agent,
+            staff_response, is_done = run_with_retry(
+                self.admin_staff_mas.chat,
                 user_prompt=dialog_history[-1]["content"] + "\nThis is the final turn. Now, you must provide your top5 differential diagnosis." \
                     if inference_idx == self.max_inferences - 1 else dialog_history[-1]["content"],
                 using_multi_turn=True,
@@ -213,7 +216,7 @@ class OPFVIntakeSimulation:
             yield 'Staff', preprocess_utterance(staff_response)
 
             # If early termination is detected, break the loop
-            if detect_op_termination(staff_response):
+            if is_done:
                 break
 
             elif self.checker_agent:

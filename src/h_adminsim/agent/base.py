@@ -1,21 +1,13 @@
 from __future__ import annotations
-
+import re
+import json
 from abc import ABC, abstractmethod
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, Union
 from patientsim.utils.common_utils import set_seed
 from patientsim.client import GeminiVertexClient, GPTAzureClient
 
 from h_adminsim.client import GeminiClient, GPTClient, VLLMClient
-from h_adminsim.utils import colorstr, log
-
-if TYPE_CHECKING:
-    from h_adminsim.registry import ConversationState
-
-
-
-# Sentinel returned by a router's `route` to signal that its whole subtree is
-# finished and control should bubble up to the parent router.
-ROUTE_DONE = "__done__"
+from h_adminsim.utils import colorstr
 
 
 
@@ -85,6 +77,7 @@ class BaseAgent(ABC):
         self.random_seed = kwargs.get('random_seed', None)
         self.temperature = kwargs.get('temperature', 0.2)   # For various responses. If you want deterministic responses, set it to 0.
         self.staff_greet = kwargs.get('staff_greet', "Hello, how can I help you?")
+        self.ROUTE_DONE = "#DONE"
         
         # Set random seed for reproducibility
         if self.random_seed:
@@ -101,41 +94,61 @@ class BaseAgent(ABC):
         self.client.reset_history(verbose=verbose)
 
 
-    @abstractmethod
-    def act(self, state: ConversationState) -> tuple[str, bool]:
+    def act(self, *args, **kwargs) -> tuple[str, bool]:
         """
-        Produce this turn's reply.
+        Produce this turn's reply as a leaf worker, returning ``(reply, is_done)``.
+
+        Leaf workers (e.g. the intake agent) override this. Routers (e.g. the
+        orchestrator) are driven through ``__call__`` and never act as a leaf, so
+        the default raises rather than returning a value.
+        """
+        raise NotImplementedError(
+            colorstr("red", f"{type(self).__name__} does not implement act(); it is a router, not a leaf worker.")
+        )
+
+
+    def build_subagent_routings(self,
+                                sub_agents: Optional[dict] = None) -> str:
+        """
+        Build a system prompt for routing among sub-agents based on the provided descriptions.
 
         Args:
-            state (ConversationState): Shared conversation state. The last user
-                message is at ``state.messages[-1]``.
+            sub_agents (Optional[dict], optional): A dictionary mapping sub-agent names to their descriptions. Defaults to None.
 
         Returns:
-            tuple[str, bool]: ``(reply, is_done)`` where ``is_done`` tells the
-                MAS this agent has finished its job so control can return to the
-                parent router.
+            str: A formatted string listing the sub-agents and their descriptions.
         """
-        ...
+        descriptions = sub_agents or {}
+        listing = "\n".join(
+            f"- {name}: {desc or 'no description provided'}"
+            for name, desc in descriptions.items()
+        )
+        return listing
+    
 
-    def route(self,
-              state: ConversationState,
-              candidates: list[str],
-              descriptions: Optional[dict[str, Optional[str]]] = None) -> Optional[str]:
+    def postprocessing_json_answer(self, text: str) -> Union[str, dict]:
         """
-        Pick a child to delegate to.
+        Post-processing method of json formatted text output.
 
         Args:
-            state (ConversationState): Shared conversation state.
-            candidates (list[str]): Names of the child agents available at this
-                node. The MAS injects these per call.
-            descriptions (Optional[dict[str, Optional[str]]]): Optional mapping of
-                candidate name -> human description, to help routing decisions.
+            text (str): Text input.
 
         Returns:
-            Optional[str]: A child name to delegate to, ``ROUTE_DONE`` to finish
-                this subtree (bubble up), or ``None`` to reply to the user
-                directly (via ``act``) before routing.
-
-        The default is leaf/worker behavior: never route.
+            Union[str, dict]: A dictionary if the text is valid JSON, otherwise the original string.
         """
-        return None
+        try:
+            if isinstance(text, str):
+                match = re.search(r'```json\s*(\{.*?\})\s*```', text, re.DOTALL)
+                if match:
+                    json_str = match.group(1)
+                    text_dict = json.loads(json_str)
+                else:
+                    try:
+                        text_dict = json.loads(text)
+                    except:
+                        return text
+            else:
+                text_dict = text
+            return text_dict
+        except:
+            return str(text)

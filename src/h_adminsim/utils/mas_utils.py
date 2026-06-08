@@ -1,6 +1,7 @@
 from typing import Optional, Tuple
 
 from h_adminsim.agent import *
+from h_adminsim.registry import AGENT_DESCRIPTION
 from h_adminsim.utils import colorstr
 
 
@@ -65,7 +66,7 @@ def init_mas_system(orchestrator_model: str,
     mas_structure = {
         'orchestrator': {
             'agent': orchestrator_agent,
-            'description': 'Oversees the entire patient intake and scheduling process, making high-level decisions and delegating tasks to sub-agents.',
+            'description': AGENT_DESCRIPTION['orchestrator'],
             'subagent': {}
         }
     }
@@ -86,7 +87,7 @@ def init_mas_system(orchestrator_model: str,
         )
         agent_info = {
             'agent': fv_intake_agent,
-            'description': 'Patient intake and department recommendation.',
+            'description': AGENT_DESCRIPTION['first_visit_intake'],
             'subagent': {}
         }
         mas_structure['orchestrator']['subagent']['first_visit_intake'] = agent_info
@@ -105,7 +106,7 @@ def init_mas_system(orchestrator_model: str,
         )
         agent_info = {
             'agent': fv_scheduling_agent,
-            'description': 'Schedule a first-visit appointment.',
+            'description': AGENT_DESCRIPTION['first_visit_scheduling'],
             'subagent': {}
         }
         mas_structure['orchestrator']['subagent']['first_visit_scheduling'] = agent_info
@@ -124,7 +125,7 @@ def init_mas_system(orchestrator_model: str,
         )
         agent_info = {
             'agent': fu_scheduling_agent,
-            'description': 'Schedule follow-up visit tests and appointments.',
+            'description': AGENT_DESCRIPTION['follow_up_visit_scheduling'],
             'subagent': {}
         }
         mas_structure['orchestrator']['subagent']['follow_up_visit_scheduling'] = agent_info

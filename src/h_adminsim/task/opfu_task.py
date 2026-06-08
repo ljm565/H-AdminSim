@@ -21,6 +21,7 @@ from h_adminsim.registry import (
     OPFU_PREFERENCE_PHRASE_PATIENT,
 )
 from h_adminsim.utils import colorstr, log
+from h_adminsim.utils.mas_utils import *
 from h_adminsim.utils.fhir_utils import *
 from h_adminsim.utils.common_utils import *
 

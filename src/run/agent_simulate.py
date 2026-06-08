@@ -8,11 +8,11 @@ from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor, as_completed
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
-from h_adminsim.agent import SupervisorAgent
-from h_adminsim.pipeline import Simulator
 from h_adminsim.task.opfv_task import *
 from h_adminsim.task.opfu_task import *
+from h_adminsim.pipeline import Simulator, HospitalMAS
 from h_adminsim.utils import set_logging, LOGGING_NAME
+from h_adminsim.utils.mas_utils import init_mas_system
 from h_adminsim.utils.filesys_utils import yaml_save, get_files
 
 
@@ -44,6 +44,18 @@ def simulate(config, args, single_file=None):
 
     # Initialize tasks
     task = dict()
+    mas_structure = init_mas_system(
+        orchestrator_model=config.task_model,
+        orchestrator_vllm_endpoint=config.vllm_url,
+        first_visit_intake_model=config.task_model if 'first_visit_intake' in args.type else None,
+        first_visit_intake_vllm_endpoint=config.vllm_url if 'first_visit_intake' in args.type else None,
+        first_visit_scheduling_model=config.task_model if 'first_visit_scheduling' in args.type else None,
+        first_visit_scheduling_vllm_endpoint=config.vllm_url if 'first_visit_scheduling' in args.type else None,
+        follow_up_visit_scheduling_model=config.task_model if 'follow_up_visit_scheduling' in args.type else None,
+        follow_up_visit_scheduling_vllm_endpoint=config.vllm_url if 'follow_up_visit_scheduling' in args.type else None,
+        intake_max_inference=config.outpatient_intake.intake_max_inference,
+    )
+    staff_mas = HospitalMAS(mas_structure)
     if 'first_visit_intake' in args.type:
         use_vllm = False if any(m in config.supervisor_model.lower() for m in ['gpt', 'gemini']) else True
         supervisor_agent = SupervisorAgent(
@@ -56,11 +68,10 @@ def simulate(config, args, single_file=None):
         use_vllm = False if any(m in config.task_model.lower() for m in ['gpt', 'gemini']) else True
         _task = OutpatientFirstIntake(
             patient_model=config.task_model,
-            admin_staff_model=config.task_model,
+            admin_staff_mas=staff_mas,
             supervisor_agent=supervisor_agent if config.outpatient_intake.use_supervisor else None,
             intake_max_inference=config.outpatient_intake.intake_max_inference,
             patient_vllm_endpoint=config.vllm_url if use_vllm else None,
-            admin_staff_vllm_endpoint=config.vllm_url if use_vllm else None
         )
         task[_task.name] = _task
     if 'first_visit_scheduling' in args.type:
