@@ -121,7 +121,7 @@ class OrchestratorAgent(BaseAgent):
             routers = self.build_subagent_routings(sub_agents)
             system_prompt = self.system_prompt.format(routers=routers)
         else:
-            system_prompt = self.system_prompt
+            system_prompt = self.system_prompt.format(routers='None')
         
         tries = 0
         while 1:

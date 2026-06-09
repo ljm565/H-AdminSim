@@ -20,6 +20,6 @@ OPFU_PREFERENCE_PHRASE_STAFF = {
 AGENT_DESCRIPTION = {
     'orchestrator': 'Oversees the entire patient intake and scheduling process, making high-level decisions and delegating tasks to sub-agents.',
     'first_visit_intake': 'Patient intake and department recommendation. Route the conversation to this agent whenever the patient mentions a disease, symptoms, or states that they are seeking medical care (e.g., doctor) due to a health concern.',
-    'first_visit_scheduling': 'Schedule a first-visit appointment. Route the conversation to this agent whenever the patient indicates how they would like to schedule an appointment with a physician after completing the intake process.',
-    'follow_up_visit_scheduling': 'Schedule follow-up visit tests and appointments. Route the conversation to this agent whenever the patient mentions needing to schedule a diagnostic test after a physician visit or requests to arrange a test appointment.'
+    'first_visit_scheduling': 'Schedule a first-visit appointment. Route the conversation to this agent whenever the patient indicates how they would like to schedule an appointment with a physician after completing the intake process. Also route to this agent whenever the patient requests to cancel or reschedule an existing appointment with a physician.',
+    'follow_up_visit_scheduling': 'Schedule follow-up visit tests and appointments. Route the conversation to this agent whenever the patient mentions needing to schedule a diagnostic test after a physician visit or requests to arrange a test appointment. Also route to this agent whenever the patient requests to cancel or reschedule an existing diagnostic test schedule.'
 }
