@@ -120,10 +120,10 @@ class BaseAgent(ABC):
             str: A formatted string listing the sub-agents and their descriptions.
         """
         sub_agents = sub_agents or {}
-        descriptions = {n: c.description for n, c in sub_agents.items()}
         listing = "\n".join(
-            f"- {name}: {desc or 'no description provided'}"
-            for name, desc in descriptions.items()
+            f"- {name}{' (completed)' if getattr(node, 'is_complete', False) else ''}: "
+            f"{node.description or 'no description provided'}"
+            for name, node in sub_agents.items()
         )
         return listing
     

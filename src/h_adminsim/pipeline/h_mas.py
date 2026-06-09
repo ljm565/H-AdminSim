@@ -163,6 +163,10 @@ class HospitalMAS:
             tuple[str, bool]: ``(reply, is_done)`` — the reply produced by whichever
                 agent handled the turn, and whether that agent signalled completion.
         """
+        # If the previous conversation already finished (orchestrator emitted DONE), reset MAS.
+        if self.root.is_complete:
+            self.reset(verbose=verbose)
+        
         self.state.messages.append({"role": "Patient", "content": user_prompt})
         return self._advance(
             using_multi_turn=using_multi_turn,
@@ -195,7 +199,7 @@ class HospitalMAS:
                 log(colorstr("yellow", f"Routing hop cap ({self.max_hops_per_turn}) hit; replying directly."))
                 return self._say("Could you tell me again?"), False
 
-            # Route among childern sub-agents (uniform `act` entry).
+            # Expose all children as candidates (uniform `act` entry).
             sub_agents = {n: c for n, c in node.children.items()}
             response, is_done = node.agent.act(
                 user_prompt=self.state.messages[-1]["content"],
@@ -226,6 +230,7 @@ class HospitalMAS:
                     log(f'{choice} agent cannot be supported.', level='warning')
                     continue    # Retry if the router hallucinates an invalid route (defensive)
                 node = node.children[choice]
+                node.is_complete = False    # (re-)engaged -> active again
                 self.path.append(node)
                 continue
 

@@ -69,21 +69,21 @@ class OrchestratorAgent(BaseAgent):
             sub_agents: Optional[dict] = None,
             **kwargs) -> tuple[Union[str, dict], bool]:
         """
-        MAS entry point: route among the (unfinished) sub-agents for this turn.
+        MAS entry point: route among the sub-agents for this turn.
 
         Args:
             user_prompt (str): The user prompt to route on.
             using_multi_turn (bool, optional): Whether to use multi-turn conversation. Defaults to True.
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
-            is_done (bool, optional): Explicit flag indicating whether the agent action should terminate. Defaults to False.
-            sub_agents (Optional[dict], optional): Descriptions of the still-unfinished child agents. Defaults to None.
+            is_done (bool, optional): Caller-supplied termination flag; ORed with the router's own ROUTE_DONE decision. Defaults to False.
+            sub_agents (Optional[dict], optional): The candidate child agents (name -> ``MASNode``). Defaults to None.
 
         Returns:
             tuple[Union[str, dict], bool]: ``(response, is_done)`` — the routing
-                dict (or direct reply) and whether the subtree is finished.
+                dict (or direct reply) and whether the conversation is finished.
         """
         sub_agents = sub_agents or {}
-        if not sub_agents:                       # all children completed -> whole subtree done
+        if not sub_agents:                       # degenerate router with no children -> nothing to route to
             return {"route": self.ROUTE_DONE}, True
 
         response = self(
@@ -93,9 +93,8 @@ class OrchestratorAgent(BaseAgent):
             sub_agents=sub_agents,
             **kwargs
         )
-        if (isinstance(response, dict) and response.get('route') == self.ROUTE_DONE) or \
-            all(mas_node.is_complete for mas_node in sub_agents.values()): 
-            is_done = True
+        # Termination is the orchestrator's call: it emits ROUTE_DONE when the user's needs are fully resolved.
+        is_done = is_done or (isinstance(response, dict) and response.get('route') == self.ROUTE_DONE)
         return response, is_done
 
 

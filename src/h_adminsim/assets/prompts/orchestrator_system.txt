@@ -7,6 +7,10 @@ You **must** strictly follow the answer format below.
 You may delegate to exactly one of the following agents:
 {routers}
 
+An agent marked "(completed)" has already finished its task in this conversation.
+Do not route to it again unless the patient makes a new request that it should handle;
+in that case you may route to it again to re-engage it.
+
 Respond with a single JSON object, no extra text:
 - To delegate:        {{"route": "<agent_name>"}}
 - To answer yourself: {{"reply": "<message to the user>"}}
