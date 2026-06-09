@@ -67,6 +67,7 @@ def init_mas_system(orchestrator_model: str,
         'orchestrator': {
             'agent': orchestrator_agent,
             'description': AGENT_DESCRIPTION['orchestrator'],
+            'next_step': None,
             'subagent': {}
         }
     }
@@ -88,6 +89,7 @@ def init_mas_system(orchestrator_model: str,
         agent_info = {
             'agent': fv_intake_agent,
             'description': AGENT_DESCRIPTION['first_visit_intake'],
+            'next_step': 'first_visit_scheduling',
             'subagent': {}
         }
         mas_structure['orchestrator']['subagent']['first_visit_intake'] = agent_info
@@ -107,6 +109,7 @@ def init_mas_system(orchestrator_model: str,
         agent_info = {
             'agent': fv_scheduling_agent,
             'description': AGENT_DESCRIPTION['first_visit_scheduling'],
+            'next_step': None,
             'subagent': {}
         }
         mas_structure['orchestrator']['subagent']['first_visit_scheduling'] = agent_info
@@ -126,6 +129,7 @@ def init_mas_system(orchestrator_model: str,
         agent_info = {
             'agent': fu_scheduling_agent,
             'description': AGENT_DESCRIPTION['follow_up_visit_scheduling'],
+            'next_step': None,
             'subagent': {}
         }
         mas_structure['orchestrator']['subagent']['follow_up_visit_scheduling'] = agent_info

@@ -30,6 +30,7 @@ class MASNode:
     parent: Optional["MASNode"] = None
     description: Optional[str] = None
     is_complete: bool = False
+    next_step: Optional[str] = None
 
     @property
     def is_leaf(self) -> bool:

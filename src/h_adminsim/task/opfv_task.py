@@ -7,11 +7,8 @@ from patientsim import PatientAgent
 from dotenv import load_dotenv, find_dotenv
 from typing import Tuple, Union, Optional, TYPE_CHECKING
 
-from h_adminsim.agent import (
-    SupervisorAgent,
-    SchedulingAdminStaffAgent,
-)
 from h_adminsim.task import OutpatientTask
+from h_adminsim.agent import SupervisorAgent
 from h_adminsim.environment import (
     OPFVIntakeSimulation,
     OPFVSchedulingSimulation
@@ -329,7 +326,7 @@ class OutpatientFirstIntake(OutpatientTask):
 class OutpatientFirstScheduling(OutpatientTask):
     def __init__(self, 
                  patient_model: str,
-                 admin_staff_model: str,
+                 admin_staff_mas: "HospitalMAS",
                  schedule_cancellation_prob: float = 0.05,
                  request_early_schedule_prob: float = 0.1,
                  preference_rejection_prob: float = 0.3,
@@ -338,8 +335,7 @@ class OutpatientFirstScheduling(OutpatientTask):
                  scheduling_max_inference: int = 5,
                  scheduling_strategy: str = 'tool_calling',
                  max_retries: int = 8,
-                 patient_vllm_endpoint: Optional[str] = None,
-                 admin_staff_vllm_endpoint: Optional[str] = None):
+                 patient_vllm_endpoint: Optional[str] = None):
         super().__init__()
 
         # Initialize variables
@@ -349,17 +345,7 @@ class OutpatientFirstScheduling(OutpatientTask):
         self.name = 'first_visit_scheduling'
         self.patient_model, self.patient_vllm_endpoint, self.patient_use_vllm \
             = init_task_models(patient_model, patient_vllm_endpoint)
-        self.admin_staff_model, self.admin_staff_vllm_endpoint, self.admin_staff_use_vllm \
-            = init_task_models(admin_staff_model, admin_staff_vllm_endpoint)
-        
-        # Initialize scheduling methods and a staff agent
-        self.admin_staff_agent = SchedulingAdminStaffAgent(
-            target_task='first_visit_scheduling',
-            model=self.admin_staff_model,
-            use_vllm=self.admin_staff_use_vllm,
-            vllm_endpoint=self.admin_staff_vllm_endpoint,
-            temperature=0 if not 'gpt-5' in self.admin_staff_model.lower() else 1
-        )
+        self.admin_staff_mas = admin_staff_mas
 
         # Scheduling parameters
         self.schedule_cancellation_prob = schedule_cancellation_prob
@@ -378,7 +364,7 @@ class OutpatientFirstScheduling(OutpatientTask):
         self.cancel_patient_system_prompt_path = str(resources.files("h_adminsim.assets.prompts").joinpath('opfv_cancel_patient_system.txt'))
         self.reschedule_patient_system_prompt_path = str(resources.files("h_adminsim.assets.prompts").joinpath('opfv_reschedule_patient_system.txt'))
         self.patient_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.patient_model.lower() else {}
-        self.staff_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.admin_staff_model.lower() else {}
+        self.staff_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.admin_staff_mas.get_agent(self.name).model.lower() else {}
 
     
     def _init_simulation(self,
@@ -408,7 +394,7 @@ class OutpatientFirstScheduling(OutpatientTask):
         )
         sim_environment = OPFVSchedulingSimulation(
             patient_agent=patient_agent, 
-            admin_staff_agent=self.admin_staff_agent, 
+            admin_staff_mas=self.admin_staff_mas, 
             metadata=self._metadata,
             department_data=self._department_data,
             environment=environment,

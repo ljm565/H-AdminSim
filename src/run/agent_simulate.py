@@ -78,13 +78,12 @@ def simulate(config, args, single_file=None):
         use_vllm = False if any(m in config.task_model.lower() for m in ['gpt', 'gemini']) else True
         _task = OutpatientFirstScheduling(
             patient_model=config.task_model,
-            admin_staff_model=config.task_model,
+            admin_staff_mas=staff_mas,
             schedule_cancellation_prob=config.schedule_cancellation_prob,
             request_early_schedule_prob=config.request_early_schedule_prob,
             fhir_integration=config.integration_with_fhir,
             scheduling_strategy=config.schedule_task.scheduling_strategy,
             patient_vllm_endpoint=config.vllm_url if use_vllm else None,
-            admin_staff_vllm_endpoint=config.vllm_url if use_vllm else None
         )
         task[_task.name] = _task
     if 'follow_up_visit_scheduling' in args.type:

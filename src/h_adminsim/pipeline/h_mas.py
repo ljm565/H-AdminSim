@@ -9,8 +9,9 @@ from h_adminsim.utils import colorstr, log
 class HospitalMAS:
     def __init__(self, mas_structure: dict):
         self._structure_check(mas_structure)
+        self.mas_structure = mas_structure
         self.nodes = {}
-        self.root = self._build_tree(mas_structure)
+        self.root = self._build_tree(self.mas_structure)
         self.state = ConversationState()
         self.path = [self.root]
         # Safety cap on routing hops within a single turn (guards against two
@@ -96,6 +97,7 @@ class HospitalMAS:
             agent=info['agent'],
             parent=parent,
             description=info.get('description'),
+            next_step=info.get('next_step'),
         )
         self.nodes[name] = node
         for child_name, child_info in info['subagent'].items():
@@ -118,16 +120,22 @@ class HospitalMAS:
 
     def reset(self, verbose: bool = True):
         """
-        Reset the MAS for a fresh conversation: clear the shared state, reset the
-        routing path to the root, and reset every agent's conversation history.
+        Reset the MAS for a fresh conversation.
+
+        Rebuilds the node tree from the original structure (so every node's
+        ``next_step`` is restored to its static, structure-defined value and any
+        runtime handoff / completion flag is dropped), resets the routing state,
+        and resets every agent's conversation history. Agents are reused (the
+        structure holds the same instances); only their histories are cleared.
 
         Args:
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
         """
         self.state = ConversationState()
+        self.nodes = {}
+        self.root = self._build_tree(self.mas_structure)
         self.path = [self.root]
         for node in self.nodes.values():
-            node.is_complete = False
             node.agent.reset_history(verbose=verbose)
 
 
@@ -248,6 +256,8 @@ class HospitalMAS:
         self.state.current_agent = node.name
         if is_done:
             node.is_complete = True
+            if node.next_step:
+                self.root.next_step = node.next_step    # temporary handoff, e.g. intake -> 'first_visit_scheduling'
             self._pop()     # return control to the parent router
         return self._say(reply), is_done
 
