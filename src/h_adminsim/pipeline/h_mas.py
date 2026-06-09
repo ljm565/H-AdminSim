@@ -127,6 +127,7 @@ class HospitalMAS:
         self.state = ConversationState()
         self.path = [self.root]
         for node in self.nodes.values():
+            node.is_complete = False
             node.agent.reset_history(verbose=verbose)
 
 
@@ -194,8 +195,9 @@ class HospitalMAS:
                 log(colorstr("yellow", f"Routing hop cap ({self.max_hops_per_turn}) hit; replying directly."))
                 return self._say("Could you tell me again?"), False
 
-            sub_agents = {n: c.description for n, c in node.children.items()}
-            response = node.agent(
+            # Route among childern sub-agents (uniform `act` entry).
+            sub_agents = {n: c for n, c in node.children.items()}
+            response, is_done = node.agent.act(
                 user_prompt=self.state.messages[-1]["content"],
                 using_multi_turn=using_multi_turn,
                 verbose=verbose,
@@ -203,21 +205,22 @@ class HospitalMAS:
                 **kwargs
             )
 
+            # This subtree is finished (all children done, or the router said DONE).
+            if is_done:
+                if not self._pop():
+                    node.is_complete = True
+                    reply = response.get('reply') if isinstance(response, dict) else None
+                    return self._say(reply or "Is there anything else I can help you with?"), True
+                node.is_complete = True
+                node = self.path[-1]
+                continue
+
             # The router must return a JSON object; anything else ends the turn.
             if not isinstance(response, dict):
                 return self._say('Could you tell me again?'), False
 
-            choice = response.get('route')
-
-            # This subtree is finished; bubble up to the parent router.
-            if choice == node.agent.ROUTE_DONE:
-                if not self._pop():
-                    self.state.is_complete = True
-                    return self._say(response.get('reply') or "Is there anything else I can help you with?"), True
-                node = self.path[-1]
-                continue
-
             # Delegation case.
+            choice = response.get('route')
             if choice:
                 if choice not in node.children:
                     log(f'{choice} agent cannot be supported.', level='warning')
@@ -239,12 +242,15 @@ class HospitalMAS:
         )
         self.state.current_agent = node.name
         if is_done:
+            node.is_complete = True
             self._pop()     # return control to the parent router
         return self._say(reply), is_done
 
 
     def _pop(self) -> bool:
-        """Pop the active node, returning control to its parent. False if at root."""
+        """
+        Pop the active node, returning control to its parent. False if at root.
+        """
         if len(self.path) > 1:
             self.path.pop()
             return True
@@ -252,6 +258,14 @@ class HospitalMAS:
 
 
     def _say(self, reply: str) -> str:
-        """Record an assistant reply in the shared state and return it."""
+        """
+        Record an assistant reply in the shared state and return it.
+
+        Args:
+            reply (str): Response to reply.
+
+        Returns:
+            str: Response to reply.
+        """
         self.state.messages.append({"role": "Staff", "content": reply})
         return reply

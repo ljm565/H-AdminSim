@@ -1,6 +1,6 @@
 import os
-from typing import Optional
 from importlib import resources
+from typing import Union, Optional
 from patientsim.utils.common_utils import detect_op_termination
 
 from h_adminsim.agent import BaseAgent
@@ -117,8 +117,9 @@ class IntakeAdminStaffAgent(BaseAgent):
             user_prompt: str, 
             using_multi_turn: bool = True,
             verbose: bool = True,
+            is_done: bool = False,
             sub_agents: Optional[dict] = None,
-            **kwargs) -> tuple[str, bool]:
+            **kwargs) -> tuple[Union[str, dict], bool]:
         """
         Execute a single interaction step and determine whether the conversation should terminate.
 
@@ -126,12 +127,13 @@ class IntakeAdminStaffAgent(BaseAgent):
             user_prompt (str): The user prompt to send to the patient agent.
             using_multi_turn (bool, optional): Whether to use multi-turn conversation. Defaults to True.
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
+            is_done (bool, optional): Explicit flag indicating whether the agent action should terminate. Defaults to False.
             sub_agents (Optional[dict], optional): Optional dictionary of sub-agent descriptions to include in the system prompt. Defaults to None.
 
         Returns:
-            tuple[str, bool]: ``(reply, is_done)``.
+            tuple[Union[str, dict], bool]: ``(response, is_done)`` — the routing
+                dict (or direct reply) and whether the subtree is finished.
         """
-        is_done = False
         response = self(
             user_prompt=user_prompt,
             using_multi_turn=using_multi_turn,

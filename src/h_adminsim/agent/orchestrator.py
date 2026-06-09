@@ -1,6 +1,6 @@
 import os
-from typing import Optional
 from importlib import resources
+from typing import Union, Optional
 
 from h_adminsim.agent import BaseAgent
 from h_adminsim.utils import colorstr, log
@@ -59,6 +59,44 @@ class OrchestratorAgent(BaseAgent):
                 raise FileNotFoundError(colorstr("red", f"System prompt file not found: {system_prompt_path}"))
             with open(system_prompt_path, 'r') as f:
                 self.system_prompt = f.read()
+
+
+    def act(self,
+            user_prompt: str,
+            using_multi_turn: bool = True,
+            verbose: bool = True,
+            is_done: bool = False,
+            sub_agents: Optional[dict] = None,
+            **kwargs) -> tuple[Union[str, dict], bool]:
+        """
+        MAS entry point: route among the (unfinished) sub-agents for this turn.
+
+        Args:
+            user_prompt (str): The user prompt to route on.
+            using_multi_turn (bool, optional): Whether to use multi-turn conversation. Defaults to True.
+            verbose (bool, optional): Whether to print verbose output. Defaults to True.
+            is_done (bool, optional): Explicit flag indicating whether the agent action should terminate. Defaults to False.
+            sub_agents (Optional[dict], optional): Descriptions of the still-unfinished child agents. Defaults to None.
+
+        Returns:
+            tuple[Union[str, dict], bool]: ``(response, is_done)`` — the routing
+                dict (or direct reply) and whether the subtree is finished.
+        """
+        sub_agents = sub_agents or {}
+        if not sub_agents:                       # all children completed -> whole subtree done
+            return {"route": self.ROUTE_DONE}, True
+
+        response = self(
+            user_prompt=user_prompt,
+            using_multi_turn=using_multi_turn,
+            verbose=verbose,
+            sub_agents=sub_agents,
+            **kwargs
+        )
+        if (isinstance(response, dict) and response.get('route') == self.ROUTE_DONE) or \
+            all(mas_node.is_complete for mas_node in sub_agents.values()): 
+            is_done = True
+        return response, is_done
 
 
     def __call__(self,

@@ -94,6 +94,7 @@ class BaseAgent(ABC):
         self.client.reset_history(verbose=verbose)
 
 
+    @abstractmethod
     def act(self, *args, **kwargs) -> tuple[str, bool]:
         """
         Produce this turn's reply as a leaf worker, returning ``(reply, is_done)``.
@@ -118,7 +119,8 @@ class BaseAgent(ABC):
         Returns:
             str: A formatted string listing the sub-agents and their descriptions.
         """
-        descriptions = sub_agents or {}
+        sub_agents = sub_agents or {}
+        descriptions = {n: c.description for n, c in sub_agents.items()}
         listing = "\n".join(
             f"- {name}: {desc or 'no description provided'}"
             for name, desc in descriptions.items()

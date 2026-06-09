@@ -13,7 +13,6 @@ class ConversationState:
     intent: str | None = None
     patient_info: dict = field(default_factory=dict)
     current_agent: str | None = None
-    is_complete: bool = False
 
 
 
@@ -30,6 +29,7 @@ class MASNode:
     children: dict[str, "MASNode"] = field(default_factory=dict)
     parent: Optional["MASNode"] = None
     description: Optional[str] = None
+    is_complete: bool = False
 
     @property
     def is_leaf(self) -> bool:
