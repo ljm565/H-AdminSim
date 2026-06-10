@@ -210,21 +210,30 @@ class OPFVSchedulingSimulation:
                     return str(pred_schedule)
 
 
-    def _finish_scheduling_turn(self, user_prompt: str, verbose: bool = False):
+    def _finish_scheduling_turn(self, verbose: bool = False):
         """
         Hand the floor back to the orchestrator once the scheduling eval loop is done.
 
         Args:
-        user_prompt (str): The user prompt to send to an agent.
             verbose (bool, optional): Whether to print verbose output. Defaults to False.
         """
-        if len(self.admin_staff_mas.path) > 1:
-            self.admin_staff_mas.chat(
-                user_prompt=user_prompt,
-                using_multi_turn=False,
-                verbose=verbose,
-                is_done=True,
-            )
+        if len(self.admin_staff_mas.path) <= 1:
+            return
+        
+        closing = self.dialog_history['scheduling'][-1]['content']
+        messages = self.admin_staff_mas.state.messages
+        
+        # When end abnormally
+        if messages and messages[-1]['content'] == closing:
+            return
+        
+        # When end normally
+        self.admin_staff_mas.chat(
+            user_prompt=closing,
+            using_multi_turn=False,
+            verbose=verbose,
+            is_done=True,
+        )
 
 
     @staticmethod
@@ -969,7 +978,7 @@ class OPFVSchedulingSimulation:
                             'dialog': [preprocess_dialog(self.dialog_history['scheduling'])]
                         }
                         token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
-                        self._finish_scheduling_turn(self.dialog_history['scheduling'][-1]['content'], verbose)
+                        self._finish_scheduling_turn(verbose)
                         return doctor_information, result_dict, token_usage
 
                 # Sanity check
@@ -1029,7 +1038,7 @@ class OPFVSchedulingSimulation:
             }
             log("Simulation completed.", color=True)
             token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
-            self._finish_scheduling_turn(self.dialog_history['scheduling'][-1]['content'], verbose)
+            self._finish_scheduling_turn(verbose)
             return doctor_information, result_dict, token_usage
 
         # Otherwise
@@ -1080,7 +1089,7 @@ class OPFVSchedulingSimulation:
 
         log("Simulation completed.", color=True)
         token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
-        self._finish_scheduling_turn(self.dialog_history['scheduling'][-1]['content'], verbose)
+        self._finish_scheduling_turn(verbose)
         return doctor_information, result_dict, token_usage
 
     
