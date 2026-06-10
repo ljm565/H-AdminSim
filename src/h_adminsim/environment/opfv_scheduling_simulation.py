@@ -210,6 +210,23 @@ class OPFVSchedulingSimulation:
                     return str(pred_schedule)
 
 
+    def _finish_scheduling_turn(self, user_prompt: str, verbose: bool = False):
+        """
+        Hand the floor back to the orchestrator once the scheduling eval loop is done.
+
+        Args:
+        user_prompt (str): The user prompt to send to an agent.
+            verbose (bool, optional): Whether to print verbose output. Defaults to False.
+        """
+        if len(self.admin_staff_mas.path) > 1:
+            self.admin_staff_mas.chat(
+                user_prompt=user_prompt,
+                using_multi_turn=False,
+                verbose=verbose,
+                is_done=True,
+            )
+
+
     @staticmethod
     def postprocessing(strategy: str,
                        data: Union[str, dict],
@@ -549,7 +566,9 @@ class OPFVSchedulingSimulation:
         
         # First, try to use the tool calling
         try:
-            assert self.scheduling_strategy == 'tool_calling', log('Scheduling strategy is set to `reasoning`, directly use the reasoning method.', level='warning')
+            if self.scheduling_strategy != 'tool_calling':
+                log('Scheduling strategy is set to `reasoning`, directly use the reasoning method.', level='warning')
+                raise AssertionError
             
             # Invoke
             prediction = scheduling_tool_calling(
@@ -580,7 +599,8 @@ class OPFVSchedulingSimulation:
 
         # If tool calling fails, fallback to LLM-based scheduling
         except Exception as e:
-            log(f'Exception occured: {e}', 'warning')
+            if not isinstance(e, AssertionError):
+                log(f'Exception occured: {e}', 'warning')
             
             if self.scheduling_strategy == 'tool_calling':
                 log('Failed to select an appropriate tool. Falling back to reasoning-based scheduling.', level='warning')
@@ -949,6 +969,7 @@ class OPFVSchedulingSimulation:
                             'dialog': [preprocess_dialog(self.dialog_history['scheduling'])]
                         }
                         token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
+                        self._finish_scheduling_turn(self.dialog_history['scheduling'][-1]['content'], verbose)
                         return doctor_information, result_dict, token_usage
 
                 # Sanity check
@@ -1008,6 +1029,7 @@ class OPFVSchedulingSimulation:
             }
             log("Simulation completed.", color=True)
             token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
+            self._finish_scheduling_turn(self.dialog_history['scheduling'][-1]['content'], verbose)
             return doctor_information, result_dict, token_usage
 
         # Otherwise
@@ -1058,6 +1080,7 @@ class OPFVSchedulingSimulation:
 
         log("Simulation completed.", color=True)
         token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
+        self._finish_scheduling_turn(self.dialog_history['scheduling'][-1]['content'], verbose)
         return doctor_information, result_dict, token_usage
 
     

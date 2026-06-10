@@ -293,10 +293,13 @@ class SchedulingAdminStaffAgent(BaseAgent):
         if callback is not None:
             return callback(user_prompt)
         
+        if is_done:
+            return self.ROUTE_DONE, True
+
         reply = self(
-            user_prompt, 
-            using_multi_turn=using_multi_turn, 
-            verbose=verbose, 
+            user_prompt,
+            using_multi_turn=using_multi_turn,
+            verbose=verbose,
             **kwargs
         )
         return reply, is_done
