@@ -67,6 +67,7 @@ class OrchestratorAgent(BaseAgent):
             verbose: bool = True,
             is_done: bool = False,
             sub_agents: Optional[dict] = None,
+            callback: Optional[callable] = None,
             **kwargs) -> tuple[Union[str, dict], bool]:
         """
         MAS entry point: route among the sub-agents for this turn.
@@ -77,6 +78,8 @@ class OrchestratorAgent(BaseAgent):
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
             is_done (bool, optional): Caller-supplied termination flag; ORed with the router's own ROUTE_DONE decision. Defaults to False.
             sub_agents (Optional[dict], optional): The candidate child agents (name -> ``MASNode``). Defaults to None.
+            callback (Optional[callable], optional): A ``callback(user_prompt) -> (reply, is_done)`` that
+                                                     performs the structured staff turn. When provided, the agent delegates to it. Defaults to None.
 
         Returns:
             tuple[Union[str, dict], bool]: ``(response, is_done)`` — the routing

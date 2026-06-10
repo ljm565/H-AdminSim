@@ -14,8 +14,6 @@ class HospitalMAS:
         self.root = self._build_tree(self.mas_structure)
         self.state = ConversationState()
         self.path = [self.root]
-        # Safety cap on routing hops within a single turn (guards against two
-        # routers oscillating without ever reaching a leaf).
         self.max_hops_per_turn = 50
 
 
@@ -122,12 +120,6 @@ class HospitalMAS:
         """
         Reset the MAS for a fresh conversation.
 
-        Rebuilds the node tree from the original structure (so every node's
-        ``next_step`` is restored to its static, structure-defined value and any
-        runtime handoff / completion flag is dropped), resets the routing state,
-        and resets every agent's conversation history. Agents are reused (the
-        structure holds the same instances); only their histories are cleared.
-
         Args:
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
         """
@@ -158,6 +150,7 @@ class HospitalMAS:
              user_prompt: str,
              using_multi_turn: bool = True,
              verbose: bool = True,
+             callback: Optional[callable] = None,
              **kwargs) -> tuple[str, bool]:
         """
         Feed one user message into the MAS and return the resulting reply.
@@ -166,6 +159,8 @@ class HospitalMAS:
             user_prompt (str): The user prompt to send to an agent.
             using_multi_turn (bool, optional): Whether to use multi-turn conversation. Defaults to True.
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
+            callback (Optional[callable], optional): Forwarded to the handling agent's ``act``; 
+                                                     a leaf worker may delegate its turn to it. Defaults to None.
 
         Returns:
             tuple[str, bool]: ``(reply, is_done)`` — the reply produced by whichever
@@ -175,17 +170,23 @@ class HospitalMAS:
         if self.root.is_complete:
             self.reset(verbose=verbose)
         
+        # Append patient's response
         self.state.messages.append({"role": "Patient", "content": user_prompt})
-        return self._advance(
+        
+        # Action
+        reply, is_done = self._advance(
             using_multi_turn=using_multi_turn,
             verbose=verbose,
+            callback=callback,
             **kwargs
         )
+        return reply, is_done
 
 
     def _advance(self,
                  using_multi_turn: bool = True,
                  verbose: bool = True,
+                 callback: Optional[callable] = None,
                  **kwargs) -> tuple[str, bool]:
         """
         Route down to a leaf and run it for the current turn.
@@ -193,6 +194,8 @@ class HospitalMAS:
         Args:
             using_multi_turn (bool, optional): Whether to use multi-turn conversation. Defaults to True.
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
+            callback (Optional[callable], optional): Forwarded to the handling agent's ``act``; 
+                                                     a leaf worker may delegate its turn to it. Defaults to None.
 
         Returns:
             tuple[str, bool]: ``(reply, is_done)`` for the turn.
@@ -214,6 +217,7 @@ class HospitalMAS:
                 using_multi_turn=using_multi_turn,
                 verbose=verbose,
                 sub_agents=sub_agents,
+                callback=callback,
                 **kwargs
             )
 
@@ -231,12 +235,17 @@ class HospitalMAS:
             if not isinstance(response, dict):
                 return self._say('Could you tell me again?'), False
 
-            # Delegation case.
-            choice = response.get('route')
+            # Delegation case
+            choice = response.get('route') or node.next_step
             if choice:
                 if choice not in node.children:
                     log(f'{choice} agent cannot be supported.', level='warning')
                     continue    # Retry if the router hallucinates an invalid route (defensive)
+                
+                # Consume the pending handoff once routed
+                if node.next_step == choice:
+                    node.next_step = None
+                
                 node = node.children[choice]
                 node.is_complete = False    # (re-)engaged -> active again
                 self.path.append(node)
@@ -251,13 +260,14 @@ class HospitalMAS:
             using_multi_turn=using_multi_turn,
             verbose=verbose,
             sub_agents=None,    # Because of leaf node
+            callback=callback,
             **kwargs
         )
         self.state.current_agent = node.name
         if is_done:
             node.is_complete = True
-            if node.next_step:
-                self.root.next_step = node.next_step    # temporary handoff, e.g. intake -> 'first_visit_scheduling'
+            if node.parent and node.next_step is not None:
+                node.parent.next_step = node.next_step
             self._pop()     # return control to the parent router
         return self._say(reply), is_done
 
@@ -265,6 +275,9 @@ class HospitalMAS:
     def _pop(self) -> bool:
         """
         Pop the active node, returning control to its parent. False if at root.
+
+        Returns:
+            bool: True if a node was popped, False if already at the root.
         """
         if len(self.path) > 1:
             self.path.pop()

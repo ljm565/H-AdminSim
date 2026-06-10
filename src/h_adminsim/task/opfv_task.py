@@ -715,6 +715,7 @@ class OutpatientFirstScheduling(OutpatientTask):
         self.sanity_checker = SanityChecker(self._START_HOUR, self._END_HOUR, self._TIME_UNIT)
         doctor_information = environment.get_general_doctor_info_from_fhir() if self.fhir_integration else agent_test_data.get('doctor')
         patient_info, department, sanity = self.get_intake_information(gt, agent_results, doctor_information)
+        intake_executed = 'first_visit_intake' in agent_results   # end-to-end if intake ran for this patient
         results = init_result_dict()
         self.reset_token_data()
 
@@ -767,6 +768,7 @@ class OutpatientFirstScheduling(OutpatientTask):
             doctor_information=doctor_information,
             verbose=verbose,
             max_inferences=self.max_inferences,
+            intake_executed=intake_executed,
             patient_kwargs=self.patient_reasoning_kwargs,
             staff_kwargs=self.staff_reasoning_kwargs,
             max_retries=self.max_retries,

@@ -6,11 +6,10 @@ from copy import deepcopy
 from importlib import resources
 from patientsim import PatientAgent
 from decimal import Decimal, getcontext
-from typing import Tuple, Union, Optional
 from langchain.agents import AgentExecutor
 from langchain_core.messages import HumanMessage, AIMessage
+from typing import Tuple, Union, Optional, TYPE_CHECKING
 
-from h_adminsim.agent import SchedulingAdminStaffAgent
 from h_adminsim.registry.errors import (
     SchedulingError,
     ToolCallingError, 
@@ -22,22 +21,26 @@ from h_adminsim.registry import (
     OPFV_PREFERENCE_PHRASE_STAFF,
     OPFV_PREFERENCE_PHRASE_PATIENT, 
 )
-from h_adminsim.environment.hospital import HospitalEnvironment
-from h_adminsim.utils import log, colorstr
 from h_adminsim.tools.callback import TokenUsageCallback
 from h_adminsim.tools.sanity_checker import SanityChecker
 from h_adminsim.tools import SchedulingRule, scheduling_tool_calling
+from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.common_utils import *
+
+if TYPE_CHECKING:
+    from h_adminsim.pipeline import HospitalMAS
+    from h_adminsim.agent import SchedulingAdminStaffAgent
+    from h_adminsim.environment.hospital import HospitalEnvironment
 
 
 
 class OPFVSchedulingSimulation:
     def __init__(self,
                  patient_agent: PatientAgent,
-                 admin_staff_agent: SchedulingAdminStaffAgent,
+                 admin_staff_mas: "HospitalMAS",
                  metadata: dict,
                  department_data: dict,
-                 environment: HospitalEnvironment,
+                 environment: "HospitalEnvironment",
                  scheduling_strategy: str = 'tool_calling',
                  preference_rejection_prob: float = 0.3,
                  preference_rejection_prob_decay: float = 0.5,
@@ -48,7 +51,7 @@ class OPFVSchedulingSimulation:
         # Initialize simulation parameters
         getcontext().prec = 10
         self.patient_agent = patient_agent
-        self.admin_staff_agent = admin_staff_agent
+        self.admin_staff_mas = admin_staff_mas
         self.environment = environment
         self._START_HOUR = metadata['time']['start_hour']
         self._END_HOUR = metadata['time']['end_hour']
@@ -61,7 +64,19 @@ class OPFVSchedulingSimulation:
         self._init_prompt(schedule_rejection_prompt_path)
         self.sanity_checker = sanity_checker
         self.rules = SchedulingRule(metadata, department_data, self.environment, self.fhir_integration)
-        
+
+
+    @property
+    def scheduling_agent(self) -> "SchedulingAdminStaffAgent":
+        """
+        The scheduling worker (a leaf of the MAS tree).
+
+        Scheduling, cancellation, and rescheduling are all handled by the same
+        ``'first_visit_scheduling'`` worker and are independent of the intake flow,
+        so it is fetched from the MAS on demand rather than cached as instance state.
+        """
+        return self.admin_staff_mas.get_agent('first_visit_scheduling')
+
     
     def _init_prompt(self, schedule_rejection_prompt_path: Optional[str] = None):
         """
@@ -125,7 +140,7 @@ class OPFVSchedulingSimulation:
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
         """
         self.patient_agent.reset_history(verbose=verbose)
-        self.admin_staff_agent.reset_history(verbose=verbose)
+        self.admin_staff_mas.reset(verbose=verbose)
 
 
     def _init_history(self):
@@ -156,10 +171,47 @@ class OPFVSchedulingSimulation:
             elif m["role"] == "Staff":
                 msgs.append(AIMessage(content=m["content"]))
         return msgs
-    
-    
+
+
+    def _render_staff_reply(self, staff_response: dict, natural_express: bool = True) -> str:
+        """
+        Turn a structured staff scheduling result into a natural-language utterance.
+
+        Args:
+            staff_response (dict): The result of `scheduling`, either a clarification (``type == 'text'``) or a schedule proposal (``type == 'tool'``).
+            natural_express (bool, optional): Whether to phrase a schedule proposal naturally instead of dumping the raw schedule dict. Defaults to True.
+
+        Returns:
+            str: The staff utterance to show the patient.
+        """
+        # Clarification message
+        if staff_response['type'] == 'text':
+            return staff_response['result']
+
+        # Tool calling result
+        elif staff_response['type'] == 'tool':
+            pred_schedule = staff_response['result']
+        
+            # Response formatting
+            try:
+                if natural_express:
+                    _schedule = pred_schedule['schedule']
+                    _doctor = list(_schedule.keys())[0]
+                    _date, _st, _tr = _schedule[_doctor]['date'], _schedule[_doctor]['start'], _schedule[_doctor]['end']
+                    _format = random.choice(self.scheduling_agent.natural_schedule_suggestion) \
+                        if isinstance(self.scheduling_agent.natural_schedule_suggestion, list) \
+                            else self.scheduling_agent.natural_schedule_suggestion
+                    return _format.format(doctor=_doctor, date=_date, start=_st, end=_tr)
+                return self.scheduling_agent.schedule_suggestion.format(schedule=pred_schedule)
+            except:
+                try:
+                    return self.scheduling_agent.schedule_suggestion.format(schedule=pred_schedule)
+                except:
+                    return str(pred_schedule)
+
+
     @staticmethod
-    def postprocessing(strategy: str, 
+    def postprocessing(strategy: str,
                        data: Union[str, dict],
                        filtered_doctor_information: Optional[dict] = None) -> Union[str, dict]:
         """
@@ -270,7 +322,7 @@ class OPFVSchedulingSimulation:
             department=known_condition['department'],
             fhir_integration=self.fhir_integration and doctor_information is None,
         )
-        _schedule_client = self.admin_staff_agent.build_agent(
+        _schedule_client = self.scheduling_agent.build_agent(
             rule=self.rules, 
             doctor_info=filtered_doctor_information,
             only_schedule_tool=True
@@ -542,7 +594,7 @@ class OPFVSchedulingSimulation:
                 express_detail=True
             )
             current_time = f"{self.environment.current_time} (Date: {iso_to_date(self.environment.current_time)}, Time: {round(iso_to_hour(self.environment.current_time), 3)})"
-            user_prompt = self.admin_staff_agent.scheduling_user_prompt_template.format(
+            user_prompt = self.scheduling_agent.scheduling_user_prompt_template.format(
                 START_HOUR=self._START_HOUR,
                 END_HOUR=self._END_HOUR,
                 TIME_UNIT=self._TIME_UNIT,
@@ -556,7 +608,7 @@ class OPFVSchedulingSimulation:
 
             tries = 0
             while 1:
-                schedule = self.admin_staff_agent(
+                schedule = self.scheduling_agent(
                     user_prompt,
                     using_multi_turn=False,
                     verbose=False,
@@ -571,16 +623,16 @@ class OPFVSchedulingSimulation:
                 tries += 1
 
             if not isinstance(schedule, dict):
-                self.admin_staff_agent.reset_history(verbose=False)
+                self.scheduling_agent.reset_history(verbose=False)
                 raise SchedulingError(colorstr('red', 'Reasoning fallback failed to produce a valid schedule JSON.'))
 
             prediction = {
                 'type': 'tool',
                 'result': schedule,
                 'raw': None,
-                'token': deepcopy(self.admin_staff_agent.client.token_usages),
+                'token': deepcopy(self.scheduling_agent.client.token_usages),
             }
-            self.admin_staff_agent.reset_history(verbose=False)
+            self.scheduling_agent.reset_history(verbose=False)
 
         return prediction
     
@@ -757,6 +809,7 @@ class OPFVSchedulingSimulation:
                             doctor_information: Optional[dict] = None,
                             verbose: bool = False,
                             max_inferences: int = 5,
+                            intake_executed: bool = False,
                             natural_express: bool = True,
                             reasoning_max_tries: int = 0,
                             patient_kwargs: dict = {},
@@ -772,6 +825,7 @@ class OPFVSchedulingSimulation:
                                                            including availability and other relevant details. Defaults to None.
             verbose (bool, optional): Whether to log detailed simulation outputs. Defaults to False.
             max_inferences (int, optional): Maximum number of dialogue turns.
+            intake_executed (bool, optional): Whether intake ran before this scheduling step (end-to-end). Defaults to False.
             natural_express: (bool, optional): Whether express new schedule as natural or not. Defaults to True.
             reasoning_max_tries (int, optional): Reasoning fallback maximum number of retries. Defaults to 0.
             patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent.
@@ -789,25 +843,47 @@ class OPFVSchedulingSimulation:
             assert doctor_information is not None, colorstr("red", f"Doctor information must be provided if you don't use FHIR.")
 
         # Initialize agents and result dictionary
+        if not intake_executed:
+            self._init_agents(verbose=verbose)
+            self.admin_staff_mas.root.next_step = 'first_visit_scheduling' # Assuming that the intake task was done successfully
+        else:
+            assert self.admin_staff_mas.root.next_step == 'first_visit_scheduling', \
+                colorstr("red", f"Orchestrator `next_step` must be a `first_visit_scheduling`")
         staff_token_callback = TokenUsageCallback()
         self._init_history()
-        self._init_agents(verbose=verbose)
         staff_token_stats = {}
         filtered_doctor_information = self.environment.get_doctor_schedule(
             doctor_information=doctor_information,
             department=staff_known_data['department'],
             fhir_integration=self.fhir_integration and doctor_information is None,
         )
-        client = self.admin_staff_agent.build_agent(
+        tool_calling_agent = self.scheduling_agent.build_agent(
             rule=self.rules, 
             doctor_info=filtered_doctor_information
         )
         merged_patient_kwargs = {**patient_kwargs, **kwargs}
         merged_staff_kwargs = {**staff_kwargs, **kwargs}
-        
+
+        # Staff turn closure: captures all of `scheduling`'s simulation-side arguments
+        holder = {}
+        def staff_turn(user_prompt: str) -> Tuple[str, bool]:
+            staff_known_data.update({'patient_intention': user_prompt})
+            staff_response = self.scheduling(
+                tool_calling_agent,
+                staff_known_data,
+                doctor_information,
+                chat_history=self._to_lc_history('scheduling'),
+                reasoning_max_tries=reasoning_max_tries,
+                callback=staff_token_callback,
+                **merged_staff_kwargs,
+            )
+            holder['response'] = staff_response
+            return self._render_staff_reply(staff_response, natural_express), False
+
         # Start conversation
-        staff_greet = self.admin_staff_agent.appn_greet
+        staff_greet = self.scheduling_agent.appn_greet
         self.dialog_history['scheduling'].append({"role": "Staff", "content": staff_greet})
+        self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
         role = f"{colorstr('blue', 'Staff')}"
         log(f"{role:<25}: {staff_greet}")
 
@@ -837,16 +913,18 @@ class OPFVSchedulingSimulation:
                     log(f"{role:<25}: {patient_response}")
 
                     # Scheduling from staff
-                    staff_known_data.update({'patient_intention': patient_response})
-                    staff_response = self.scheduling(
-                        client,
-                        staff_known_data,
-                        doctor_information,
-                        chat_history=self._to_lc_history('scheduling'),
-                        reasoning_max_tries=reasoning_max_tries,
-                        callback=staff_token_callback,
-                        **merged_staff_kwargs
+                    rendered_response, _ = self.admin_staff_mas.chat(
+                        user_prompt=patient_response,
+                        callback=staff_turn,
+                        using_multi_turn=False,
+                        verbose=False,
                     )
+                    staff_response = holder.pop('response')
+                    self.dialog_history['scheduling'].append({"role": "Staff", "content": rendered_response})
+                    role = f"{colorstr('blue', 'Staff')}"
+                    log(f"{role:<25}: {rendered_response}")
+
+                    # Token accounting
                     if self.scheduling_strategy == 'tool_calling':
                         staff_token_stats = staff_token_callback.token_usage
                     else:
@@ -856,40 +934,9 @@ class OPFVSchedulingSimulation:
                             else:
                                 staff_token_stats[k].extend(v)
 
-                    # Clarification message
-                    if staff_response['type'] == 'text':
-                        response = staff_response['result']
-                        self.dialog_history['scheduling'].append({"role": "Staff", "content": response})
-                        role = f"{colorstr('blue', 'Staff')}"
-                        log(f"{role:<25}: {response}")
-
-                    # Tool calling result
-                    elif staff_response['type'] == 'tool':
+                    # A schedule proposal ends this negotiation turn; a clarification keeps it going.
+                    if staff_response['type'] == 'tool':
                         pred_schedule = staff_response['result']
-
-                        # Response formatting
-                        try:
-                            if natural_express:
-                                _schedule = pred_schedule['schedule']
-                                _doctor = list(_schedule.keys())[0]
-                                _date, _st, _tr = _schedule[_doctor]['date'], _schedule[_doctor]['start'], _schedule[_doctor]['end']
-                                _format = random.choice(self.admin_staff_agent.natural_schedule_suggestion) \
-                                    if isinstance(self.admin_staff_agent.natural_schedule_suggestion, list) \
-                                        else self.admin_staff_agent.natural_schedule_suggestion
-                                response = _format.format(
-                                    doctor=_doctor, date=_date, start=_st, end=_tr
-                                )
-                            else:
-                                response = self.admin_staff_agent.schedule_suggestion.format(schedule=pred_schedule)
-                        except:
-                            try:
-                                response = self.admin_staff_agent.schedule_suggestion.format(schedule=pred_schedule)
-                            except:
-                                response = str(pred_schedule)
-
-                        self.dialog_history['scheduling'].append({"role": "Staff", "content": response})
-                        role = f"{colorstr('blue', 'Staff')}"
-                        log(f"{role:<25}: {response}")
                         break
 
                     tries += 1
@@ -1052,7 +1099,7 @@ class OPFVSchedulingSimulation:
         self._init_agents(verbose=verbose)
         patient_schedules = self.environment.patient_schedules if patient_schedules is None else patient_schedules
         doctor_information = self.environment.get_general_doctor_info_from_fhir() if self.fhir_integration else doctor_information
-        client = self.admin_staff_agent.build_agent(
+        client = self.scheduling_agent.build_agent(
             rule=self.rules, 
             doctor_info=doctor_information,
             patient_schedule_list=patient_schedules,
@@ -1061,8 +1108,9 @@ class OPFVSchedulingSimulation:
         merged_patient_kwargs = {**patient_kwargs, **kwargs}
 
         # Start conversation
-        staff_greet = self.admin_staff_agent.general_greet
+        staff_greet = self.admin_staff_mas.root.agent.staff_greet
         self.dialog_history['cancel'].append({"role": "Staff", "content": staff_greet})
+        self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
         role = f"{colorstr('blue', 'Staff')}"
         log(f"{role:<25}: {staff_greet}")
 
@@ -1203,7 +1251,7 @@ class OPFVSchedulingSimulation:
         doctor_information = self.environment.get_general_doctor_info_from_fhir() if self.fhir_integration else doctor_information
         merged_patient_kwargs = {**patient_kwargs, **kwargs}
         merged_staff_kwargs = {**staff_kwargs, **kwargs}
-        client = self.admin_staff_agent.build_agent(
+        client = self.scheduling_agent.build_agent(
             rule=self.rules,
             doctor_info=doctor_information,
             patient_schedule_list=patient_schedules,
@@ -1212,8 +1260,9 @@ class OPFVSchedulingSimulation:
         )
 
         # Start conversation
-        staff_greet = self.admin_staff_agent.general_greet
+        staff_greet = self.admin_staff_mas.root.agent.staff_greet
         self.dialog_history['reschedule'].append({"role": "Staff", "content": staff_greet})
+        self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
         role = f"{colorstr('blue', 'Staff')}"
         log(f"{role:<25}: {staff_greet}")
 
@@ -1377,7 +1426,7 @@ class OPFVSchedulingSimulation:
             department=staff_known_data['department'],
             fhir_integration=self.fhir_integration and doctor_information is None,
         )
-        client = self.admin_staff_agent.build_agent(
+        client = self.scheduling_agent.build_agent(
             rule=self.rules, 
             doctor_info=filtered_doctor_information
         )
@@ -1385,8 +1434,9 @@ class OPFVSchedulingSimulation:
         merged_staff_kwargs = {**staff_kwargs, **kwargs}
         
         # Start conversation
-        staff_greet = self.admin_staff_agent.appn_greet
+        staff_greet = self.scheduling_agent.appn_greet
         self.dialog_history['scheduling'].append({"role": "Staff", "content": staff_greet})
+        self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
         role = f"{colorstr('blue', 'Staff')}"
         log(f"{role:<25}: {staff_greet}")
 
@@ -1455,17 +1505,17 @@ class OPFVSchedulingSimulation:
                             _schedule = pred_schedule['schedule']
                             _doctor = list(_schedule.keys())[0]
                             date, st, tr = _schedule[_doctor]['date'], _schedule[_doctor]['start'], _schedule[_doctor]['end']
-                            _format = random.choice(self.admin_staff_agent.natural_schedule_suggestion) \
-                                if isinstance(self.admin_staff_agent.natural_schedule_suggestion, list) \
-                                    else self.admin_staff_agent.natural_schedule_suggestion
+                            _format = random.choice(self.scheduling_agent.natural_schedule_suggestion) \
+                                if isinstance(self.scheduling_agent.natural_schedule_suggestion, list) \
+                                    else self.scheduling_agent.natural_schedule_suggestion
                             response = _format.format(
                                 doctor=_doctor, date=date, start=st, end=tr
                             )
                         else:
-                            response = self.admin_staff_agent.schedule_suggestion.format(schedule=pred_schedule)
+                            response = self.scheduling_agent.schedule_suggestion.format(schedule=pred_schedule)
                     except:
                         try:
-                            response = self.admin_staff_agent.schedule_suggestion.format(schedule=pred_schedule)
+                            response = self.scheduling_agent.schedule_suggestion.format(schedule=pred_schedule)
                         except:
                             response = str(pred_schedule)
                     
@@ -1564,13 +1614,13 @@ class OPFVSchedulingSimulation:
                                 _date = _schedule[_doctor]['date']
                                 try:
                                     date, st, tr = _schedule[_doctor]['date'], _schedule[_doctor]['start'], _schedule[_doctor]['end']
-                                    _format = random.choice(self.admin_staff_agent.natural_schedule_suggestion) \
-                                        if isinstance(self.admin_staff_agent.natural_schedule_suggestion, list) \
-                                            else self.admin_staff_agent.natural_schedule_suggestion
+                                    _format = random.choice(self.scheduling_agent.natural_schedule_suggestion) \
+                                        if isinstance(self.scheduling_agent.natural_schedule_suggestion, list) \
+                                            else self.scheduling_agent.natural_schedule_suggestion
                                     response = _format.format(doctor=_doctor, date=date, start=st, end=tr)
                                 except:
                                     try:
-                                        response = self.admin_staff_agent.schedule_suggestion.format(schedule=pred_schedule)
+                                        response = self.scheduling_agent.schedule_suggestion.format(schedule=pred_schedule)
                                     except:
                                         response = str(pred_schedule)
                                 self.dialog_history['scheduling'].append({"role": "Staff", "content": response})

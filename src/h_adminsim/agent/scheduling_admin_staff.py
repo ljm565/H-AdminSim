@@ -61,7 +61,6 @@ class SchedulingAdminStaffAgent(BaseAgent):
         Initialize the environment with default settings.
         """
         super()._init_env(**kwargs)
-        self.general_greet = kwargs.get('general_greet', "How can I help you?")
         self.appn_greet = kwargs.get('appn_greet', "How would you like to schedule the appointment?")
         self.test_greet = kwargs.get('test_greet', "How would you like to schedule the test?")
         self.schedule_suggestion = kwargs.get('schedule_suggestion', "How about this schedule: {schedule}")
@@ -268,23 +267,39 @@ class SchedulingAdminStaffAgent(BaseAgent):
         return executor
 
 
-    def act(self, state: ConversationState, **kwargs) -> tuple[str, bool]:
+    def act(self,
+            user_prompt: str,
+            using_multi_turn: bool = True,
+            verbose: bool = True,
+            is_done: bool = False,
+            sub_agents: Optional[dict] = None,
+            callback: Optional[callable] = None,
+            **kwargs) -> tuple[str, bool]:
         """
-        MAS entry point: handle one scheduling turn from the shared conversation state.
+        MAS entry point: handle one scheduling turn.
 
         Args:
-            state (ConversationState): Shared conversation state.
-            **kwargs: Per-call arguments forwarded to the underlying model call
-                (e.g. ``reasoning_effort``).
+            user_prompt (str): The patient utterance for this turn.
+            using_multi_turn (bool, optional): Whether to use multi-turn conversation. Defaults to True.
+            verbose (bool, optional): Whether to print verbose output. Defaults to True.
+            is_done (bool, optional): Caller-supplied termination flag for the fallback path. Defaults to False.
+            sub_agents (Optional[dict], optional): Unused; leaf workers have no children. Defaults to None.
+            callback (Optional[callable], optional): A ``callback(user_prompt) -> (reply, is_done)`` that
+                                                     performs the structured staff turn. When provided, the agent delegates to it. Defaults to None.
 
         Returns:
-            tuple[str, bool]: ``(reply, is_done)``. Scheduling has no simple turn
-                budget, so completion currently defaults to ``False`` (the worker
-                keeps the floor); refine with a task-specific done-signal as needed.
+            tuple[str, bool]: ``(reply, is_done)``.
         """
-        user_prompt = state.messages[-1]["content"] if state.messages else ""
-        reply = self(user_prompt, **kwargs)
-        return reply, False
+        if callback is not None:
+            return callback(user_prompt)
+        
+        reply = self(
+            user_prompt, 
+            using_multi_turn=using_multi_turn, 
+            verbose=verbose, 
+            **kwargs
+        )
+        return reply, is_done
         
 
     def __call__(self,

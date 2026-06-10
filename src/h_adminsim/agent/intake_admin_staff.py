@@ -119,6 +119,7 @@ class IntakeAdminStaffAgent(BaseAgent):
             verbose: bool = True,
             is_done: bool = False,
             sub_agents: Optional[dict] = None,
+            callback: Optional[callable] = None,
             **kwargs) -> tuple[Union[str, dict], bool]:
         """
         Execute a single interaction step and determine whether the conversation should terminate.
@@ -129,6 +130,8 @@ class IntakeAdminStaffAgent(BaseAgent):
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
             is_done (bool, optional): Explicit flag indicating whether the agent action should terminate. Defaults to False.
             sub_agents (Optional[dict], optional): Optional dictionary of sub-agent descriptions to include in the system prompt. Defaults to None.
+            callback (Optional[callable], optional): A ``callback(user_prompt) -> (reply, is_done)`` that
+                                                     performs the structured staff turn. When provided, the agent delegates to it. Defaults to None.
 
         Returns:
             tuple[Union[str, dict], bool]: ``(response, is_done)`` — the routing
