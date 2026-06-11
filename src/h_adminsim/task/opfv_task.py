@@ -268,7 +268,7 @@ class OutpatientFirstIntake(OutpatientTask):
                 patient_agent.client.token_usages,
                 self.admin_staff_mas.aggregate_token_usages(),
             )
-            results['pred'].append({})
+            results['pred'].append(None)
             results['status'].append(False)
             results['status_code'].append(STATUS_CODES['agent'])
             results['trial'].append(['agent selection error'])
@@ -748,7 +748,7 @@ class OutpatientFirstScheduling(OutpatientTask):
         # If the precedent department data is wrong, continue
         if not sanity:
             results['gt'].append(gt_data[0])
-            results['pred'].append({})
+            results['pred'].append(None)
             results['status'].append(False)
             results['status_code'].append(STATUS_CODES['preceding'])
             results['dialog'].append('')

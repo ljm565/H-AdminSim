@@ -12,8 +12,9 @@ from typing import Tuple, Union, Optional, TYPE_CHECKING
 
 from h_adminsim.registry.errors import (
     SchedulingError,
-    ToolCallingError, 
-    DataNotFoundError, 
+    ToolCallingError,
+    DataNotFoundError,
+    AgentSelectionError,
 )
 from h_adminsim.registry import (
     STATUS_CODES,
@@ -50,6 +51,7 @@ class OPFVSchedulingSimulation:
         
         # Initialize simulation parameters
         getcontext().prec = 10
+        self._chief_agent_name = 'first_visit_scheduling'
         self.patient_agent = patient_agent
         self.admin_staff_mas = admin_staff_mas
         self.environment = environment
@@ -1013,6 +1015,11 @@ class OPFVSchedulingSimulation:
                         using_multi_turn=False,
                         verbose=False,
                     )
+
+                    # If wrong agent activated
+                    if output.agent != self._chief_agent_name:
+                        raise AgentSelectionError(colorstr('red', f'Wrong agent activated, expected {self._chief_agent_name} but got {output.agent}'))
+
                     rendered_response, _role = output.response, output.agent
                     staff_response = holder.pop('response')
                     self.dialog_history['scheduling'].append({"role": "Staff", "content": rendered_response})
@@ -1097,6 +1104,20 @@ class OPFVSchedulingSimulation:
                 'dialog': [preprocess_dialog(self.dialog_history['scheduling'])]
             }
             log("Simulation completed.", color=True)
+            token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
+            self._finish_scheduling_turn('scheduling', verbose)
+            return doctor_information, result_dict, token_usage
+
+        # Wrong agent activated
+        except AgentSelectionError as e:
+            log(str(e), level='warning')
+            result_dict = {
+                'gt': [gt_patient_condition],
+                'pred': [None],
+                'status': [False],
+                'status_code': [STATUS_CODES['agent']],
+                'dialog': [preprocess_dialog(self.dialog_history['scheduling'])]
+            }
             token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
             self._finish_scheduling_turn('scheduling', verbose)
             return doctor_information, result_dict, token_usage
@@ -1236,6 +1257,11 @@ class OPFVSchedulingSimulation:
                     using_multi_turn=False,
                     verbose=False,
                 )
+
+                # If wrong agent activated
+                if output.agent != self._chief_agent_name:
+                    raise AgentSelectionError(colorstr('red', f'Wrong agent activated, expected {self._chief_agent_name} but got {output.agent}'))
+
                 staff_response = holder.pop('response')
 
                 # A wrong identification cancels nothing -> surface as a not-found failure
@@ -1271,6 +1297,17 @@ class OPFVSchedulingSimulation:
         # Requested schedule indentification error
         except DataNotFoundError:
             result_dict['dialog'].append(preprocess_dialog(self.dialog_history['cancel']))
+
+        # Wrong agent activated
+        except AgentSelectionError as e:
+            log(str(e), level='warning')
+            result_dict = {
+                'gt': [{'cancel': gt_idx}],
+                'pred': [None],
+                'status': [False],
+                'status_code': [STATUS_CODES['agent']],
+                'dialog': [preprocess_dialog(self.dialog_history['cancel'])]
+            }
 
         # Tool calling error
         except TypeError:
@@ -1388,6 +1425,11 @@ class OPFVSchedulingSimulation:
                     using_multi_turn=False,
                     verbose=False,
                 )
+
+                # If wrong agent activated
+                if output.agent != self._chief_agent_name:
+                    raise AgentSelectionError(colorstr('red', f'Wrong agent activated, expected {self._chief_agent_name} but got {output.agent}'))
+
                 staff_response = holder.pop('response')
 
                 # Tool-calling failures resolve nothing -> surface them before recording a staff turn.
@@ -1435,7 +1477,18 @@ class OPFVSchedulingSimulation:
         # Scheduling Error:
         except SchedulingError:
             result_dict['dialog'].append(preprocess_dialog(self.dialog_history['reschedule']))
-        
+
+        # Wrong agent activated
+        except AgentSelectionError as e:
+            log(str(e), level='warning')
+            result_dict = {
+                'gt': [{'reschedule': gt_idx}],
+                'pred': [None],
+                'status': [False],
+                'status_code': [STATUS_CODES['agent']],
+                'dialog': [preprocess_dialog(self.dialog_history['reschedule'])]
+            }
+
         # Tool calling error
         except TypeError:
             result_dict = {
