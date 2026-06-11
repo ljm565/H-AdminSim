@@ -1,3 +1,7 @@
+from typing import Optional
+
+
+
 STATUS_CODES = {
     'format': 'incorrect format',
     'department': 'incorrect department',
@@ -43,6 +47,7 @@ STATUS_CODES = {
         'fu_schedule': 'test_schedule: not earliest follow-up appointment',
     },
     'preceding': 'preceding task failed',
+    'agent': 'wrong agent selection',
     'unexpected': "unexpected error: {e}",
     'correct': 'pass',
 }
@@ -70,3 +75,12 @@ class SchedulingError(Exception):
     def __init__(self, message: str):
         super().__init__(message)
         self.message = message
+
+
+class AgentSelectionError(Exception):
+    error_code = "WRONG_AGENT_SELECTION"
+
+    def __init__(self, message: str, dialog_history: Optional[list] = None):
+        super().__init__(message)
+        self.message = message
+        self.dialog_history = dialog_history

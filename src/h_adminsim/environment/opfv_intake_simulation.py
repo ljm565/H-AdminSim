@@ -1,6 +1,7 @@
 from typing import Optional, TYPE_CHECKING
 from patientsim import PatientAgent, CheckerAgent
 
+from h_adminsim.registry.errors import AgentSelectionError
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.common_utils import *
 
@@ -17,9 +18,10 @@ class OPFVIntakeSimulation:
                  max_inferences: int = 5):
 
         # Initialize simulation parameters
+        self._chief_agent_name = 'first_visit_intake'
         self.patient_agent = patient_agent
         self.admin_staff_mas = admin_staff_mas
-        self.intake_agent = admin_staff_mas.get_agent('first_visit_intake')
+        self.intake_agent = admin_staff_mas.get_agent(self._chief_agent_name)
         self.checker_agent = checker_agent
         self.max_inferences = max_inferences
         self._sanity_check()
@@ -118,6 +120,14 @@ class OPFVIntakeSimulation:
                 verbose=verbose,
                 **merged_staff_kwargs
             )
+
+            # If wrong agent activated
+            if output.agent != self._chief_agent_name:
+                raise AgentSelectionError(
+                    colorstr('red', f'Wrong agent activated, expected {self._chief_agent_name} but got {output.agent}'),
+                    dialog_history=dialog_history,
+                )
+
             staff_response, is_done, _role = output.response, output.is_done, output.agent
             dialog_history.append({"role": "Staff", "content": staff_response})
             role = f"{staff_role(role=_role)}[{progress}%]"

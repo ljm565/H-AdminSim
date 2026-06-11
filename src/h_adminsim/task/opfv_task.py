@@ -21,6 +21,7 @@ from h_adminsim.registry import (
     DEPARTMENT_NORMALIZATION,
     OPFV_PREFERENCE_PHRASE_PATIENT,
 )
+from h_adminsim.registry.errors import AgentSelectionError
 from h_adminsim.utils import colorstr, log
 from h_adminsim.utils.mas_utils import *
 from h_adminsim.utils.fhir_utils import *
@@ -253,13 +254,27 @@ class OutpatientFirstIntake(OutpatientTask):
             self.admin_staff_mas, 
             max_inferences=self.max_inferences
         )
-        output = run_with_retry(
-            sim_environment.simulate,
-            verbose=False,
-            patient_kwargs=self.patient_reasoning_kwargs, 
-            staff_kwargs=self.staff_reasoning_kwargs,
-            max_retries=self.max_retries,
-        )
+        try:
+            output = run_with_retry(
+                sim_environment.simulate,
+                verbose=False,
+                patient_kwargs=self.patient_reasoning_kwargs,
+                staff_kwargs=self.staff_reasoning_kwargs,
+                max_retries=self.max_retries,
+            )
+        except AgentSelectionError as e:
+            log(str(e), level='warning')
+            self.save_token_data(
+                patient_agent.client.token_usages,
+                self.admin_staff_mas.aggregate_token_usages(),
+            )
+            results['pred'].append({})
+            results['status'].append(False)
+            results['status_code'].append(STATUS_CODES['agent'])
+            results['trial'].append(['agent selection error'])
+            results['dialog'].append(preprocess_dialog(e.dialog_history) if e.dialog_history else '')
+            results['token'].append(self.token_stats)
+            return results
         dialogs, patient_token, admin_staff_token = output['dialog_history'], output.get('patient_token_usage'), output.get('admin_staff_token_usage')
         prediction_department = OutpatientFirstIntake.postprocessing_department(dialogs[-1]['content'])
 
