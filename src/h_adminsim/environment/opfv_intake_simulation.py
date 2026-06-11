@@ -2,7 +2,7 @@ from typing import Optional, TYPE_CHECKING
 from patientsim import PatientAgent, CheckerAgent
 
 from h_adminsim.utils import log, colorstr
-from h_adminsim.utils.common_utils import run_with_retry, preprocess_utterance
+from h_adminsim.utils.common_utils import run_with_retry, preprocess_utterance, staff_role
 
 if TYPE_CHECKING:
     from h_adminsim.pipeline import HospitalMAS
@@ -90,8 +90,8 @@ class OPFVIntakeSimulation:
         staff_greet = self.admin_staff_mas.root.agent.staff_greet
         dialog_history = [{"role": "Staff", "content": staff_greet}]
         self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
-        role = f"{colorstr('blue', 'Staff')}   [0%]"
-        log(f"{role:<23}: {staff_greet}")
+        role = f"{staff_role(self.admin_staff_mas.state)}[0%]"
+        log(f"{role:<29}: {staff_greet}")
 
         merged_patient_kwargs = {**patient_kwargs, **kwargs}
         merged_staff_kwargs = {**staff_kwargs, **kwargs}
@@ -107,8 +107,8 @@ class OPFVIntakeSimulation:
                 **merged_patient_kwargs
             )
             dialog_history.append({"role": "Patient", "content": patient_response})
-            role = f"{colorstr('green', 'Patient')} [{progress}%]"
-            log(f"{role:<23}: {patient_response}")
+            role = f"{colorstr('green', 'Patient')}         [{progress}%]"
+            log(f"{role:<29}: {patient_response}")
 
             # Obtain response from staff
             staff_response, is_done = self.admin_staff_mas.chat(
@@ -119,8 +119,8 @@ class OPFVIntakeSimulation:
                 **merged_staff_kwargs
             )
             dialog_history.append({"role": "Staff", "content": staff_response})
-            role = f"{colorstr('blue', 'Staff')}   [{progress}%]"
-            log(f"{role:<23}: {staff_response}")
+            role = f"{staff_role(self.admin_staff_mas.state)}[{progress}%]"
+            log(f"{role:<29}: {staff_response}")
 
             # If early termination is detected, break the loop
             if is_done:
@@ -178,8 +178,8 @@ class OPFVIntakeSimulation:
         staff_greet = self.admin_staff_mas.root.agent.staff_greet
         dialog_history = [{"role": "Staff", "content": staff_greet}]
         self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
-        role = f"{colorstr('blue', 'Staff')}   [0%]"
-        log(f"{role:<23}: {staff_greet}")
+        role = f"{staff_role(self.admin_staff_mas.state)}[0%]"
+        log(f"{role:<29}: {staff_greet}")
         yield 'Staff', preprocess_utterance(staff_greet)
 
         merged_patient_kwargs = {**patient_kwargs, **kwargs}
@@ -197,8 +197,8 @@ class OPFVIntakeSimulation:
                 **merged_patient_kwargs
             )
             dialog_history.append({"role": "Patient", "content": patient_response})
-            role = f"{colorstr('green', 'Patient')} [{progress}%]"
-            log(f"{role:<23}: {patient_response}")
+            role = f"{colorstr('green', 'Patient')}         [{progress}%]"
+            log(f"{role:<29}: {patient_response}")
             yield 'Patient', preprocess_utterance(patient_response)
 
             # Obtain response from staff
@@ -211,8 +211,8 @@ class OPFVIntakeSimulation:
                 **merged_staff_kwargs
             )
             dialog_history.append({"role": "Staff", "content": staff_response})
-            role = f"{colorstr('blue', 'Staff')}   [{progress}%]"
-            log(f"{role:<23}: {staff_response}")
+            role = f"{staff_role(self.admin_staff_mas.state)}[{progress}%]"
+            log(f"{role:<29}: {staff_response}")
             yield 'Staff', preprocess_utterance(staff_response)
 
             # If early termination is detected, break the loop

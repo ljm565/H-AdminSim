@@ -12,7 +12,9 @@ class HospitalMAS:
         self.mas_structure = mas_structure
         self.nodes = {}
         self.root = self._build_tree(self.mas_structure)
-        self.state = ConversationState()
+        self.state = ConversationState(
+            current_agent=self.root.name
+        )
         self.path = [self.root]
         self.max_hops_per_turn = 50
 
@@ -123,10 +125,12 @@ class HospitalMAS:
         Args:
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
         """
-        self.state = ConversationState()
         self.nodes = {}
         self.root = self._build_tree(self.mas_structure)
         self.path = [self.root]
+        self.state = ConversationState(
+            current_agent=self.root.name
+        )
         for node in self.nodes.values():
             node.agent.reset_history(verbose=verbose)
 
@@ -201,6 +205,7 @@ class HospitalMAS:
             tuple[str, bool]: ``(reply, is_done)`` for the turn.
         """
         node = self.path[-1]
+        self.state.current_agent = node.name
 
         # Descend through routers until we reach a leaf worker.
         hops = 0
@@ -229,6 +234,7 @@ class HospitalMAS:
                     return self._say(reply or "Is there anything else I can help you with?"), True
                 node.is_complete = True
                 node = self.path[-1]
+                self.state.current_agent = node.name
                 continue
 
             # The router must return a JSON object; anything else ends the turn.
@@ -249,6 +255,7 @@ class HospitalMAS:
                 node = node.children[choice]
                 node.is_complete = False    # (re-)engaged -> active again
                 self.path.append(node)
+                self.state.current_agent = node.name
                 continue
 
             # Direct reply case (no route): the router answers the user itself.

@@ -782,3 +782,23 @@ def run_with_retry(func, *args, max_retries=8, **kwargs):
             )
             time.sleep(wait_time)
             retry_count += 1
+
+
+
+def staff_role(state) -> str:
+    """
+    Build the Staff log label, annotated with the MAS node that handled the turn.
+
+    Returns:
+        str: A colored ``Staff (<agent name>)`` label.
+    """
+    name = state.current_agent
+    if name == 'orchestrator':
+        name = 'orchest'
+    elif name == 'first_visit_intake':
+        name = 'opfv int'
+    elif name == 'first_visit_scheduling':
+        name = 'opfv sch'
+    
+    label = f'({name})'
+    return f"{colorstr('blue', 'Staff')} {colorstr('magenta', f'{label:<10}')}"

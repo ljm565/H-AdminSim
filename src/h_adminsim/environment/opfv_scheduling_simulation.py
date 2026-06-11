@@ -933,8 +933,7 @@ class OPFVSchedulingSimulation:
         staff_greet = self.scheduling_agent.appn_greet
         self.dialog_history['scheduling'].append({"role": "Staff", "content": staff_greet})
         self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
-        role = f"{colorstr('blue', 'Staff')}"
-        log(f"{role:<25}: {staff_greet}")
+        log(f"{staff_role(self.admin_staff_mas.state):<25}: {staff_greet}")
 
         # Iterate over multiple preferences if exists
         preference_reject_prob = 0.0 if len(gt_data) <= 1 else self.preference_rejection_prob
@@ -970,8 +969,7 @@ class OPFVSchedulingSimulation:
                     )
                     staff_response = holder.pop('response')
                     self.dialog_history['scheduling'].append({"role": "Staff", "content": rendered_response})
-                    role = f"{colorstr('blue', 'Staff')}"
-                    log(f"{role:<25}: {rendered_response}")
+                    log(f"{staff_role(self.admin_staff_mas.state):<25}: {rendered_response}")
 
                     # Token accounting
                     if self.scheduling_strategy == 'tool_calling':
@@ -1174,8 +1172,7 @@ class OPFVSchedulingSimulation:
         staff_greet = self.admin_staff_mas.root.agent.staff_greet
         self.dialog_history['cancel'].append({"role": "Staff", "content": staff_greet})
         self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
-        role = f"{colorstr('blue', 'Staff')}"
-        log(f"{role:<25}: {staff_greet}")
+        log(f"{staff_role(self.admin_staff_mas.state):<25}: {staff_greet}")
 
         try:
             for _ in range(max_inferences):
@@ -1204,8 +1201,7 @@ class OPFVSchedulingSimulation:
                     raise DataNotFoundError(colorstr("red", "Error: Schedule not found error."))
 
                 self.dialog_history['cancel'].append({"role": "Staff", "content": rendered_response})
-                role = f"{colorstr('blue', 'Staff')}"
-                log(f"{role:<25}: {rendered_response}")
+                log(f"{staff_role(self.admin_staff_mas.state):<25}: {rendered_response}")
 
                 # Tool calling result -> successful cancellation (a clarification 'text' reply just re-iterates)
                 if staff_response['type'] == 'tool':
@@ -1302,7 +1298,7 @@ class OPFVSchedulingSimulation:
         doctor_information = self.environment.get_general_doctor_info_from_fhir() if self.fhir_integration else doctor_information
         merged_patient_kwargs = {**patient_kwargs, **kwargs}
         merged_staff_kwargs = {**staff_kwargs, **kwargs}
-        client = self.scheduling_agent.build_agent(
+        tool_calling_agent = self.scheduling_agent.build_agent(
             rule=self.rules,
             doctor_info=doctor_information,
             patient_schedule_list=patient_schedules,
@@ -1314,8 +1310,7 @@ class OPFVSchedulingSimulation:
         staff_greet = self.admin_staff_mas.root.agent.staff_greet
         self.dialog_history['reschedule'].append({"role": "Staff", "content": staff_greet})
         self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
-        role = f"{colorstr('blue', 'Staff')}"
-        log(f"{role:<25}: {staff_greet}")
+        log(f"{staff_role(self.admin_staff_mas.state):<25}: {staff_greet}")
 
         try:
             for _ in range(max_inferences):
@@ -1332,7 +1327,7 @@ class OPFVSchedulingSimulation:
 
                 # Rescheduling from staff
                 staff_response = self.rescheduling(
-                    client=client,
+                    client=tool_calling_agent,
                     patient_intention=patient_response,
                     doctor_information=doctor_information,
                     chat_history=self._to_lc_history('reschedule'),
@@ -1343,8 +1338,7 @@ class OPFVSchedulingSimulation:
                 if staff_response['type'] == 'text':
                     response = staff_response['result']
                     self.dialog_history['reschedule'].append({"role": "Staff", "content": response})
-                    role = f"{colorstr('blue', 'Staff')}"
-                    log(f"{role:<25}: {response}")
+                    log(f"{staff_role(self.admin_staff_mas.state):<25}: {response}")
 
                 # Tool calling result
                 elif staff_response['type'] == 'tool':
@@ -1381,8 +1375,7 @@ class OPFVSchedulingSimulation:
                         
                         # Final response of staff
                         self.dialog_history['reschedule'].append({"role": "Staff", "content": response})
-                        role = f"{colorstr('blue', 'Staff')}"
-                        log(f"{role:<25}: {response}")
+                        log(f"{staff_role(self.admin_staff_mas.state):<25}: {response}")
 
                         # Final response of patient
                         self.dialog_history['reschedule'].append({"role": "Patient", "content": self.end_phrase})
@@ -1488,8 +1481,7 @@ class OPFVSchedulingSimulation:
         staff_greet = self.scheduling_agent.appn_greet
         self.dialog_history['scheduling'].append({"role": "Staff", "content": staff_greet})
         self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
-        role = f"{colorstr('blue', 'Staff')}"
-        log(f"{role:<25}: {staff_greet}")
+        log(f"{staff_role(self.admin_staff_mas.state):<25}: {staff_greet}")
 
         # Iterate over multiple preferences if exists
         preference_reject_prob = 0.0 if len(gt_data) <= 1 else self.preference_rejection_prob
@@ -1542,8 +1534,7 @@ class OPFVSchedulingSimulation:
                 if staff_response['type'] == 'text':
                     response = staff_response['result']
                     self.dialog_history['scheduling'].append({"role": "Staff", "content": response})
-                    role = f"{colorstr('blue', 'Staff')}"
-                    log(f"{role:<25}: {response}")
+                    log(f"{staff_role(self.admin_staff_mas.state):<25}: {response}")
                     yield 'Staff', preprocess_utterance(response), None
                 
                 # Tool calling result
@@ -1571,8 +1562,7 @@ class OPFVSchedulingSimulation:
                             response = str(pred_schedule)
                     
                     self.dialog_history['scheduling'].append({"role": "Staff", "content": response})
-                    role = f"{colorstr('blue', 'Staff')}"
-                    log(f"{role:<25}: {response}")
+                    log(f"{staff_role(self.admin_staff_mas.state):<25}: {response}")
                     yield 'Staff', preprocess_utterance(response), pred_schedule
                     break
 
@@ -1675,15 +1665,13 @@ class OPFVSchedulingSimulation:
                                     except:
                                         response = str(pred_schedule)
                                 self.dialog_history['scheduling'].append({"role": "Staff", "content": response})
-                                role = f"{colorstr('blue', 'Staff')}"
-                                log(f"{role:<25}: {response}")
+                                log(f"{staff_role(self.admin_staff_mas.state):<25}: {response}")
                                 yield 'Staff', preprocess_utterance(response), pred_schedule
                             
                             elif staff_response['type'] == 'text':
                                 response = staff_response['result']
                                 self.dialog_history['scheduling'].append({"role": "Staff", "content": response})
-                                role = f"{colorstr('blue', 'Staff')}"
-                                log(f"{role:<25}: {response}")
+                                log(f"{staff_role(self.admin_staff_mas.state):<25}: {response}")
                                 yield 'Staff', preprocess_utterance(response), None
 
                             accept_tries += 1
