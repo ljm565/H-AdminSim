@@ -732,7 +732,7 @@ class OutpatientFirstScheduling(OutpatientTask):
 
         # If the precedent department data is wrong, continue
         if not sanity:
-            results['gt'].append(gt_data)
+            results['gt'].append(gt_data[0])
             results['pred'].append({})
             results['status'].append(False)
             results['status_code'].append(STATUS_CODES['preceding'])
