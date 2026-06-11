@@ -173,12 +173,16 @@ class OPFVSchedulingSimulation:
         return msgs
 
 
-    def _render_staff_reply(self, staff_response: dict, natural_express: bool = True) -> str:
+    def _render_staff_reply(self,
+                            staff_response: dict,
+                            reply_type: str,
+                            natural_express: bool = True) -> str:
         """
         Turn a structured staff scheduling result into a natural-language utterance.
 
         Args:
             staff_response (dict): The result of `scheduling`, either a clarification (``type == 'text'``) or a schedule proposal (``type == 'tool'``).
+            reply_type (str): Reply types of the scheduling agent.
             natural_express (bool, optional): Whether to phrase a schedule proposal naturally instead of dumping the raw schedule dict. Defaults to True.
 
         Returns:
@@ -190,37 +194,53 @@ class OPFVSchedulingSimulation:
 
         # Tool calling result
         elif staff_response['type'] == 'tool':
-            pred_schedule = staff_response['result']
-        
-            # Response formatting
-            try:
-                if natural_express:
-                    _schedule = pred_schedule['schedule']
-                    _doctor = list(_schedule.keys())[0]
-                    _date, _st, _tr = _schedule[_doctor]['date'], _schedule[_doctor]['start'], _schedule[_doctor]['end']
-                    _format = random.choice(self.scheduling_agent.natural_schedule_suggestion) \
-                        if isinstance(self.scheduling_agent.natural_schedule_suggestion, list) \
-                            else self.scheduling_agent.natural_schedule_suggestion
-                    return _format.format(doctor=_doctor, date=_date, start=_st, end=_tr)
-                return self.scheduling_agent.schedule_suggestion.format(schedule=pred_schedule)
-            except:
+            if reply_type == 'scheduling':
+                pred_schedule = staff_response['result']
+            
+                # Response formatting
                 try:
+                    if natural_express:
+                        _schedule = pred_schedule['schedule']
+                        _doctor = list(_schedule.keys())[0]
+                        _date, _st, _tr = _schedule[_doctor]['date'], _schedule[_doctor]['start'], _schedule[_doctor]['end']
+                        _format = random.choice(self.scheduling_agent.natural_schedule_suggestion) \
+                            if isinstance(self.scheduling_agent.natural_schedule_suggestion, list) \
+                                else self.scheduling_agent.natural_schedule_suggestion
+                        return _format.format(doctor=_doctor, date=_date, start=_st, end=_tr)
                     return self.scheduling_agent.schedule_suggestion.format(schedule=pred_schedule)
                 except:
-                    return str(pred_schedule)
+                    try:
+                        return self.scheduling_agent.schedule_suggestion.format(schedule=pred_schedule)
+                    except:
+                        return str(pred_schedule)
+
+            elif reply_type == 'cancel':
+                result = staff_response['result']
+
+                # A wrong identification cancels nothing; the loop surfaces it as a failure.
+                if result['cancelled_schedule'] is None:
+                    return ""
+
+                # Successful cancellation
+                cancelled_schedule = {k: v for k, v in result['cancelled_schedule'].items()
+                                      if k in ['patient', 'attending_physician', 'department', 'date', 'schedule']}
+                return f"I've cancelled this schedule: {cancelled_schedule}"
 
 
-    def _finish_scheduling_turn(self, verbose: bool = False):
+    def _finish_scheduling_turn(self,
+                                reply_type: str,
+                                verbose: bool = False):
         """
         Hand the floor back to the orchestrator once the scheduling eval loop is done.
 
         Args:
+            reply_type (str): Reply types of the scheduling agent.
             verbose (bool, optional): Whether to print verbose output. Defaults to False.
         """
         if len(self.admin_staff_mas.path) <= 1:
             return
         
-        closing = self.dialog_history['scheduling'][-1]['content']
+        closing = self.dialog_history[reply_type][-1]['content']
         messages = self.admin_staff_mas.state.messages
         
         # When end abnormally
@@ -907,7 +927,7 @@ class OPFVSchedulingSimulation:
                 **merged_staff_kwargs,
             )
             holder['response'] = staff_response
-            return self._render_staff_reply(staff_response, natural_express), False
+            return self._render_staff_reply(staff_response, 'scheduling', natural_express), False
 
         # Start conversation
         staff_greet = self.scheduling_agent.appn_greet
@@ -978,7 +998,7 @@ class OPFVSchedulingSimulation:
                             'dialog': [preprocess_dialog(self.dialog_history['scheduling'])]
                         }
                         token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
-                        self._finish_scheduling_turn(verbose)
+                        self._finish_scheduling_turn('scheduling', verbose)
                         return doctor_information, result_dict, token_usage
 
                 # Sanity check
@@ -1038,7 +1058,7 @@ class OPFVSchedulingSimulation:
             }
             log("Simulation completed.", color=True)
             token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
-            self._finish_scheduling_turn(verbose)
+            self._finish_scheduling_turn('scheduling', verbose)
             return doctor_information, result_dict, token_usage
 
         # Otherwise
@@ -1089,7 +1109,7 @@ class OPFVSchedulingSimulation:
 
         log("Simulation completed.", color=True)
         token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
-        self._finish_scheduling_turn(verbose)
+        self._finish_scheduling_turn('scheduling', verbose)
         return doctor_information, result_dict, token_usage
 
     
@@ -1131,13 +1151,24 @@ class OPFVSchedulingSimulation:
         self._init_agents(verbose=verbose)
         patient_schedules = self.environment.patient_schedules if patient_schedules is None else patient_schedules
         doctor_information = self.environment.get_general_doctor_info_from_fhir() if self.fhir_integration else doctor_information
-        client = self.scheduling_agent.build_agent(
+        tool_calling_agent = self.scheduling_agent.build_agent(
             rule=self.rules, 
             doctor_info=doctor_information,
             patient_schedule_list=patient_schedules,
             gt_idx=gt_idx,
         )
         merged_patient_kwargs = {**patient_kwargs, **kwargs}
+
+        # Staff turn closure: captures all of `scheduling`'s simulation-side arguments
+        holder = {}
+        def staff_turn(user_prompt: str) -> Tuple[str, bool]:
+            staff_response = self.canceling(
+                client=tool_calling_agent,
+                patient_intention=user_prompt,
+                chat_history=self._to_lc_history('cancel')
+            )
+            holder['response'] = staff_response
+            return self._render_staff_reply(staff_response, 'cancel'), False
 
         # Start conversation
         staff_greet = self.admin_staff_mas.root.agent.staff_greet
@@ -1160,46 +1191,33 @@ class OPFVSchedulingSimulation:
                 log(f"{role:<25}: {patient_response}")
 
                 # Canceling from staff
-                staff_response = self.canceling(
-                    client=client,
-                    patient_intention=patient_response,
-                    chat_history=self._to_lc_history('cancel'),
+                rendered_response, _ = self.admin_staff_mas.chat(
+                    user_prompt=patient_response,
+                    callback=staff_turn,
+                    using_multi_turn=False,
+                    verbose=False,
                 )
-                # Clarification message instead of tool calling
-                if staff_response['type'] == 'text':
-                    response = staff_response['result']
-                    self.dialog_history['cancel'].append({"role": "Staff", "content": response})
-                    role = f"{colorstr('blue', 'Staff')}"
-                    log(f"{role:<25}: {response}")
-                    continue
-                
-                # Tool calling result
-                elif staff_response['type'] == 'tool':
-                    result = staff_response['result']
+                staff_response = holder.pop('response')
+
+                # A wrong identification cancels nothing -> surface as a not-found failure
+                if staff_response['type'] == 'tool' and staff_response['result_dict']['status'][0] is False:
+                    raise DataNotFoundError(colorstr("red", "Error: Schedule not found error."))
+
+                self.dialog_history['cancel'].append({"role": "Staff", "content": rendered_response})
+                role = f"{colorstr('blue', 'Staff')}"
+                log(f"{role:<25}: {rendered_response}")
+
+                # Tool calling result -> successful cancellation (a clarification 'text' reply just re-iterates)
+                if staff_response['type'] == 'tool':
                     result_dict = staff_response['result_dict']
-                    
-                    # Succesful case
-                    if result_dict['status'][0] is not False:  # No GT and correct case
-                        cancelled_schedule = {k: v for k, v in result['cancelled_schedule'].items() \
-                                            if k in ['patient', 'attending_physician', 'department', 'date', 'schedule']}
-                        
-                        # Final response of staff
-                        response = f"I've cancelled this schedule: {cancelled_schedule}"
-                        self.dialog_history['cancel'].append({"role": "Staff", "content": response})
-                        role = f"{colorstr('blue', 'Staff')}"
-                        log(f"{role:<25}: {response}")
 
-                        # Final response of patient
-                        self.dialog_history['cancel'].append({"role": "Patient", "content": self.end_phrase})
-                        role = f"{colorstr('green', 'Patient')} (cancel)"
-                        log(f"{role:<25}: {self.end_phrase}")
+                    # Final response of patient
+                    self.dialog_history['cancel'].append({"role": "Patient", "content": self.end_phrase})
+                    role = f"{colorstr('green', 'Patient')} (cancel)"
+                    log(f"{role:<25}: {self.end_phrase}")
 
-                        result_dict['dialog'].append(preprocess_dialog(self.dialog_history['cancel']))
-                        break
-                    
-                    # Fail to identify the schedule
-                    else:
-                        raise DataNotFoundError(colorstr("red", "Error: Schedule not found error."))
+                    result_dict['dialog'].append(preprocess_dialog(self.dialog_history['cancel']))
+                    break
                 
             # The case without any determination during the simulation
             if not len(result_dict['gt']):
@@ -1238,6 +1256,7 @@ class OPFVSchedulingSimulation:
             }
 
         log("Simulation completed.", color=True)
+        self._finish_scheduling_turn('cancel', verbose)
         return doctor_information, result_dict
 
 
