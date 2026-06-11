@@ -186,6 +186,64 @@ class HospitalMAS:
         return response
 
 
+    def force_chat(self,
+                   agent_name: str,
+                   user_prompt: Optional[str] = None,
+                   using_multi_turn: bool = True,
+                   verbose: bool = True,
+                   callback: Optional[callable] = None,
+                   **kwargs) -> Information:
+        """
+        Deterministically run one turn on ``agent_name``, bypassing the routers' free choice.
+
+        Args:
+            agent_name (str): The leaf worker to force for this turn (e.g. ``'first_visit_intake'``).
+            user_prompt (Optional[str], optional): The prompt to handle. Defaults to the last
+                                                   patient message already on the shared transcript.
+            using_multi_turn (bool, optional): Whether to use multi-turn conversation. Defaults to True.
+            verbose (bool, optional): Whether to print verbose output. Defaults to True.
+            callback (Optional[callable], optional): Forwarded to the worker's ``act``. Defaults to None.
+
+        Returns:
+            Information: ``(agent, reply, is_done)`` for the forced turn.
+        """
+        node = self.nodes[agent_name]
+
+        # Drop whatever the misrouted agent appended to the shared transcript this turn.
+        while len(self.state.messages) > 1 and self.state.messages[-1]["role"] == "Staff":
+            self.state.messages.pop()
+        user_prompt = user_prompt if user_prompt is not None else self.state.messages[-1]["content"]
+
+        # Re-pin the active path from the root down to the target leaf (so following turns stay here).
+        chain, cur = [], node
+        while cur is not None:
+            chain.append(cur)
+            cur = cur.parent
+        self.path = list(reversed(chain))
+        for n in self.path:
+            n.is_complete = False
+        self.state.current_agent = node.name
+
+        # Run the target worker directly.
+        reply, is_done = node.agent.act(
+            user_prompt=user_prompt,
+            using_multi_turn=using_multi_turn,
+            verbose=verbose,
+            sub_agents=None,
+            callback=callback,
+            **kwargs,
+        )
+        if is_done:
+            node.is_complete = True
+            self._pop()
+
+        return Information(
+            agent=node.name,
+            response=self._say(reply),
+            is_done=is_done,
+        )
+
+
     def _advance(self,
                  using_multi_turn: bool = True,
                  verbose: bool = True,

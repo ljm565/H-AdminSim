@@ -1628,6 +1628,18 @@ class OPFVSchedulingSimulation:
                     using_multi_turn=False,
                     verbose=False,
                 )
+
+                # Demo must not surface a misroute -> hard-correct deterministically to the chief agent
+                if output.agent != self._chief_agent_name:
+                    log(f"Wrong agent ({output.agent}) activated; forcing {self._chief_agent_name}.", level="warning")
+                    output = self.admin_staff_mas.force_chat(
+                        self._chief_agent_name,
+                        user_prompt=patient_response,
+                        callback=staff_turn,
+                        using_multi_turn=False,
+                        verbose=False,
+                    )
+
                 rendered_response, _role = output.response, output.agent
                 staff_response = holder.pop('response')
                 staff_token_stats = self._accumulate_staff_tokens(
@@ -1723,6 +1735,18 @@ class OPFVSchedulingSimulation:
                                 using_multi_turn=False,
                                 verbose=False,
                             )
+
+                            # Demo must not surface a misroute -> hard-correct deterministically to the chief agent
+                            if output.agent != self._chief_agent_name:
+                                log(f"Wrong agent ({output.agent}) activated; forcing {self._chief_agent_name}.", level="warning")
+                                output = self.admin_staff_mas.force_chat(
+                                    self._chief_agent_name,
+                                    user_prompt=patient_response,
+                                    callback=staff_turn,
+                                    using_multi_turn=False,
+                                    verbose=False,
+                                )
+
                             rendered_response, _role = output.response, output.agent
                             staff_response = holder.pop('response')
                             staff_token_stats = self._accumulate_staff_tokens(

@@ -213,14 +213,27 @@ class OPFVIntakeSimulation:
             yield 'Patient', preprocess_utterance(patient_response)
 
             # Obtain response from staff
+            user_prompt = dialog_history[-1]["content"] + "\nThis is the final turn. Now, you must provide your top5 differential diagnosis." \
+                if inference_idx == self.max_inferences - 1 else dialog_history[-1]["content"]
             output = run_with_retry(
                 self.admin_staff_mas.chat,
-                user_prompt=dialog_history[-1]["content"] + "\nThis is the final turn. Now, you must provide your top5 differential diagnosis." \
-                    if inference_idx == self.max_inferences - 1 else dialog_history[-1]["content"],
+                user_prompt=user_prompt,
                 using_multi_turn=True,
                 verbose=verbose,
                 **merged_staff_kwargs
             )
+
+            # Demo must not surface a misroute -> hard-correct deterministically to the chief agent
+            if output.agent != self._chief_agent_name:
+                log(f"Wrong agent ({output.agent}) activated; forcing {self._chief_agent_name}.", level="warning")
+                output = self.admin_staff_mas.force_chat(
+                    self._chief_agent_name,
+                    user_prompt=user_prompt,
+                    using_multi_turn=True,
+                    verbose=verbose,
+                    **merged_staff_kwargs
+                )
+
             staff_response, is_done, _role = output.response, output.is_done, output.agent
             dialog_history.append({"role": "Staff", "content": staff_response})
             role = f"{staff_role(role=_role)}[{progress}%]"
