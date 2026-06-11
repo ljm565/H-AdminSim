@@ -2,7 +2,7 @@ from typing import Optional, TYPE_CHECKING
 from patientsim import PatientAgent, CheckerAgent
 
 from h_adminsim.utils import log, colorstr
-from h_adminsim.utils.common_utils import run_with_retry, preprocess_utterance, staff_role
+from h_adminsim.utils.common_utils import *
 
 if TYPE_CHECKING:
     from h_adminsim.pipeline import HospitalMAS
@@ -90,7 +90,7 @@ class OPFVIntakeSimulation:
         staff_greet = self.admin_staff_mas.root.agent.staff_greet
         dialog_history = [{"role": "Staff", "content": staff_greet}]
         self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
-        role = f"{staff_role(self.admin_staff_mas.state)}[0%]"
+        role = f"{staff_role(role=self.admin_staff_mas.path[-1].name)}[0%]"
         log(f"{role:<29}: {staff_greet}")
 
         merged_patient_kwargs = {**patient_kwargs, **kwargs}
@@ -111,15 +111,16 @@ class OPFVIntakeSimulation:
             log(f"{role:<29}: {patient_response}")
 
             # Obtain response from staff
-            staff_response, is_done = self.admin_staff_mas.chat(
+            output = self.admin_staff_mas.chat(
                 user_prompt=dialog_history[-1]["content"] + "\nThis is the final turn. Now, you must provide your top5 differential diagnosis." \
                     if inference_idx == self.max_inferences - 1 else dialog_history[-1]["content"],
                 using_multi_turn=True,
                 verbose=verbose,
                 **merged_staff_kwargs
             )
+            staff_response, is_done, _role = output.response, output.is_done, output.agent
             dialog_history.append({"role": "Staff", "content": staff_response})
-            role = f"{staff_role(self.admin_staff_mas.state)}[{progress}%]"
+            role = f"{staff_role(role=_role)}[{progress}%]"
             log(f"{role:<29}: {staff_response}")
 
             # If early termination is detected, break the loop
@@ -178,7 +179,7 @@ class OPFVIntakeSimulation:
         staff_greet = self.admin_staff_mas.root.agent.staff_greet
         dialog_history = [{"role": "Staff", "content": staff_greet}]
         self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
-        role = f"{staff_role(self.admin_staff_mas.state)}[0%]"
+        role = f"{staff_role(role=self.admin_staff_mas.path[-1].name)}[0%]"
         log(f"{role:<29}: {staff_greet}")
         yield 'Staff', preprocess_utterance(staff_greet)
 
@@ -202,7 +203,7 @@ class OPFVIntakeSimulation:
             yield 'Patient', preprocess_utterance(patient_response)
 
             # Obtain response from staff
-            staff_response, is_done = run_with_retry(
+            output = run_with_retry(
                 self.admin_staff_mas.chat,
                 user_prompt=dialog_history[-1]["content"] + "\nThis is the final turn. Now, you must provide your top5 differential diagnosis." \
                     if inference_idx == self.max_inferences - 1 else dialog_history[-1]["content"],
@@ -210,8 +211,9 @@ class OPFVIntakeSimulation:
                 verbose=verbose,
                 **merged_staff_kwargs
             )
+            staff_response, is_done, _role = output.response, output.is_done, output.agent
             dialog_history.append({"role": "Staff", "content": staff_response})
-            role = f"{staff_role(self.admin_staff_mas.state)}[{progress}%]"
+            role = f"{staff_role(role=_role)}[{progress}%]"
             log(f"{role:<29}: {staff_response}")
             yield 'Staff', preprocess_utterance(staff_response)
 

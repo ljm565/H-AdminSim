@@ -979,7 +979,7 @@ class OPFVSchedulingSimulation:
         staff_greet = self.scheduling_agent.appn_greet
         self.dialog_history['scheduling'].append({"role": "Staff", "content": staff_greet})
         self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
-        log(f"{staff_role(self.admin_staff_mas.state):<25}: {staff_greet}")
+        log(f"{staff_role(role=self.admin_staff_mas.path[-1].name):<25}: {staff_greet}")
 
         # Iterate over multiple preferences if exists
         preference_reject_prob = 0.0 if len(gt_data) <= 1 else self.preference_rejection_prob
@@ -1007,15 +1007,16 @@ class OPFVSchedulingSimulation:
                     log(f"{role:<25}: {patient_response}")
 
                     # Scheduling from staff
-                    rendered_response, _ = self.admin_staff_mas.chat(
+                    output = self.admin_staff_mas.chat(
                         user_prompt=patient_response,
                         callback=staff_turn,
                         using_multi_turn=False,
                         verbose=False,
                     )
+                    rendered_response, _role = output.response, output.agent
                     staff_response = holder.pop('response')
                     self.dialog_history['scheduling'].append({"role": "Staff", "content": rendered_response})
-                    log(f"{staff_role(self.admin_staff_mas.state):<25}: {rendered_response}")
+                    log(f"{staff_role(role=_role):<25}: {rendered_response}")
 
                     # Token accounting
                     staff_token_stats = self._accumulate_staff_tokens(
@@ -1213,7 +1214,7 @@ class OPFVSchedulingSimulation:
         staff_greet = self.admin_staff_mas.root.agent.staff_greet
         self.dialog_history['cancel'].append({"role": "Staff", "content": staff_greet})
         self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
-        log(f"{staff_role(self.admin_staff_mas.state):<25}: {staff_greet}")
+        log(f"{staff_role(role=self.admin_staff_mas.path[-1].name):<25}: {staff_greet}")
 
         try:
             for _ in range(max_inferences):
@@ -1229,7 +1230,7 @@ class OPFVSchedulingSimulation:
                 log(f"{role:<25}: {patient_response}")
 
                 # Canceling from staff
-                rendered_response, _ = self.admin_staff_mas.chat(
+                output = self.admin_staff_mas.chat(
                     user_prompt=patient_response,
                     callback=staff_turn,
                     using_multi_turn=False,
@@ -1241,8 +1242,9 @@ class OPFVSchedulingSimulation:
                 if staff_response['type'] == 'tool' and staff_response['result_dict']['status'][0] is False:
                     raise DataNotFoundError(colorstr("red", "Error: Schedule not found error."))
 
+                rendered_response, _role = output.response, output.agent
                 self.dialog_history['cancel'].append({"role": "Staff", "content": rendered_response})
-                log(f"{staff_role(self.admin_staff_mas.state):<25}: {rendered_response}")
+                log(f"{staff_role(role=_role):<25}: {rendered_response}")
 
                 # Tool calling result -> successful cancellation (a clarification 'text' reply just re-iterates)
                 if staff_response['type'] == 'tool':
@@ -1364,7 +1366,7 @@ class OPFVSchedulingSimulation:
         staff_greet = self.admin_staff_mas.root.agent.staff_greet
         self.dialog_history['reschedule'].append({"role": "Staff", "content": staff_greet})
         self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
-        log(f"{staff_role(self.admin_staff_mas.state):<25}: {staff_greet}")
+        log(f"{staff_role(role=self.admin_staff_mas.path[-1].name):<25}: {staff_greet}")
 
         try:
             for _ in range(max_inferences):
@@ -1380,7 +1382,7 @@ class OPFVSchedulingSimulation:
                 log(f"{role:<25}: {patient_response}")
 
                 # Rescheduling from staff
-                rendered_response, _ = self.admin_staff_mas.chat(
+                output = self.admin_staff_mas.chat(
                     user_prompt=patient_response,
                     callback=staff_turn,
                     using_multi_turn=False,
@@ -1400,8 +1402,9 @@ class OPFVSchedulingSimulation:
                     elif tmp_flag not in ('waiting_list', 'reschedule'):
                         raise TypeError(colorstr("red", "Error: Unexpected return type from rescheduling method."))
 
+                rendered_response, _role = output.response, output.agent
                 self.dialog_history['reschedule'].append({"role": "Staff", "content": rendered_response})
-                log(f"{staff_role(self.admin_staff_mas.state):<25}: {rendered_response}")
+                log(f"{staff_role(role=_role):<25}: {rendered_response}")
 
                 # Tool calling result -> successful reschedule / waiting-list
                 if staff_response['type'] == 'tool':
@@ -1519,7 +1522,7 @@ class OPFVSchedulingSimulation:
         staff_greet = self.scheduling_agent.appn_greet
         self.dialog_history['scheduling'].append({"role": "Staff", "content": staff_greet})
         self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
-        log(f"{staff_role(self.admin_staff_mas.state):<25}: {staff_greet}")
+        log(f"{staff_role(role=self.admin_staff_mas.path[-1].name):<25}: {staff_greet}")
 
         # Staff turn closure: routes the structured staff scheduling turn through the MAS.
         holder = {}
@@ -1566,12 +1569,13 @@ class OPFVSchedulingSimulation:
                 yield 'Patient', preprocess_utterance(patient_response), None
                 
                 # Scheduling from staff (routed through the MAS orchestrator)
-                rendered_response, _ = self.admin_staff_mas.chat(
+                output = self.admin_staff_mas.chat(
                     user_prompt=patient_response,
                     callback=staff_turn,
                     using_multi_turn=False,
                     verbose=False,
                 )
+                rendered_response, _role = output.response, output.agent
                 staff_response = holder.pop('response')
                 staff_token_stats = self._accumulate_staff_tokens(
                     staff_response, staff_token_stats, staff_token_callback
@@ -1579,7 +1583,7 @@ class OPFVSchedulingSimulation:
 
                 # Record the staff utterance rendered by `_render_staff_reply`
                 self.dialog_history['scheduling'].append({"role": "Staff", "content": rendered_response})
-                log(f"{staff_role(self.admin_staff_mas.state):<25}: {rendered_response}")
+                log(f"{staff_role(role=_role):<25}: {rendered_response}")
 
                 # A schedule proposal ends this negotiation turn; a clarification keeps it going.
                 if staff_response['type'] == 'tool':
@@ -1660,18 +1664,19 @@ class OPFVSchedulingSimulation:
                                 break
 
                             # Not accepted -> staff reschedules (routed through the MAS orchestrator)
-                            rendered_response, _ = self.admin_staff_mas.chat(
+                            output = self.admin_staff_mas.chat(
                                 user_prompt=patient_response,
                                 callback=staff_turn,
                                 using_multi_turn=False,
                                 verbose=False,
                             )
+                            rendered_response, _role = output.response, output.agent
                             staff_response = holder.pop('response')
                             staff_token_stats = self._accumulate_staff_tokens(
                                 staff_response, staff_token_stats, staff_token_callback
                             )
                             self.dialog_history['scheduling'].append({"role": "Staff", "content": rendered_response})
-                            log(f"{staff_role(self.admin_staff_mas.state):<25}: {rendered_response}")
+                            log(f"{staff_role(role=_role):<25}: {rendered_response}")
 
                             if staff_response['type'] == 'tool':
                                 pred_schedule = staff_response['result']

@@ -10,8 +10,6 @@ if TYPE_CHECKING:
 @dataclass
 class ConversationState:
     messages: list[dict] = field(default_factory=list)
-    intent: str | None = None
-    patient_info: dict = field(default_factory=dict)
     current_agent: str | None = None
 
 

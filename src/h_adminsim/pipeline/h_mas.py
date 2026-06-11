@@ -2,7 +2,7 @@ from typing import Optional
 
 from h_adminsim.agent import BaseAgent
 from h_adminsim.registry import ConversationState, MASNode
-from h_adminsim.utils import colorstr, log
+from h_adminsim.utils import Information, colorstr, log
 
 
 
@@ -155,7 +155,7 @@ class HospitalMAS:
              using_multi_turn: bool = True,
              verbose: bool = True,
              callback: Optional[callable] = None,
-             **kwargs) -> tuple[str, bool]:
+             **kwargs) -> Information:
         """
         Feed one user message into the MAS and return the resulting reply.
 
@@ -167,8 +167,7 @@ class HospitalMAS:
                                                      a leaf worker may delegate its turn to it. Defaults to None.
 
         Returns:
-            tuple[str, bool]: ``(reply, is_done)`` — the reply produced by whichever
-                agent handled the turn, and whether that agent signalled completion.
+            Information: ``(agent, reply, is_done)`` for the turn.
         """
         # If the previous conversation already finished (orchestrator emitted DONE), reset MAS.
         if self.root.is_complete:
@@ -178,20 +177,20 @@ class HospitalMAS:
         self.state.messages.append({"role": "Patient", "content": user_prompt})
         
         # Action
-        reply, is_done = self._advance(
+        response = self._advance(
             using_multi_turn=using_multi_turn,
             verbose=verbose,
             callback=callback,
             **kwargs
         )
-        return reply, is_done
+        return response
 
 
     def _advance(self,
                  using_multi_turn: bool = True,
                  verbose: bool = True,
                  callback: Optional[callable] = None,
-                 **kwargs) -> tuple[str, bool]:
+                 **kwargs) -> Information:
         """
         Route down to a leaf and run it for the current turn.
 
@@ -202,7 +201,7 @@ class HospitalMAS:
                                                      a leaf worker may delegate its turn to it. Defaults to None.
 
         Returns:
-            tuple[str, bool]: ``(reply, is_done)`` for the turn.
+            Information: ``(agent, reply, is_done)`` for the turn.
         """
         node = self.path[-1]
         self.state.current_agent = node.name
@@ -213,7 +212,12 @@ class HospitalMAS:
             hops += 1
             if hops > self.max_hops_per_turn:
                 log(colorstr("yellow", f"Routing hop cap ({self.max_hops_per_turn}) hit; replying directly."))
-                return self._say("Could you tell me again?"), False
+                output = Information(
+                    agent=node.name,
+                    response=self._say("Could you tell me again?"),
+                    is_done=False,
+                )
+                return output
 
             # Expose all children as candidates (uniform `act` entry).
             sub_agents = {n: c for n, c in node.children.items()}
@@ -231,7 +235,12 @@ class HospitalMAS:
                 if not self._pop():
                     node.is_complete = True
                     reply = response.get('reply') if isinstance(response, dict) else None
-                    return self._say(reply or "Is there anything else I can help you with?"), True
+                    output = Information(
+                        agent=node.name,
+                        response=self._say(reply or "Is there anything else I can help you with?"),
+                        is_done=True,
+                    )
+                    return output
                 node.is_complete = True
                 node = self.path[-1]
                 self.state.current_agent = node.name
@@ -239,7 +248,12 @@ class HospitalMAS:
 
             # The router must return a JSON object; anything else ends the turn.
             if not isinstance(response, dict):
-                return self._say('Could you tell me again?'), False
+                output = Information(
+                    agent=node.name,
+                    response=self._say('Could you tell me again?'),
+                    is_done=False,
+                )
+                return output
 
             # Delegation case
             choice = response.get('route') or node.next_step
@@ -259,7 +273,12 @@ class HospitalMAS:
                 continue
 
             # Direct reply case (no route): the router answers the user itself.
-            return self._say(response.get('reply') or 'Could you tell me again?'), False
+            output = Information(
+                agent=node.name,
+                response=self._say(response.get('reply') or 'Could you tell me again?'),
+                is_done=False,
+            )
+            return output
 
         # Leaf worker handles the turn.
         reply, is_done = node.agent.act(
@@ -276,7 +295,13 @@ class HospitalMAS:
             if node.parent and node.next_step is not None:
                 node.parent.next_step = node.next_step
             self._pop()     # return control to the parent router
-        return self._say(reply), is_done
+        
+        output = Information(
+            agent=node.name,
+            response=self._say(reply),
+            is_done=is_done,
+        )
+        return output
 
 
     def _pop(self) -> bool:

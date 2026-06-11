@@ -8,7 +8,7 @@ from google.genai.errors import ServerError
 from openai import InternalServerError, BadRequestError
 
 from h_adminsim import registry
-from h_adminsim.registry import Hospital
+from h_adminsim.registry import Hospital, ConversationState
 from h_adminsim.utils import Information, log, colorstr
 
 
@@ -785,14 +785,19 @@ def run_with_retry(func, *args, max_retries=8, **kwargs):
 
 
 
-def staff_role(state) -> str:
+def staff_role(state: Optional[ConversationState] = None,
+               role: Optional[str] = None) -> str:
     """
     Build the Staff log label, annotated with the MAS node that handled the turn.
 
+    Args:
+        state (Optional[ConversationState], optional): Conversation state containing the current agent.
+        role (Optional[str], optional): Fallback role name when ``state`` is not provided.
+    
     Returns:
         str: A colored ``Staff (<agent name>)`` label.
     """
-    name = state.current_agent
+    name = state.current_agent if state else role
     if name == 'orchestrator':
         name = 'orchest'
     elif name == 'first_visit_intake':
