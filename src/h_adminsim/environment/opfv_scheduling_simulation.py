@@ -226,6 +226,27 @@ class OPFVSchedulingSimulation:
                                       if k in ['patient', 'attending_physician', 'department', 'date', 'schedule']}
                 return f"I've cancelled this schedule: {cancelled_schedule}"
 
+            elif reply_type == 'reschedule':
+                tmp_flag = staff_response.get('tmp_flag')
+                result = staff_response['result']
+
+                # Failure cases (identification / scheduling) have nothing to confirm;
+                # the loop surfaces them as raises, so render nothing here.
+                if tmp_flag not in ('waiting_list', 'reschedule'):
+                    return ""
+
+                original = {k: v for k, v in result['original_schedule'].items()
+                            if k in ['patient', 'attending_physician', 'department', 'date', 'schedule']}
+
+                # No slot available -> added to the waiting list
+                if tmp_flag == 'waiting_list':
+                    return f"There are no available times. I've added this schedule to the waiting list: {original}"
+
+                # Successfully moved to an earlier slot
+                new = {k: v for k, v in result['new_schedule'].items()
+                       if k in ['patient', 'attending_physician', 'department', 'date', 'schedule']}
+                return f"I've moved your original schedule: {original} to the new one: {new}"
+
 
     def _finish_scheduling_turn(self,
                                 reply_type: str,
@@ -1306,6 +1327,19 @@ class OPFVSchedulingSimulation:
             reschedule_pipeline=self._make_reschedule_pipeline(doctor_information, **merged_staff_kwargs),
         )
 
+        # Staff turn closure: captures all of `scheduling`'s simulation-side arguments
+        holder = {}
+        def staff_turn(user_prompt: str) -> Tuple[str, bool]:
+            staff_response = self.rescheduling(
+                client=tool_calling_agent,
+                patient_intention=user_prompt,
+                doctor_information=doctor_information,
+                chat_history=self._to_lc_history('reschedule'),
+                **merged_staff_kwargs,
+            )
+            holder['response'] = staff_response
+            return self._render_staff_reply(staff_response, 'reschedule'), False
+
         # Start conversation
         staff_greet = self.admin_staff_mas.root.agent.staff_greet
         self.dialog_history['reschedule'].append({"role": "Staff", "content": staff_greet})
@@ -1326,64 +1360,40 @@ class OPFVSchedulingSimulation:
                 log(f"{role:<25}: {patient_response}")
 
                 # Rescheduling from staff
-                staff_response = self.rescheduling(
-                    client=tool_calling_agent,
-                    patient_intention=patient_response,
-                    doctor_information=doctor_information,
-                    chat_history=self._to_lc_history('reschedule'),
-                    **merged_staff_kwargs
+                rendered_response, _ = self.admin_staff_mas.chat(
+                    user_prompt=patient_response,
+                    callback=staff_turn,
+                    using_multi_turn=False,
+                    verbose=False,
                 )
+                staff_response = holder.pop('response')
 
-                # Clarification message
-                if staff_response['type'] == 'text':
-                    response = staff_response['result']
-                    self.dialog_history['reschedule'].append({"role": "Staff", "content": response})
-                    log(f"{staff_role(self.admin_staff_mas.state):<25}: {response}")
-
-                # Tool calling result
-                elif staff_response['type'] == 'tool':
-                    # Fail to identify the schedule
-                    if staff_response['tmp_flag'] == 'retrieve':
+                # Tool-calling failures resolve nothing -> surface them before recording a staff turn.
+                if staff_response['type'] == 'tool':
+                    tmp_flag = staff_response.get('tmp_flag')
+                    if tmp_flag == 'retrieve':
                         result_dict = staff_response['result_dict']
                         raise DataNotFoundError(colorstr("red", "Error: Schedule not found error."))
-
-                    # Scheduling failure case
-                    elif staff_response['tmp_flag'] == 'schedule':
+                    elif tmp_flag == 'schedule':
                         result_dict = staff_response['result_dict']
                         raise SchedulingError(colorstr("red", "Error: Scheduling error."))
+                    elif tmp_flag not in ('waiting_list', 'reschedule'):
+                        raise TypeError(colorstr("red", "Error: Unexpected return type from rescheduling method."))
 
-                    # Successful case
-                    else:
-                        result = staff_response['result']
-                        tmp_original_schedule = {k: v for k, v in result['original_schedule'].items() \
-                                                 if k in ['patient', 'attending_physician', 'department', 'date', 'schedule']}
+                self.dialog_history['reschedule'].append({"role": "Staff", "content": rendered_response})
+                log(f"{staff_role(self.admin_staff_mas.state):<25}: {rendered_response}")
 
-                        # Successfully adding to waiting list
-                        if staff_response['tmp_flag'] == 'waiting_list':
-                            result_dict = staff_response['result_dict']
-                            response = f"There are no available times. I've added this schedule to the waiting list: {tmp_original_schedule}"
+                # Tool calling result -> successful reschedule / waiting-list
+                if staff_response['type'] == 'tool':
+                    result_dict = staff_response['result_dict']
 
-                        # Successfully rescheduled case
-                        elif staff_response['tmp_flag'] == 'reschedule':
-                            result_dict = staff_response['result_dict']
-                            tmp_prediction_schedule = {k: v for k, v in result['new_schedule'].items() \
-                                                       if k in ['patient', 'attending_physician', 'department', 'date', 'schedule']}
-                            response = f"I've moved your original schedule: {tmp_original_schedule} to the new one: {tmp_prediction_schedule}"
+                    # Final response of patient
+                    self.dialog_history['reschedule'].append({"role": "Patient", "content": self.end_phrase})
+                    role = f"{colorstr('green', 'Patient')} (move)"
+                    log(f"{role:<25}: {self.end_phrase}")
 
-                        else:
-                            raise TypeError(colorstr("red", "Error: Unexpected return type from rescheduling method."))
-                        
-                        # Final response of staff
-                        self.dialog_history['reschedule'].append({"role": "Staff", "content": response})
-                        log(f"{staff_role(self.admin_staff_mas.state):<25}: {response}")
-
-                        # Final response of patient
-                        self.dialog_history['reschedule'].append({"role": "Patient", "content": self.end_phrase})
-                        role = f"{colorstr('green', 'Patient')} (move)"
-                        log(f"{role:<25}: {self.end_phrase}")
-
-                        result_dict['dialog'].append(preprocess_dialog(self.dialog_history['reschedule']))
-                        break
+                    result_dict['dialog'].append(preprocess_dialog(self.dialog_history['reschedule']))
+                    break
 
             # The case without any determination during the simulation
             if not len(result_dict['gt']):
@@ -1426,6 +1436,7 @@ class OPFVSchedulingSimulation:
             }
             
         log("Simulation completed.", color=True)
+        self._finish_scheduling_turn('reschedule', verbose)
         return doctor_information, result_dict
     
 
