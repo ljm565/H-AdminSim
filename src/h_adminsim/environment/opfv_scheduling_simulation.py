@@ -248,6 +248,31 @@ class OPFVSchedulingSimulation:
                 return f"I've moved your original schedule: {original} to the new one: {new}"
 
 
+    def _accumulate_staff_tokens(self,
+                                 staff_response: dict,
+                                 staff_token_stats: dict,
+                                 staff_token_callback: TokenUsageCallback) -> dict:
+        """
+        Merge this turn's staff token usage into the running stats and return them.
+
+        Args:
+            staff_response (dict): The staff scheduling result (carries ``'token'`` for reasoning).
+            staff_token_stats (dict): The running per-key token usage to update.
+            staff_token_callback (TokenUsageCallback): Cumulative callback for the tool-calling path.
+
+        Returns:
+            dict: The updated token statistics.
+        """
+        if self.scheduling_strategy == 'tool_calling':
+            return staff_token_callback.token_usage
+        for k, v in staff_response['token'].items():
+            if k not in staff_token_stats:
+                staff_token_stats[k] = deepcopy(v)
+            else:
+                staff_token_stats[k].extend(v)
+        return staff_token_stats
+
+
     def _finish_scheduling_turn(self,
                                 reply_type: str,
                                 verbose: bool = False):
@@ -993,14 +1018,9 @@ class OPFVSchedulingSimulation:
                     log(f"{staff_role(self.admin_staff_mas.state):<25}: {rendered_response}")
 
                     # Token accounting
-                    if self.scheduling_strategy == 'tool_calling':
-                        staff_token_stats = staff_token_callback.token_usage
-                    else:
-                        for k, v in staff_response['token'].items():
-                            if k not in staff_token_stats:
-                                staff_token_stats[k] = deepcopy(v)
-                            else:
-                                staff_token_stats[k].extend(v)
+                    staff_token_stats = self._accumulate_staff_tokens(
+                        staff_response, staff_token_stats, staff_token_callback
+                    )
 
                     # A schedule proposal ends this negotiation turn; a clarification keeps it going.
                     if staff_response['type'] == 'tool':
@@ -1446,6 +1466,7 @@ class OPFVSchedulingSimulation:
                                    doctor_information: Optional[dict] = None,
                                    verbose: bool = False,
                                    max_inferences: int = 5,
+                                   intake_executed: bool = True,
                                    natural_express: bool = True,
                                    reasoning_max_tries: int = 3,
                                    patient_kwargs: dict = {},
@@ -1461,6 +1482,7 @@ class OPFVSchedulingSimulation:
                                                            including availability and other relevant details. Defaults to None.
             verbose (bool, optional): Whether to log detailed simulation outputs. Defaults to False.
             max_inferences (int, optional): Maximum number of dialogue turns.
+            intake_executed (bool, optional): Whether intake ran before this scheduling step (end-to-end). Defaults to True.
             natural_express (bool, optional): Whether express new schedule as natural or not. Defaults to True.
             reasoning_max_tries (int, optional): Reasoning fallback maximum number of retries. Defaults to 3.
             patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent.
@@ -1472,16 +1494,21 @@ class OPFVSchedulingSimulation:
             assert doctor_information is not None, colorstr("red", f"Doctor information must be provided if you don't use FHIR.")
 
         # Initialize agents and result dictionary
+        if not intake_executed:
+            self._init_agents(verbose=verbose)
+            self.admin_staff_mas.root.next_step = 'first_visit_scheduling' # Assuming that the intake task was done successfully
+        else:
+            assert self.admin_staff_mas.root.next_step == 'first_visit_scheduling', \
+                colorstr("red", f"Orchestrator `next_step` must be a `first_visit_scheduling`")
         staff_token_callback = TokenUsageCallback()
         self._init_history()
-        self._init_agents(verbose=verbose)
         staff_token_stats = {}
         filtered_doctor_information = self.environment.get_doctor_schedule(
             doctor_information=doctor_information,
             department=staff_known_data['department'],
             fhir_integration=self.fhir_integration and doctor_information is None,
         )
-        client = self.scheduling_agent.build_agent(
+        tool_calling_agent = self.scheduling_agent.build_agent(
             rule=self.rules, 
             doctor_info=filtered_doctor_information
         )
@@ -1493,6 +1520,24 @@ class OPFVSchedulingSimulation:
         self.dialog_history['scheduling'].append({"role": "Staff", "content": staff_greet})
         self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
         log(f"{staff_role(self.admin_staff_mas.state):<25}: {staff_greet}")
+
+        # Staff turn closure: routes the structured staff scheduling turn through the MAS.
+        holder = {}
+        def staff_turn(user_prompt: str) -> Tuple[str, bool]:
+            staff_known_data.update({'patient_intention': user_prompt})
+            staff_response = run_with_retry(
+                self.scheduling,
+                tool_calling_agent,
+                staff_known_data,
+                doctor_information,
+                chat_history=self._to_lc_history('scheduling'),
+                reasoning_max_tries=reasoning_max_tries,
+                callback=staff_token_callback,
+                max_retries=5,
+                **merged_staff_kwargs,
+            )
+            holder['response'] = staff_response
+            return self._render_staff_reply(staff_response, 'scheduling', natural_express), False
 
         # Iterate over multiple preferences if exists
         preference_reject_prob = 0.0 if len(gt_data) <= 1 else self.preference_rejection_prob
@@ -1520,65 +1565,32 @@ class OPFVSchedulingSimulation:
                 log(f"{role:<25}: {patient_response}")
                 yield 'Patient', preprocess_utterance(patient_response), None
                 
-                # Scheduling from staff
-                staff_known_data.update({'patient_intention': patient_response})
-                staff_response = run_with_retry(
-                    self.scheduling,
-                    client,
-                    staff_known_data,
-                    doctor_information,
-                    chat_history=self._to_lc_history('scheduling'),
-                    reasoning_max_tries=reasoning_max_tries,
-                    callback=staff_token_callback,
-                    **merged_staff_kwargs
+                # Scheduling from staff (routed through the MAS orchestrator)
+                rendered_response, _ = self.admin_staff_mas.chat(
+                    user_prompt=patient_response,
+                    callback=staff_turn,
+                    using_multi_turn=False,
+                    verbose=False,
                 )
-                if self.scheduling_strategy == 'tool_calling':
-                    staff_token_stats = staff_token_callback.token_usage
-                else:
-                    for k, v in staff_response['token'].items():
-                        if k not in staff_token_stats:
-                            staff_token_stats[k] = deepcopy(v)
-                        else:
-                            staff_token_stats[k].extend(v)  # 두 번째~: extend
-                
-                # Clarification message
-                if staff_response['type'] == 'text':
-                    response = staff_response['result']
-                    self.dialog_history['scheduling'].append({"role": "Staff", "content": response})
-                    log(f"{staff_role(self.admin_staff_mas.state):<25}: {response}")
-                    yield 'Staff', preprocess_utterance(response), None
-                
-                # Tool calling result
-                elif staff_response['type'] == 'tool':
+                staff_response = holder.pop('response')
+                staff_token_stats = self._accumulate_staff_tokens(
+                    staff_response, staff_token_stats, staff_token_callback
+                )
+
+                # Record the staff utterance rendered by `_render_staff_reply`
+                self.dialog_history['scheduling'].append({"role": "Staff", "content": rendered_response})
+                log(f"{staff_role(self.admin_staff_mas.state):<25}: {rendered_response}")
+
+                # A schedule proposal ends this negotiation turn; a clarification keeps it going.
+                if staff_response['type'] == 'tool':
                     pred_schedule = staff_response['result']
-                    
-                    # Response formatting
-                    try:
-                        if natural_express:
-                            _schedule = pred_schedule['schedule']
-                            _doctor = list(_schedule.keys())[0]
-                            date, st, tr = _schedule[_doctor]['date'], _schedule[_doctor]['start'], _schedule[_doctor]['end']
-                            _format = random.choice(self.scheduling_agent.natural_schedule_suggestion) \
-                                if isinstance(self.scheduling_agent.natural_schedule_suggestion, list) \
-                                    else self.scheduling_agent.natural_schedule_suggestion
-                            response = _format.format(
-                                doctor=_doctor, date=date, start=st, end=tr
-                            )
-                        else:
-                            response = self.scheduling_agent.schedule_suggestion.format(schedule=pred_schedule)
-                    except:
-                        try:
-                            response = self.scheduling_agent.schedule_suggestion.format(schedule=pred_schedule)
-                        except:
-                            response = str(pred_schedule)
-                    
-                    self.dialog_history['scheduling'].append({"role": "Staff", "content": response})
-                    log(f"{staff_role(self.admin_staff_mas.state):<25}: {response}")
-                    yield 'Staff', preprocess_utterance(response), pred_schedule
+                    yield 'Staff', preprocess_utterance(rendered_response), pred_schedule
                     break
 
+                yield 'Staff', preprocess_utterance(rendered_response), None
                 tries += 1
                 if tries > max_inferences:
+                    self._finish_scheduling_turn('scheduling', verbose)
                     return
             
             # Preference rejection logic
@@ -1647,43 +1659,25 @@ class OPFVSchedulingSimulation:
                             if '#ACCEPT' in patient_response:
                                 break
 
-                            # Not accepted - retry tool calling
-                            staff_known_data.update({'patient_intention': patient_response})
-                            staff_response = run_with_retry(
-                                self.scheduling,
-                                client,
-                                staff_known_data,
-                                doctor_information,
-                                chat_history=self._to_lc_history('scheduling'),
-                                reasoning_max_tries=reasoning_max_tries,
-                                callback=staff_token_callback,
-                                **merged_staff_kwargs
+                            # Not accepted -> staff reschedules (routed through the MAS orchestrator)
+                            rendered_response, _ = self.admin_staff_mas.chat(
+                                user_prompt=patient_response,
+                                callback=staff_turn,
+                                using_multi_turn=False,
+                                verbose=False,
                             )
+                            staff_response = holder.pop('response')
+                            staff_token_stats = self._accumulate_staff_tokens(
+                                staff_response, staff_token_stats, staff_token_callback
+                            )
+                            self.dialog_history['scheduling'].append({"role": "Staff", "content": rendered_response})
+                            log(f"{staff_role(self.admin_staff_mas.state):<25}: {rendered_response}")
+
                             if staff_response['type'] == 'tool':
                                 pred_schedule = staff_response['result']
-                                _schedule = pred_schedule['schedule']
-                                _doctor = list(_schedule.keys())[0]
-                                _date = _schedule[_doctor]['date']
-                                try:
-                                    date, st, tr = _schedule[_doctor]['date'], _schedule[_doctor]['start'], _schedule[_doctor]['end']
-                                    _format = random.choice(self.scheduling_agent.natural_schedule_suggestion) \
-                                        if isinstance(self.scheduling_agent.natural_schedule_suggestion, list) \
-                                            else self.scheduling_agent.natural_schedule_suggestion
-                                    response = _format.format(doctor=_doctor, date=date, start=st, end=tr)
-                                except:
-                                    try:
-                                        response = self.scheduling_agent.schedule_suggestion.format(schedule=pred_schedule)
-                                    except:
-                                        response = str(pred_schedule)
-                                self.dialog_history['scheduling'].append({"role": "Staff", "content": response})
-                                log(f"{staff_role(self.admin_staff_mas.state):<25}: {response}")
-                                yield 'Staff', preprocess_utterance(response), pred_schedule
-                            
-                            elif staff_response['type'] == 'text':
-                                response = staff_response['result']
-                                self.dialog_history['scheduling'].append({"role": "Staff", "content": response})
-                                log(f"{staff_role(self.admin_staff_mas.state):<25}: {response}")
-                                yield 'Staff', preprocess_utterance(response), None
+                                yield 'Staff', preprocess_utterance(rendered_response), pred_schedule
+                            else:
+                                yield 'Staff', preprocess_utterance(rendered_response), None
 
                             accept_tries += 1
 
@@ -1695,3 +1689,5 @@ class OPFVSchedulingSimulation:
                     yield 'Patient', preprocess_utterance(patient_response), None
 
                 break
+
+        self._finish_scheduling_turn('scheduling', verbose)
