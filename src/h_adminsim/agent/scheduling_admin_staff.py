@@ -184,7 +184,7 @@ class SchedulingAdminStaffAgent(BaseAgent):
 
     def build_agent(self,
                     rule: SchedulingRule,
-                    doctor_info: dict,
+                    doctor_info: Optional[dict] = None,
                     patient_schedule_list: Optional[list[dict]] = None,
                     gt_idx: Optional[int] = None,
                     only_schedule_tool: bool = False,
@@ -196,7 +196,7 @@ class SchedulingAdminStaffAgent(BaseAgent):
 
         Args:
             rule (SchedulingRule): An instance of SchedulingRule containing scheduling logic.
-            doctor_info (dict): A dictionary containing information about doctors. Defaults to None.
+            doctor_info (Optional[dict], optional): A dictionary containing information about doctors. Defaults to None.
             patient_schedule_list (Optional[list[dict]], optional): A list of the patient's scheduled appointments. Defaults to None.
             gt_idx (Optional[int], optional): Ground-truth index of the appointment to be cancelled or rescheduled. Defaults to None.
             only_schedule_tool (bool, optional): Whether use only scheduling tools or not. Defaults to False.
