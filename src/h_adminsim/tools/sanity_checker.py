@@ -1,10 +1,13 @@
 from decimal import Decimal
-from typing import Tuple, Union, Optional
+from typing import Tuple, Union, Optional, TYPE_CHECKING
 
 from h_adminsim.registry import STATUS_CODES
-from h_adminsim.environment.hospital import HospitalEnvironment
 from h_adminsim.utils import colorstr
 from h_adminsim.utils.common_utils import *
+
+if TYPE_CHECKING:
+    from h_adminsim.environment.hospital import HospitalEnvironment
+
 
 
 
@@ -72,7 +75,7 @@ class SanityChecker:
                             prediction: dict, 
                             gt_patient_condition: dict, 
                             doctor_information: dict, 
-                            environment: HospitalEnvironment,
+                            environment: "HospitalEnvironment",
                             min_time: Optional[str] = None ) -> bool:
         """
         Check if the predicted schedule is the earliest possible option.
@@ -168,7 +171,7 @@ class SanityChecker:
                       prediction: Union[str, dict], 
                       gt_patient_condition: dict,
                       doctor_information: dict,
-                      environment: HospitalEnvironment) -> Tuple[bool, str]:
+                      environment: "HospitalEnvironment") -> Tuple[bool, str]:
         """
         Validates a predicted schedule for a doctor by checking its structure, time validity, 
         duplication with existing schedules, and updates the doctor's schedule if valid.
@@ -253,7 +256,7 @@ class SanityChecker:
                             prediction: Union[str, dict],
                             gt_patient_condition: dict,
                             test_device_information: dict,
-                            environment: HospitalEnvironment,
+                            environment: "HospitalEnvironment",
                             doctor_information: Optional[dict] = None,
                             rule: Optional[object] = None) -> Tuple[bool, str]:
         """
