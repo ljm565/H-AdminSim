@@ -189,8 +189,8 @@ class SchedulingAdminStaffAgent(BaseAgent):
                     gt_idx: Optional[int] = None,
                     only_schedule_tool: bool = False,
                     reschedule_pipeline: Optional[callable] = None,
-                    filtered_test_device_information: Optional[dict] = None,
-                    required_test_codes: Optional[list] = None) -> AgentExecutor:
+                    required_test_codes: Optional[list] = None,
+                    test_device_information: Optional[dict] = None) -> AgentExecutor:
         """
         Build a LangChain agent with scheduling tools.
 
@@ -201,9 +201,8 @@ class SchedulingAdminStaffAgent(BaseAgent):
             gt_idx (Optional[int], optional): Ground-truth index of the appointment to be cancelled or rescheduled. Defaults to None.
             only_schedule_tool (bool, optional): Whether use only scheduling tools or not. Defaults to False.
             reschedule_pipeline (Optional[callable], optional): Callable executing the post-retrieval rescheduling pipeline. Defaults to None.
-            filtered_test_device_information (Optional[dict], optional): Test/device schedules filtered to the patient's required tests.
-                                                                          When provided together with ``required_test_codes`` enables the test-scheduling tools.
             required_test_codes (Optional[list], optional): Codes of the tests the patient must take. Defaults to None.
+            test_device_information (Optional[dict], optional): Test device schedules — enables the test-scheduling tools together with ``required_test_codes``, and feeds the test-cancellation tool. Defaults to None.
 
         Returns:
             AgentExecutor: A LangChain agent executor with the scheduling tools.
@@ -211,8 +210,8 @@ class SchedulingAdminStaffAgent(BaseAgent):
         tools = create_tools(
             rule, doctor_info, patient_schedule_list, gt_idx, only_schedule_tool,
             reschedule_pipeline=reschedule_pipeline,
-            filtered_test_device_information=filtered_test_device_information,
             required_test_codes=required_test_codes,
+            test_device_information=test_device_information,
         )
         tool_calling_prompt = self.sc_tool_calling_prompt if only_schedule_tool else self.tool_calling_prompt
         prompt = ChatPromptTemplate.from_messages([

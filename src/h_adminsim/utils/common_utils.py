@@ -804,6 +804,8 @@ def staff_role(state: Optional[ConversationState] = None,
         name = 'opfv int'
     elif name == 'first_visit_scheduling':
         name = 'opfv sch'
+    elif name == 'follow_up_visit_scheduling':
+        name = 'opfu sch'
     
     label = f'({name})'
     return f"{colorstr('blue', 'Staff')} {colorstr('magenta', f'{label:<10}')}"

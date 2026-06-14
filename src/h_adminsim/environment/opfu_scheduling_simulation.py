@@ -151,6 +151,7 @@ class OPFUSchedulingSimulation:
         """
         self.dialog_history = {
             'test_scheduling': [],
+            'test_cancel': [],
         }
 
     
@@ -176,8 +177,8 @@ class OPFUSchedulingSimulation:
     def _render_staff_reply(self,
                             staff_response: dict,
                             reply_type: str,
-                            gt_patient_condition: dict,
-                            staff_known_data: dict,
+                            gt_patient_condition: Optional[dict] = None,
+                            staff_known_data: Optional[dict] = None,
                             natural_express: bool = True) -> str:
         """
         Turn a structured staff scheduling result into a natural-language utterance.
@@ -197,6 +198,19 @@ class OPFUSchedulingSimulation:
             return staff_response['result']
         
         elif staff_response['type'] == 'tool':
+            # Test cancellation confirmation
+            if reply_type == 'test_cancel':
+                result = staff_response['result']
+
+                # A wrong identification cancels nothing; the loop surfaces it as a failure.
+                if result['cancelled_schedule'] is None:
+                    return ""
+
+                # Successful cancellation
+                cancelled = {k: v for k, v in result['cancelled_schedule'].items()
+                             if k in ['patient', 'attending_physician', 'department', 'date', 'test']}
+                return f"I've cancelled all your scheduled tests: {cancelled}"
+
             if 'test_list' in staff_response['result']:
                 test_list = staff_response['result']['test_list']
                 test_list_desc = ', '.join([t['name'] for t in test_list])
@@ -694,7 +708,80 @@ class OPFUSchedulingSimulation:
             self.scheduling_agent.reset_history(verbose=False)
 
         return prediction
-    
+
+
+    def test_canceling(self,
+                       client: AgentExecutor,
+                       patient_intention: str,
+                       chat_history: list = []) -> dict:
+        """
+        Handle a multi-turn test cancellation request using a tool-calling agent.
+
+        Args:
+            client (AgentExecutor): The agent executor to handle tool calls or conversation.
+            patient_intention (str): The patient's utterance expressing a cancellation request.
+            chat_history (list, optional): Chat history. Defaults to [].
+
+        Raises:
+            TypeError: If the prediction or inputs are of an unsupported type.
+
+        Returns:
+            dict: Cancelling processed result.
+        """
+        # Initialize
+        result_dict = init_result_dict()
+
+        # Invoke
+        prediction = scheduling_tool_calling(
+            client=client,
+            user_prompt=patient_intention,
+            history=chat_history,
+        )
+
+        # Canceling result
+        if prediction['type'] == 'tool':
+            if prediction['result']['status'] is None:
+                # Tests not found case: -> return: str
+                if prediction['result']['index']['pred'] == -1:
+                    prediction['type'] = 'text'
+                    prediction['result'] = "Sorry, we couldn't find your scheduled tests. Could you please check your details again (patient and doctor names)?"
+
+                # No GT case
+                else:
+                    result_dict['gt'].append({'cancel': None})
+                    result_dict['pred'].append({'cancel': prediction['result']['index']['pred']})
+                    result_dict['status'].append(None)
+                    result_dict['status_code'].append(None)
+                    prediction['result_dict'] = result_dict
+
+                return prediction
+
+            # Retrieval fail case
+            elif prediction['result']['status'] is False:
+                result_dict['gt'].append({'cancel': prediction['result']['index']['gt']})
+                result_dict['pred'].append({'cancel': prediction['result']['index']['pred']})
+                result_dict['status'].append(prediction['result']['status'])
+                result_dict['status_code'].append(STATUS_CODES['cancel']['identify'])
+                prediction['result_dict'] = result_dict
+                return prediction
+
+            # Successful cancellation case -> return: dict
+            else:
+                result_dict['gt'].append({'cancel': prediction['result']['index']['gt']})
+                result_dict['pred'].append({'cancel': prediction['result']['index']['pred']})
+                result_dict['status'].append(prediction['result']['status'])
+                result_dict['status_code'].append(STATUS_CODES['correct'])
+                prediction['result_dict'] = result_dict
+                return prediction
+
+        # Clarification message case -> return: str
+        elif prediction['type'] == 'text':
+            return prediction
+
+        # Error
+        else:
+            raise TypeError(colorstr("red", "Error: Unexpected return type from canceling method."))
+
 
     def test_scheduling_simulate(self,
                                  gt_data: dict,
@@ -861,7 +948,7 @@ class OPFUSchedulingSimulation:
                                 doctor_info=filtered_doctor_information,
                                 patient_schedule_list=patient_info,
                                 gt_idx=gt_data[0]['index'],
-                                filtered_test_device_information=filtered_test_device_information,
+                                test_device_information=filtered_test_device_information,
                                 required_test_codes=required_test_codes,
                             )
 
@@ -1037,3 +1124,168 @@ class OPFUSchedulingSimulation:
         token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
         self._finish_scheduling_turn('test_scheduling', verbose)
         return doctor_information, test_device_information, result_dict, token_usage
+
+
+    def canceling_simulate(self,
+                           gt_idx: Optional[int] = None,
+                           doctor_information: Optional[dict] = None,
+                           test_device_information: Optional[dict] = None,
+                           patient_schedules: Optional[list[dict]] = None,
+                           verbose: bool = True,
+                           max_inferences: int = 5,
+                           patient_kwargs: dict = {},
+                           staff_kwargs: dict = {},
+                           **kwargs) -> Tuple[dict, dict, dict]:
+        """
+        Simulate a multi-turn conversation for cancelling all of a patient's scheduled tests.
+
+        Args:
+            gt_idx (Optional[int], optional): Ground-truth index of the follow-up booking to be cancelled. Defaults to None.
+            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s).
+            test_device_information (Optional[dict], optional): Test device information containing device schedules. Defaults to None.
+            patient_schedules (Optional[list[dict]], optional): List of patient appointment schedules. Defaults to None.
+            verbose (bool, optional): Whether to print conversation logs. Defaults to True.
+            max_inferences (int, optional): Maximum number of dialogue turns.
+            patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent.
+            staff_kwargs (dict, optional): Additional keyword arguments passed to the staff agent.
+            **kwargs: Additional keyword arguments passed to the patient and staff agent.
+
+        Raises:
+            DataNotFoundError: Schedule not found error.
+
+        Returns:
+            Tuple[dict, dict, dict]: Updated doctor information, test device information, and a result dictionary after cancellation.
+        """
+        # Sanity Check
+        if not self.fhir_integration:
+            assert doctor_information is not None, colorstr("red", f"Doctor information must be provided if you don't use FHIR.")
+
+        # Initialize agents and result dictionary
+        result_dict = init_result_dict()
+        self._init_history()
+        self._init_agents(verbose=verbose)
+        patient_schedules = self.environment.patient_schedules if patient_schedules is None else patient_schedules
+        doctor_information = self.environment.get_general_doctor_info_from_fhir() if self.fhir_integration else doctor_information
+        tool_calling_agent = self.scheduling_agent.build_agent(
+            rule=self.rules,
+            doctor_info=doctor_information,
+            patient_schedule_list=patient_schedules,
+            gt_idx=gt_idx,
+            test_device_information=test_device_information,
+        )
+        merged_patient_kwargs = {**patient_kwargs, **kwargs}
+
+        # Staff turn closure: routes the structured cancellation turn through the MAS.
+        holder = {}
+        def staff_turn(user_prompt: str) -> Tuple[str, bool]:
+            staff_response = self.test_canceling(
+                client=tool_calling_agent,
+                patient_intention=user_prompt,
+                chat_history=self._to_lc_history('test_cancel')
+            )
+            holder['response'] = staff_response
+            return self._render_staff_reply(staff_response, 'test_cancel'), False
+
+        # Start conversation
+        staff_greet = self.admin_staff_mas.root.agent.staff_greet
+        self.dialog_history['test_cancel'].append({"role": "Staff", "content": staff_greet})
+        self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
+        log(f"{staff_role(role=self.admin_staff_mas.path[-1].name):<25}: {staff_greet}")
+
+        try:
+            for _ in range(max_inferences):
+                # Obtain response from patient
+                patient_response = self.patient_agent(
+                    self.dialog_history['test_cancel'][-1]["content"],
+                    using_multi_turn=True,
+                    verbose=False,
+                    **merged_patient_kwargs
+                )
+                self.dialog_history['test_cancel'].append({"role": "Patient", "content": patient_response})
+                role = f"{colorstr('green', 'Patient')} (cancel)"
+                log(f"{role:<25}: {patient_response}")
+
+                # Canceling from staff
+                output = self.admin_staff_mas.chat(
+                    user_prompt=patient_response,
+                    callback=staff_turn,
+                    using_multi_turn=False,
+                    verbose=False,
+                )
+
+                # If wrong agent activated
+                if output.agent != self._chief_agent_name:
+                    raise AgentSelectionError(colorstr('red', f'Wrong agent activated, expected {self._chief_agent_name} but got {output.agent}'))
+
+                staff_response = holder.pop('response')
+
+                # A wrong identification cancels nothing -> surface as a not-found failure
+                if staff_response['type'] == 'tool' and staff_response['result_dict']['status'][0] is False:
+                    raise DataNotFoundError(colorstr("red", "Error: Schedule not found error."))
+
+                rendered_response, _role = output.response, output.agent
+                self.dialog_history['test_cancel'].append({"role": "Staff", "content": rendered_response})
+                log(f"{staff_role(role=_role):<25}: {rendered_response}")
+
+                # Tool calling result -> successful cancellation (a clarification 'text' reply just re-iterates)
+                if staff_response['type'] == 'tool':
+                    result_dict = staff_response['result_dict']
+
+                    # Final response of patient
+                    self.dialog_history['test_cancel'].append({"role": "Patient", "content": self.end_phrase})
+                    role = f"{colorstr('green', 'Patient')} (cancel)"
+                    log(f"{role:<25}: {self.end_phrase}")
+
+                    result_dict['dialog'].append(preprocess_dialog(self.dialog_history['test_cancel']))
+                    break
+
+            # The case without any determination during the simulation
+            if not len(result_dict['gt']):
+                result_dict = {
+                    'gt': [{'cancel': gt_idx}],
+                    'pred': [None],
+                    'status': [False],
+                    'status_code': [STATUS_CODES['cancel']['identify']],
+                    'dialog': [preprocess_dialog(self.dialog_history['test_cancel'])]
+                }
+
+        # Requested schedule indentification error
+        except DataNotFoundError:
+            result_dict['dialog'].append(preprocess_dialog(self.dialog_history['test_cancel']))
+
+        # Wrong agent activated
+        except AgentSelectionError as e:
+            log(str(e), level='warning')
+            result_dict = {
+                'gt': [{'cancel': gt_idx}],
+                'pred': [None],
+                'status': [False],
+                'status_code': [STATUS_CODES['agent']],
+                'dialog': [preprocess_dialog(self.dialog_history['test_cancel'])]
+            }
+
+        # Tool calling error
+        except TypeError:
+            result_dict = {
+                'gt': [{'cancel': gt_idx}],
+                'pred': [None],
+                'status': [False],
+                'status_code': [STATUS_CODES['cancel']['type']],
+                'dialog': [preprocess_dialog(self.dialog_history['test_cancel'])]
+            }
+
+        # Otherwhise
+        except Exception as e:
+            status_code = STATUS_CODES['unexpected'].format(e=e)
+            log(status_code, level='warning')
+            result_dict = {
+                'gt': [{'cancel': gt_idx}],
+                'pred': [None],
+                'status': [False],
+                'status_code': [status_code],
+                'dialog': [preprocess_dialog(self.dialog_history['test_cancel'])]
+            }
+
+        log("Simulation completed.", color=True)
+        self._finish_scheduling_turn('test_cancel', verbose)
+        return doctor_information, test_device_information, result_dict

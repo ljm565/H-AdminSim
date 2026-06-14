@@ -31,6 +31,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
     def __init__(self, 
                  patient_model: str,
                  admin_staff_mas: "HospitalMAS",
+                 schedule_cancellation_prob: float = 0.05,
                  preference_rejection_prob: float = 0.3,
                  preference_rejection_prob_decay: float = 0.5,
                  fhir_integration: bool = False,
@@ -51,6 +52,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
         self.admin_staff_mas = admin_staff_mas
         
         # Scheduling parameters
+        self.schedule_cancellation_prob = schedule_cancellation_prob
         self.preference_rejection_prob = preference_rejection_prob
         self.preference_rejection_prob_decay = preference_rejection_prob_decay
 
@@ -62,6 +64,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
         assert self.scheduling_strategy in ['reasoning', 'tool_calling'], \
             colorstr("red", 'Scheduling strategy must be either `reasoning` or `tool_calling`')
         self.schedule_patient_system_prompt_path = str(resources.files("h_adminsim.assets.prompts").joinpath('opfu_schedule_patient_system.txt'))
+        self.cancel_patient_system_prompt_path = str(resources.files("h_adminsim.assets.prompts").joinpath('opfu_cancel_patient_system.txt'))
         self.patient_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.patient_model.lower() else {}
         self.staff_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.admin_staff_mas.get_agent(self.name).model.lower() else {}
 
@@ -128,34 +131,38 @@ class OutpatientFollowUpScheduling(OutpatientTask):
         return -1, None
 
 
-    def cancellation_request(self, 
-                        doctor_information: dict, 
-                        environment: "HospitalEnvironment", 
-                        idx: Optional[int] = None, 
-                        verbose: bool = False) -> Tuple[dict, Optional[dict]]:
+    def cancellation_request(self,
+                        doctor_information: dict,
+                        test_information: dict,
+                        environment: "HospitalEnvironment",
+                        idx: Optional[int] = None,
+                        verbose: bool = False) -> Tuple[dict, dict, Optional[dict]]:
         """
-        Cancel a doctor's scheduled appointment.
+        Cancel all of a patient's scheduled tests.
 
         Args:
             doctor_information (dict): A dictionary containing information about the doctor(s) involved,
                                        including availability and other relevant details.
+            test_information (dict): A dictionary containing test device schedules.
             environment (HospitalEnvironment): Hospital environment.
             idx (int, optional): Specific patient schedule index.
             verbose (bool, optional): Whether logging the each result or not. Defaults to False.
 
         Returns:
-            Tuple[dict, Optional[dict]]: Updated doctor information and a result dictionary after cancellation.
+            Tuple[dict, dict, Optional[dict]]: Updated doctor information, test information, and a result dictionary after cancellation.
         """
+        # Candidates are scheduled follow-up bookings that carry prescribed tests
         if idx is None:
-            candidate_idx = [i for i, schedule in enumerate(environment.patient_schedules) if schedule['status'] == SCHEDULE_STATUS['scheduled']]
+            candidate_idx = [i for i, schedule in enumerate(environment.patient_schedules)
+                             if schedule['visit_type'] == 'follow_up_visit' and schedule['status'] == SCHEDULE_STATUS['scheduled'] and schedule.get('test')]
             idx = random.choice(candidate_idx) if len(candidate_idx) else -1
 
         if idx >= 0:
-            # Ground-truth cancelled schedule
+            # Ground-truth cancelled booking
             cancelled_schedule = environment.patient_schedules[idx]
             patient = cancelled_schedule['patient']
-            doctor, date, time = cancelled_schedule['attending_physician'], cancelled_schedule['date'], cancelled_schedule['schedule']
-            
+            doctor = cancelled_schedule['attending_physician']
+
             # Initialize simulation environment for cancellation
             sim_environment = self._init_simulation(
                 system_prompt_path=self.cancel_patient_system_prompt_path,
@@ -163,16 +170,15 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                 additional_patient_conditions={
                     'patient_name': patient,
                     'doctor_name': doctor,
-                    'date': date,
-                    'start_time': hour_to_hhmmss(time[0])
                 }
             )
 
-            # Schedule cancellation simulation
-            doctor_information, result_dict = run_with_retry(
+            # Test cancellation simulation
+            doctor_information, test_information, result_dict = run_with_retry(
                 sim_environment.canceling_simulate,
                 gt_idx=idx,
                 doctor_information=doctor_information,
+                test_device_information=test_information,
                 patient_schedules=environment.patient_schedules,
                 verbose=verbose,
                 max_inferences=self.max_inferences,
@@ -181,23 +187,9 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                 max_retries=self.max_retries,
             )
 
-            # Successfully cancelled
-            if result_dict['status'][0] is not False:   # No GT and correct case
-                # Update waiting list due to cancellation
-                doctor_information, rs_result_dict = self.automatic_waiting_list_update(
-                    sim_environment=sim_environment,
-                    environment=environment,
-                    doctor_information=doctor_information,
-                )
+            return doctor_information, test_information, result_dict
 
-                # Update result dictionary
-                for key in result_dict.keys():
-                    if len(rs_result_dict[key]):
-                        result_dict[key].append(tuple(rs_result_dict[key]))
-            
-            return doctor_information, result_dict
-
-        return doctor_information, None
+        return doctor_information, test_information, None
                 
 
     def rescheduling_request(self,
@@ -535,5 +527,29 @@ class OutpatientFollowUpScheduling(OutpatientTask):
             results[key] += result_dict[key]
         results['token'].append(self.token_stats)
         #######################################################################################################################################
+
+        # Other events
+        ## Simulate the test cancellation requests
+        if random.random() < self.schedule_cancellation_prob:
+            doctor_information, test_information, result_dict = self.cancellation_request(
+                doctor_information=doctor_information,
+                test_information=test_information,
+                environment=environment,
+                verbose=verbose,
+            )
+            if result_dict is not None:
+                agent_test_data['doctor'] = doctor_information
+                agent_test_data['test'] = test_information
+                results['gt'].extend(result_dict['gt'])
+                results['pred'].extend(result_dict['pred'])
+                results['status'].extend(result_dict['status'])
+                results['status_code'].extend(result_dict['status_code'])
+                results['dialog'].extend(result_dict['dialog'])
+                results['token'].extend([{}]*len(result_dict['gt']))
+
+                if verbose:
+                    log(f'Pred  : {result_dict["pred"]}')
+                    log(f'Status: {result_dict["status_code"]}')
+                    log(f'Final Status: {result_dict["status_code"]}\n\n\n')
 
         return results

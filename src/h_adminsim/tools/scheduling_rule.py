@@ -1,9 +1,9 @@
 from copy import deepcopy
-from typing import Optional
 from decimal import Decimal
 from collections import defaultdict
 from langchain.tools import tool
 from langchain.agents import AgentExecutor
+from typing import Optional, TYPE_CHECKING
 
 from .data_converter import DataConverter
 from h_adminsim.registry import SCHEDULE_STATUS
@@ -20,14 +20,18 @@ from h_adminsim.utils.common_utils import (
     iso_to_date,
 )
 
+if TYPE_CHECKING:
+    from h_adminsim.environment.hospital import HospitalEnvironment
+
 
 
 class SchedulingRule:
-    def __init__(self, 
-                 metadata: dict, 
-                 department_data: dict, 
-                 environment, 
+    def __init__(self,
+                 metadata: dict,
+                 department_data: dict,
+                 environment: "HospitalEnvironment",
                  fhir_integration: bool = False):
+        
         # Initialize parameters
         self.environment = environment
         self.current_time = self.environment.current_time
@@ -310,6 +314,56 @@ class SchedulingRule:
         
         # Remove from environment patient_schedules
         self.environment.schedule_cancel_event(idx, True)
+
+        return doctor_info
+
+
+    def cancel_test_schedule(self,
+                             idx: int,
+                             doctor_info: dict,
+                             test_device_information: dict,
+                             cancelled_schedule: dict) -> dict:
+        """
+        Cancel a whole follow-up booking (all prescribed tests and the follow-up consultation)
+        both in the schedule stores and FHIR system.
+
+        Args:
+            idx (int): The index of the follow-up booking to be cancelled.
+            doctor_info (dict): The doctor information containing schedules.
+            test_device_information (dict): Test device information containing device schedules.
+            cancelled_schedule (dict): The follow-up booking details to be cancelled.
+
+        Returns:
+            dict: Updated doctor information after cancellation.
+        """
+        # Free every prescribed test's device slot
+        device_to_schedule = {device: info['schedule'] for _, tests in test_device_information.items() for test in tests for device, info in test['devices'].items()}
+        for entry in cancelled_schedule.get('test') or []:
+            device, date, slot = entry['device'], entry['date'], entry['schedule']
+            if slot in device_to_schedule.get(device, {}).get(date, []):
+                device_to_schedule[device][date].remove(slot)
+
+        # Free the follow-up consultation doctor slot when it was booked in range
+        if cancelled_schedule.get('schedule'):
+            doctor, date, time = cancelled_schedule['attending_physician'], cancelled_schedule['date'], cancelled_schedule['schedule']
+            doctor_info[doctor]['schedule'][date].remove(time)
+
+        # Remove from FHIR (every test appointment, plus the follow-up consultation when present)
+        if self.fhir_integration:
+            data = {'metadata': deepcopy(self._metadata),
+                    'department': deepcopy(self._department_data),
+                    'information': deepcopy(cancelled_schedule)}
+            fhir_appointments = DataConverter.get_fhir_test_appointments(data)
+            if cancelled_schedule.get('schedule'):
+                fhir_appointments.append(DataConverter.get_fhir_appointment(data=data))
+            for fhir_appointment in fhir_appointments:
+                self.environment.delete_fhir({'Appointment': fhir_appointment})
+
+        # Remove from environment patient_schedules
+        self.environment.schedule_cancel_event(idx, True)
+        # A follow-up booked without an in-range consultation slot never incremented booking_num; keep it consistent.
+        if not cancelled_schedule.get('schedule'):
+            self.environment.booking_num[cancelled_schedule['attending_physician']] += 1
 
         return doctor_info
 
@@ -905,7 +959,7 @@ def create_tools(rule: SchedulingRule,
                  gt_idx: Optional[int] = None,
                  only_schedule_tool: bool = False,
                  reschedule_pipeline: Optional[callable] = None,
-                 filtered_test_device_information: Optional[dict] = None,
+                 test_device_information: Optional[dict] = None,
                  required_test_codes: Optional[list] = None) -> list[tool]:
     @tool
     def physician_filter_tool(preferred_doctor: str, min_time: Optional[str] = None, max_time: Optional[str] = None) -> dict:
@@ -991,7 +1045,42 @@ def create_tools(rule: SchedulingRule,
             updated_doctor_info = rule.cancel_schedule(index, doctor_info, cancelled_schedule)
                 
         return {'cancelled_schedule': cancelled_schedule, 'updated_doctor_info': updated_doctor_info, 'index': {'gt': gt_idx, 'pred': index}, 'status': status}
-    
+
+
+    @tool
+    def cancel_tests_tool(patient_name: str, doctor_name: str) -> dict:
+        """
+        Identify the patient's scheduled follow-up test booking and cancel every test in it.
+
+        Args:
+            patient_name (str): Name of the patient requesting the cancellation.
+            doctor_name (str): Name of the attending physician who ordered the tests.
+
+        Returns:
+            dict: A dictionary containing the cancelled_schedule, updated_doctor_info, index, and status.
+        """
+        log(f'[TOOL CALL] cancel_tests_tool | patient_name={patient_name}, doctor_name={doctor_name}', color=True)
+        updated_doctor_info, cancelled_schedule = None, None
+        prefix = 'Dr.'
+        if prefix not in doctor_name:
+            doctor_name = f'{prefix} {doctor_name}'
+        index = rule.find_idx(patient_schedule_list, patient_name, doctor_name, status=SCHEDULE_STATUS['scheduled'])
+
+        # Update result_dict
+        if index == -1 or gt_idx is None:
+            status = None
+        elif index == gt_idx:
+            status = True
+        else:
+            status = False
+
+        # Cancel the whole booking only when the identification is correct or there is no gt_idx
+        if index != -1 and (gt_idx is None or status):
+            cancelled_schedule = patient_schedule_list[index]
+            updated_doctor_info = rule.cancel_test_schedule(index, doctor_info, test_device_information, cancelled_schedule)
+
+        return {'cancelled_schedule': cancelled_schedule, 'updated_doctor_info': updated_doctor_info, 'index': {'gt': gt_idx, 'pred': index}, 'status': status}
+
 
     @tool
     def reschedule_tool(patient_name: str, doctor_name: str, date: str) -> dict:
@@ -1119,7 +1208,7 @@ def create_tools(rule: SchedulingRule,
         prefix = 'Dr.'
         if prefix not in attending_physician:
             attending_physician = f'{prefix} {attending_physician}'
-        result = rule.schedule_tests_asap(filtered_test_device_information, required_test_codes)
+        result = rule.schedule_tests_asap(test_device_information, required_test_codes)
         fu_appn = rule.physician_filter(doctor_info, attending_physician, result['all_results_ready_at'])
         fu_appn = rule.find_earliest_time(fu_appn)
         result['fu_schedule'] = fu_appn
@@ -1163,7 +1252,7 @@ def create_tools(rule: SchedulingRule,
         prefix = 'Dr.'
         if prefix not in attending_physician:
             attending_physician = f'{prefix} {attending_physician}'
-        result = rule.schedule_tests_batch(filtered_test_device_information, required_test_codes)
+        result = rule.schedule_tests_batch(test_device_information, required_test_codes)
         fu_appn = rule.physician_filter(doctor_info, attending_physician, result['all_results_ready_at'])
         fu_appn = rule.find_earliest_time(fu_appn)
         result['fu_schedule'] = fu_appn
@@ -1176,6 +1265,7 @@ def create_tools(rule: SchedulingRule,
         date_filter_tool,
         get_all_time_tool,
         cancel_tool,
+        cancel_tests_tool,
         reschedule_tool,
         retrieve_patient_tests,
     ]
@@ -1183,9 +1273,9 @@ def create_tools(rule: SchedulingRule,
     # Only scheduling tools are needed
     if only_schedule_tool:
         return [physician_filter_tool, date_filter_tool, get_all_time_tool]
-    
+
     # After determine the patient's tests
-    if filtered_test_device_information is not None and required_test_codes is not None:
+    if test_device_information is not None and required_test_codes is not None:
         tools = [
             follow_up_asap_test_schedule, follow_up_batch_test_schedule,
         ]

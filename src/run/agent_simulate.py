@@ -91,6 +91,7 @@ def simulate(config, args, single_file=None):
         _task = OutpatientFollowUpScheduling(
             patient_model=config.task_model,
             admin_staff_mas=staff_mas,
+            schedule_cancellation_prob=config.schedule_cancellation_prob,
             fhir_integration=config.integration_with_fhir,
             scheduling_strategy=config.schedule_task.scheduling_strategy,
             patient_vllm_endpoint=config.vllm_url if use_vllm else None,
