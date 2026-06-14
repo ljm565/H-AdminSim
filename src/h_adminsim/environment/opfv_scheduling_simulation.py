@@ -1133,6 +1133,9 @@ class OPFVSchedulingSimulation:
                 'status_code': [status_code],
                 'dialog': [preprocess_dialog(self.dialog_history['scheduling'])]
             }
+            token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
+            self._finish_scheduling_turn('scheduling', verbose)
+            return doctor_information, result_dict, token_usage
 
         # Oranize the result
         ## Defaults to failure case dictionary

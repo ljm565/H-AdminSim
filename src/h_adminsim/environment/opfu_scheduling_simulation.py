@@ -6,29 +6,42 @@ from copy import deepcopy
 from importlib import resources
 from patientsim import PatientAgent
 from decimal import Decimal, getcontext
-from typing import Tuple, Union, Optional
 from langchain.agents import AgentExecutor
 from langchain_core.messages import HumanMessage, AIMessage
+from typing import Tuple, Union, Optional, TYPE_CHECKING
 
-from h_adminsim.agent import SchedulingAdminStaffAgent
-from h_adminsim.registry.errors import ToolCallingError, DataNotFoundError, SchedulingError
-from h_adminsim.registry import OPFU_PREFERENCE_PHRASE_PATIENT, OPFU_PREFERENCE_PHRASE_STAFF, STATUS_CODES
-from h_adminsim.environment.hospital import HospitalEnvironment
-from h_adminsim.utils import log, colorstr
+from h_adminsim.registry.errors import (
+    SchedulingError,
+    ToolCallingError,
+    DataNotFoundError,
+    AgentSelectionError,
+)
+from h_adminsim.registry import (
+    STATUS_CODES,
+    OPFU_PREFERENCE_PHRASE_STAFF,
+    OPFU_PREFERENCE_PHRASE_PATIENT,
+)
 from h_adminsim.tools.callback import TokenUsageCallback
 from h_adminsim.tools.sanity_checker import SanityChecker
 from h_adminsim.tools import SchedulingRule, scheduling_tool_calling
+from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.common_utils import *
+
+if TYPE_CHECKING:
+    from h_adminsim.pipeline import HospitalMAS
+    from h_adminsim.agent import SchedulingAdminStaffAgent
+    from h_adminsim.environment.hospital import HospitalEnvironment
+
 
 
 
 class OPFUSchedulingSimulation:
     def __init__(self,
                  patient_agent: PatientAgent,
-                 admin_staff_agent: SchedulingAdminStaffAgent,
+                 admin_staff_mas: "HospitalMAS",
                  metadata: dict,
                  department_data: dict,
-                 environment: HospitalEnvironment,
+                 environment: "HospitalEnvironment",
                  scheduling_strategy: str = 'tool_calling',
                  preference_rejection_prob: float = 0.3,
                  preference_rejection_prob_decay: float = 0.5,
@@ -38,8 +51,9 @@ class OPFUSchedulingSimulation:
         
         # Initialize simulation parameters
         getcontext().prec = 10
+        self._chief_agent_name = 'follow_up_visit_scheduling'
         self.patient_agent = patient_agent
-        self.admin_staff_agent = admin_staff_agent
+        self.admin_staff_mas = admin_staff_mas
         self.environment = environment
         self._START_HOUR = metadata['time']['start_hour']
         self._END_HOUR = metadata['time']['end_hour']
@@ -52,6 +66,43 @@ class OPFUSchedulingSimulation:
         self._init_prompt(schedule_rejection_prompt_path)
         self.sanity_checker = sanity_checker
         self.rules = SchedulingRule(metadata, department_data, self.environment, self.fhir_integration)
+        
+    
+    @property
+    def scheduling_agent(self) -> "SchedulingAdminStaffAgent":
+        """
+        The scheduling worker (a leaf of the MAS tree).
+
+        Scheduling, cancellation, and rescheduling are all handled by the same
+        ``'first_visit_scheduling'`` worker and are independent of the intake flow,
+        so it is fetched from the MAS on demand rather than cached as instance state.
+        """
+        return self.admin_staff_mas.get_agent('follow_up_visit_scheduling')
+
+    
+    def _init_prompt(self, schedule_rejection_prompt_path: Optional[str] = None):
+        """
+        Initialize the schedule rejection system prompt for the administration staff agent.
+
+        Args:
+            schedule_rejection_prompt_path (Optional[str], optional): Path to a custom schedule rejection system prompt file. 
+                                                                      If not provided, the default system prompt will be used. Defaults to None.
+
+        Raises:
+            FileNotFoundError: If the specified system prompt file does not exist.
+        """
+        # Initialilze with the default system prompt
+        if not schedule_rejection_prompt_path:
+            prompt_file_name = "opfu_schedule_patient_rejected_system.txt"
+            file_path = resources.files("h_adminsim.assets.prompts").joinpath(prompt_file_name)
+            self.rejection_system_prompt_template = file_path.read_text()
+        
+        # User can specify a custom system prompt
+        else:
+            if not os.path.exists(schedule_rejection_prompt_path):
+                raise FileNotFoundError(colorstr("red", f"System prompt file not found: {schedule_rejection_prompt_path}"))
+            with open(schedule_rejection_prompt_path, 'r') as f:
+                self.rejection_system_prompt_template = f.read()
         
         # Additional prompts for streaming scheduling simulation
         self.patient_satisfaction_system_prompt = (
@@ -82,31 +133,6 @@ class OPFUSchedulingSimulation:
         )
         self.end_phrase = "Thank you."
 
-    
-    def _init_prompt(self, schedule_rejection_prompt_path: Optional[str] = None):
-        """
-        Initialize the schedule rejection system prompt for the administration staff agent.
-
-        Args:
-            schedule_rejection_prompt_path (Optional[str], optional): Path to a custom schedule rejection system prompt file. 
-                                                                      If not provided, the default system prompt will be used. Defaults to None.
-
-        Raises:
-            FileNotFoundError: If the specified system prompt file does not exist.
-        """
-        # Initialilze with the default system prompt
-        if not schedule_rejection_prompt_path:
-            prompt_file_name = "opfu_schedule_patient_rejected_system.txt"
-            file_path = resources.files("h_adminsim.assets.prompts").joinpath(prompt_file_name)
-            self.rejection_system_prompt_template = file_path.read_text()
-        
-        # User can specify a custom system prompt
-        else:
-            if not os.path.exists(schedule_rejection_prompt_path):
-                raise FileNotFoundError(colorstr("red", f"System prompt file not found: {schedule_rejection_prompt_path}"))
-            with open(schedule_rejection_prompt_path, 'r') as f:
-                self.rejection_system_prompt_template = f.read()
-
 
     def _init_agents(self, verbose: bool = True):
         """
@@ -116,7 +142,7 @@ class OPFUSchedulingSimulation:
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
         """
         self.patient_agent.reset_history(verbose=verbose)
-        self.admin_staff_agent.reset_history(verbose=verbose)
+        self.admin_staff_mas.reset(verbose=verbose)
 
 
     def _init_history(self):
@@ -145,6 +171,165 @@ class OPFUSchedulingSimulation:
             elif m["role"] == "Staff":
                 msgs.append(AIMessage(content=m["content"]))
         return msgs
+    
+
+    def _render_staff_reply(self,
+                            staff_response: dict,
+                            reply_type: str,
+                            gt_patient_condition: dict,
+                            staff_known_data: dict,
+                            natural_express: bool = True) -> str:
+        """
+        Turn a structured staff scheduling result into a natural-language utterance.
+
+        Args:
+            staff_response (dict): The result of `scheduling`, either a clarification (``type == 'text'``) or a schedule proposal (``type == 'tool'``).
+            reply_type (str): Reply types of the scheduling agent.
+            gt_patient_condition (dict): Ground-truth condition for this turn; supplies the GT required-test codes used to flag tests that could not be scheduled.
+            staff_known_data (dict): Patient information known to the staff agent; supplies the follow-up doctor.
+            natural_express (bool, optional): Whether to phrase a schedule proposal naturally instead of dumping the raw schedule dict. Defaults to True.
+
+        Returns:
+            str: The staff utterance to show the patient.
+        """
+        # Clarification message
+        if staff_response['type'] == 'text':
+            return staff_response['result']
+        
+        elif staff_response['type'] == 'tool':
+            if 'test_list' in staff_response['result']:
+                test_list = staff_response['result']['test_list']
+                test_list_desc = ', '.join([t['name'] for t in test_list])
+
+                # Response formatting for test guidance
+                try:
+                    if natural_express:
+                        _format = random.choice(self.scheduling_agent.natural_test_explanation) \
+                            if isinstance(self.scheduling_agent.natural_test_explanation, list) \
+                                else self.scheduling_agent.natural_test_explanation
+                        return _format.format(
+                            test_len=len(test_list),
+                            test_list=test_list_desc
+                        ) + ' ' + self.scheduling_agent.test_greet
+                    else:
+                        return self.scheduling_agent.test_explanation.format(
+                            test_len=len(test_list),
+                            test_list=test_list_desc
+                        ) + ' ' + self.scheduling_agent.test_greet
+                except:
+                    try:
+                        return self.scheduling_agent.test_explanation.format(
+                            test_len=len(test_list),
+                            test_list=test_list_desc
+                        ) + ' ' + self.scheduling_agent.test_greet
+                    except:
+                        return 'Your tests: ' + str(test_list_desc) + ' ' + self.scheduling_agent.test_greet
+            
+            elif 'test_schedule' in staff_response['result']:
+                pred_schedule  = staff_response['result']
+                pred_test_schedules = pred_schedule['test_schedule']
+
+                # Build a humanized summary of every test slot
+                parts = []
+                for test_info in pred_test_schedules:
+                    parts.append(
+                        f"{test_info['name']} on {test_info['date']} from {test_info['start']} to {test_info['end']}"
+                    )
+
+                # Notify the patient of any required tests that the agent could not
+                # fit within the simulation window (no deferred booking is attempted).
+                required_test_codes = {t['test_code'] for t in gt_patient_condition.get('required_tests', [])}
+                unscheduled_tests = {test_info['name'] for test_info in pred_test_schedules if test_info['code'] not in required_test_codes}
+                if unscheduled_tests:
+                    parts.append(
+                        f"however, the scheduling for {', '.join(sorted(unscheduled_tests))} test(s) will be arranged later"
+                    )
+
+                fu_slot = pred_schedule['fu_schedule']
+                fu_doctor = staff_known_data['patient_fv']['attending_physician']
+                if isinstance(fu_slot, dict) and fu_slot:
+                    fu_info = fu_slot[fu_doctor]
+                    parts.append(
+                        f"follow-up with {fu_doctor} on {fu_info['date']} from {fu_info['start']} to {fu_info['end']}"
+                    )
+                else:
+                    all_results_ready_at = pred_schedule.get('all_results_ready_at')
+                    if all_results_ready_at:
+                        parts.append(
+                            f"and can I make an follow-up appointment with {fu_doctor} after {all_results_ready_at}"
+                        )
+                    else:
+                        parts.append(f"(follow-up with {fu_doctor} cannot be booked at this time)")
+                
+                schedule_summary = "; ".join(parts)
+                
+                # Response formatting for test guidance
+                try:
+                    if natural_express:
+                        _format = random.choice(self.scheduling_agent.natural_fu_schedule_suggestion) \
+                            if isinstance(self.scheduling_agent.natural_fu_schedule_suggestion, list) \
+                                else self.scheduling_agent.natural_fu_schedule_suggestion
+                        return _format.format(schedule_summary=schedule_summary)
+                    else:
+                        return self.scheduling_agent.fu_schedule_suggestion.format(
+                            schedule_summary=schedule_summary
+                        )
+                except:
+                    return 'Your test schedules: ' + schedule_summary
+
+
+    def _accumulate_staff_tokens(self,
+                                 staff_response: dict,
+                                 staff_token_stats: dict,
+                                 staff_token_callback: TokenUsageCallback) -> dict:
+        """
+        Merge this turn's staff token usage into the running stats and return them.
+
+        Args:
+            staff_response (dict): The staff scheduling result (carries ``'token'`` for reasoning).
+            staff_token_stats (dict): The running per-key token usage to update.
+            staff_token_callback (TokenUsageCallback): Cumulative callback for the tool-calling path.
+
+        Returns:
+            dict: The updated token statistics.
+        """
+        if self.scheduling_strategy == 'tool_calling':
+            return staff_token_callback.token_usage
+        for k, v in staff_response['token'].items():
+            if k not in staff_token_stats:
+                staff_token_stats[k] = deepcopy(v)
+            else:
+                staff_token_stats[k].extend(v)
+        return staff_token_stats
+    
+
+    def _finish_scheduling_turn(self,
+                                reply_type: str,
+                                verbose: bool = False):
+        """
+        Hand the floor back to the orchestrator once the scheduling eval loop is done.
+
+        Args:
+            reply_type (str): Reply types of the scheduling agent.
+            verbose (bool, optional): Whether to print verbose output. Defaults to False.
+        """
+        if len(self.admin_staff_mas.path) <= 1:
+            return
+        
+        closing = self.dialog_history[reply_type][-1]['content']
+        messages = self.admin_staff_mas.state.messages
+        
+        # When end abnormally
+        if messages and messages[-1]['content'] == closing:
+            return
+        
+        # When end normally
+        self.admin_staff_mas.chat(
+            user_prompt=closing,
+            using_multi_turn=False,
+            verbose=verbose,
+            is_done=True,
+        )
     
     
     @staticmethod
@@ -462,7 +647,7 @@ class OPFUSchedulingSimulation:
                 fhir_integration=self.fhir_integration and test_device_information is None,
             )
             current_time = f"{self.environment.current_time} (Date: {iso_to_date(self.environment.current_time)}, Time: {round(iso_to_hour(self.environment.current_time), 3)})"
-            user_prompt = self.admin_staff_agent.scheduling_user_prompt_template.format(
+            user_prompt = self.scheduling_agent.scheduling_user_prompt_template.format(
                 START_HOUR=self._START_HOUR,
                 END_HOUR=self._END_HOUR,
                 TIME_UNIT=self._TIME_UNIT,
@@ -476,7 +661,7 @@ class OPFUSchedulingSimulation:
 
             tries, schedule = 0, None
             while 1:
-                schedule = self.admin_staff_agent(
+                schedule = self.scheduling_agent(
                     user_prompt,
                     using_multi_turn=False,
                     verbose=False,
@@ -497,16 +682,16 @@ class OPFUSchedulingSimulation:
                 tries += 1
 
             if not isinstance(schedule, dict):
-                self.admin_staff_agent.reset_history(verbose=False)
+                self.scheduling_agent.reset_history(verbose=False)
                 raise SchedulingError(colorstr('red', 'Reasoning fallback failed to produce a valid schedule JSON.'))
 
             prediction = {
                 'type': 'tool',
                 'result': schedule,
                 'raw': None,
-                'token': deepcopy(self.admin_staff_agent.client.token_usages),
+                'token': deepcopy(self.scheduling_agent.client.token_usages),
             }
-            self.admin_staff_agent.reset_history(verbose=False)
+            self.scheduling_agent.reset_history(verbose=False)
 
         return prediction
     
@@ -553,12 +738,12 @@ class OPFUSchedulingSimulation:
             assert test_device_information is not None, colorstr("red", f"Test device information must be provided if you don't use FHIR.")
 
         # Initialize agents and result dictionary
+        self._init_agents(verbose=verbose)
         staff_token_callback = TokenUsageCallback()
         self._init_history()
-        self._init_agents(verbose=verbose)
         staff_token_stats = {}
         patient_info = self.environment.patient_schedules
-        client = self.admin_staff_agent.build_agent(
+        tool_calling_agent = self.scheduling_agent.build_agent(
             rule=self.rules, 
             doctor_info=None,
             patient_schedule_list=patient_info,
@@ -566,12 +751,31 @@ class OPFUSchedulingSimulation:
         )
         merged_patient_kwargs = {**patient_kwargs, **kwargs}
         merged_staff_kwargs = {**staff_kwargs, **kwargs}
+
+        # Staff turn closure: captures all of `scheduling`'s simulation-side arguments
+        holder = {}
+        def staff_turn(user_prompt: str) -> Tuple[str, bool]:
+            staff_known_data.update({'patient_intention': user_prompt})
+            staff_response = self.test_scheduling(
+                tool_calling_agent,
+                staff_known_data,
+                doctor_information,
+                test_device_information,
+                chat_history=self._to_lc_history('test_scheduling'),
+                reasoning_max_tries=reasoning_max_tries,
+                callback=staff_token_callback,
+                **merged_staff_kwargs
+            )
+            holder['response'] = staff_response
+            return self._render_staff_reply(
+                staff_response, 'test_scheduling', gt_patient_condition, staff_known_data, natural_express
+            ), False
         
         # Start conversation
-        staff_greet = self.admin_staff_agent.general_greet
+        staff_greet = self.admin_staff_mas.root.agent.staff_greet
         self.dialog_history['test_scheduling'].append({"role": "Staff", "content": staff_greet})
-        role = f"{colorstr('blue', 'Staff')}"
-        log(f"{role:<25}: {staff_greet}")
+        self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
+        log(f"{staff_role(role=self.admin_staff_mas.path[-1].name):<25}: {staff_greet}")
 
         # Iterate over multiple preferences if exists
         tries = 0
@@ -600,37 +804,26 @@ class OPFUSchedulingSimulation:
                     log(f"{role:<25}: {patient_response}")
                     
                     # Scheduling from staff
-                    staff_known_data.update({'patient_intention': patient_response})
-                    staff_response = self.test_scheduling(
-                        client,
-                        staff_known_data,
-                        doctor_information,
-                        test_device_information,
-                        chat_history=self._to_lc_history('test_scheduling'),
-                        reasoning_max_tries=reasoning_max_tries,
-                        callback=staff_token_callback,
-                        **merged_staff_kwargs
+                    output = self.admin_staff_mas.chat(
+                        user_prompt=patient_response,
+                        callback=staff_turn,
+                        using_multi_turn=False,
+                        verbose=False,
                     )
 
-                    # Update token stats
-                    if self.scheduling_strategy == 'tool_calling':
-                        staff_token_stats = staff_token_callback.token_usage
-                    else:
-                        for k, v in staff_response['token'].items():
-                            if k not in staff_token_stats:
-                                staff_token_stats[k] = deepcopy(v)
-                            else:
-                                staff_token_stats[k].extend(v)
+                    # If wrong agent activated
+                    if output.agent != self._chief_agent_name:
+                        raise AgentSelectionError(colorstr('red', f'Wrong agent activated, expected {self._chief_agent_name} but got {output.agent}'))
                     
-                    # Clarification message
-                    if staff_response['type'] == 'text':
-                        response = staff_response['result']
-                        self.dialog_history['test_scheduling'].append({"role": "Staff", "content": response})
-                        role = f"{colorstr('blue', 'Staff')}"
-                        log(f"{role:<25}: {response}")
+                    staff_response = holder.pop('response')
+                    
+                    # Token accounting
+                    staff_token_stats = self._accumulate_staff_tokens(
+                        staff_response, staff_token_stats, staff_token_callback
+                    )
                     
                     # Tool calling result
-                    elif staff_response['type'] == 'tool':
+                    if staff_response['type'] == 'tool':
                         # Fail to identify the schedule
                         if staff_response.get('tmp_flag') == 'retrieve':
                             result_dict = staff_response['result_dict']
@@ -647,7 +840,6 @@ class OPFUSchedulingSimulation:
                                 staff_known_data.update({'department': _patient_info['department']})
                                 staff_known_data.update({'attending_physician': _patient_info['attending_physician']})
                                 staff_known_data.update({'required_tests': test_list})
-                                test_list_desc = ', '.join([t['name'] for t in test_list])
                                 required_test_codes = [_test['test_code'] for _test in test_list]
                                 filtered_doctor_information = self.environment.get_doctor_schedule(
                                     doctor_information=doctor_information,
@@ -661,7 +853,7 @@ class OPFUSchedulingSimulation:
                                 )
 
                                 # Rebuild the staff agent so subsequent turns have the test-scheduling tools.
-                                client = self.admin_staff_agent.build_agent(
+                                tool_calling_agent = self.scheduling_agent.build_agent(
                                     rule=self.rules,
                                     doctor_info=filtered_doctor_information,
                                     patient_schedule_list=patient_info,
@@ -670,88 +862,20 @@ class OPFUSchedulingSimulation:
                                     required_test_codes=required_test_codes,
                                 )
 
-                                # Response formatting for test guidance
-                                try:
-                                    if natural_express:
-                                        _format = random.choice(self.admin_staff_agent.natural_test_explanation) \
-                                            if isinstance(self.admin_staff_agent.natural_test_explanation, list) \
-                                                else self.admin_staff_agent.natural_test_explanation
-                                        response = _format.format(
-                                            test_len=len(test_list),
-                                            test_list=test_list_desc
-                                        ) + ' ' + self.admin_staff_agent.test_greet
-                                    else:
-                                        response = self.admin_staff_agent.test_explanation.format(
-                                            test_len=len(test_list),
-                                            test_list=test_list_desc
-                                        ) + ' ' + self.admin_staff_agent.test_greet
-                                except:
-                                    try:
-                                        response = self.admin_staff_agent.test_explanation.format(
-                                            test_len=len(test_list),
-                                            test_list=test_list_desc
-                                        ) + ' ' + self.admin_staff_agent.test_greet
-                                    except:
-                                        response = 'Your tests: ' + str(test_list_desc) + ' ' + self.admin_staff_agent.test_greet
-                            
-                            elif 'test_schedule' in staff_response['result']:
-                                pred_schedule  = staff_response['result']
-                                pred_test_schedules = pred_schedule['test_schedule']
-
-                                # Build a humanized summary of every test slot
-                                parts = []
-                                for test_info in pred_test_schedules:
-                                    parts.append(
-                                        f"{test_info['name']} on {test_info['date']} from {test_info['start']} to {test_info['end']}"
-                                    )
-
-                                # Notify the patient of any required tests that the agent could not
-                                # fit within the simulation window (no deferred booking is attempted).
-                                required_test_codes = {t['test_code'] for t in gt_patient_condition.get('required_tests', [])}
-                                unscheduled_tests = {test_info['name'] for test_info in pred_test_schedules if test_info['code'] not in required_test_codes}
-                                if unscheduled_tests:
-                                    parts.append(
-                                        f"however, the scheduling for {', '.join(sorted(unscheduled_tests))} test(s) will be arranged later"
-                                    )
-
-                                fu_slot = pred_schedule['fu_schedule']
-                                fu_doctor = staff_known_data['patient_fv']['attending_physician']
-                                if isinstance(fu_slot, dict) and fu_slot:
-                                    fu_info = fu_slot[fu_doctor]
-                                    parts.append(
-                                        f"follow-up with {fu_doctor} on {fu_info['date']} from {fu_info['start']} to {fu_info['end']}"
-                                    )
-                                else:
-                                    all_results_ready_at = pred_schedule.get('all_results_ready_at')
-                                    if all_results_ready_at:
-                                        parts.append(
-                                            f"and can I make an follow-up appointment with {fu_doctor} after {all_results_ready_at}"
-                                        )
-                                    else:
-                                        parts.append(f"(follow-up with {fu_doctor} cannot be booked at this time)")
-                                
-                                schedule_summary = "; ".join(parts)
-
-                                # Response formatting for test guidance
-                                try:
-                                    if natural_express:
-                                        _format = random.choice(self.admin_staff_agent.natural_fu_schedule_suggestion) \
-                                            if isinstance(self.admin_staff_agent.natural_fu_schedule_suggestion, list) \
-                                                else self.admin_staff_agent.natural_fu_schedule_suggestion
-                                        response = _format.format(schedule_summary=schedule_summary)
-                                    else:
-                                        response = self.admin_staff_agent.fu_schedule_suggestion.format(
-                                            schedule_summary=schedule_summary
-                                        )
-                                except:
-                                    response = 'Your test schedules: ' + schedule_summary
-
-                            self.dialog_history['test_scheduling'].append({"role": "Staff", "content": response})
-                            role = f"{colorstr('blue', 'Staff')}"
-                            log(f"{role:<25}: {response}")
+                                # Response
+                                rendered_response, _role = output.response, output.agent
+                                self.dialog_history['test_scheduling'].append({"role": "Staff", "content": rendered_response})
+                                log(f"{staff_role(role=_role):<25}: {rendered_response}")
 
                             # A successful test schedule ends the inner dialog loop.
-                            if 'test_schedule' in staff_response['result']:
+                            elif 'test_schedule' in staff_response['result']:
+                                pred_schedule  = staff_response['result']
+
+                                # Response
+                                rendered_response, _role = output.response, output.agent
+                                self.dialog_history['test_scheduling'].append({"role": "Staff", "content": rendered_response})
+                                log(f"{staff_role(role=_role):<25}: {rendered_response}")
+
                                 break
 
                     tries += 1
@@ -764,6 +888,7 @@ class OPFUSchedulingSimulation:
                             'dialog': [preprocess_dialog(self.dialog_history['test_scheduling'])]
                         }
                         token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
+                        self._finish_scheduling_turn('test_scheduling', verbose)
                         return doctor_information, test_device_information, result_dict, token_usage
 
                 # Sanity check
@@ -816,6 +941,7 @@ class OPFUSchedulingSimulation:
             result_dict['dialog'].append(preprocess_dialog(self.dialog_history['test_scheduling']))
             log("Simulation completed.", color=True)
             token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
+            self._finish_scheduling_turn('test_scheduling', verbose)
             return doctor_information, test_device_information, result_dict, token_usage
         
         except ToolCallingError:
@@ -829,6 +955,7 @@ class OPFUSchedulingSimulation:
             }
             log("Simulation completed.", color=True)
             token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
+            self._finish_scheduling_turn('test_scheduling', verbose)
             return doctor_information, test_device_information, result_dict, token_usage
 
         except SchedulingError:
@@ -842,6 +969,22 @@ class OPFUSchedulingSimulation:
             }
             log("Simulation completed.", color=True)
             token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
+            self._finish_scheduling_turn('test_scheduling', verbose)
+            return doctor_information, test_device_information, result_dict, token_usage
+        
+        except AgentSelectionError as e:
+            log(str(e), level='warning')
+            status = False
+            result_dict = {
+                'gt': [gt_patient_condition],
+                'pred': [None],
+                'status': [status],
+                'status_code': [STATUS_CODES['agent']],
+                'dialog': [preprocess_dialog(self.dialog_history['test_scheduling'])]
+            }
+            log("Simulation completed.", color=True)
+            token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
+            self._finish_scheduling_turn('test_scheduling', verbose)
             return doctor_information, test_device_information, result_dict, token_usage
         
         # Otherwise
@@ -856,6 +999,10 @@ class OPFUSchedulingSimulation:
                 'status_code': [status_code],
                 'dialog': [preprocess_dialog(self.dialog_history['test_scheduling'])]
             }
+            log("Simulation completed.", color=True)
+            token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
+            self._finish_scheduling_turn('test_scheduling', verbose)
+            return doctor_information, test_device_information, result_dict, token_usage
         
         # Organize the result for the regular success / failure path
         result_dict = {
@@ -896,5 +1043,5 @@ class OPFUSchedulingSimulation:
 
         log("Simulation completed.", color=True)
         token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
-
+        self._finish_scheduling_turn('test_scheduling', verbose)
         return doctor_information, test_device_information, result_dict, token_usage
