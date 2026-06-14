@@ -814,69 +814,61 @@ class OPFUSchedulingSimulation:
                     # If wrong agent activated
                     if output.agent != self._chief_agent_name:
                         raise AgentSelectionError(colorstr('red', f'Wrong agent activated, expected {self._chief_agent_name} but got {output.agent}'))
-                    
+
                     staff_response = holder.pop('response')
-                    
+
                     # Token accounting
                     staff_token_stats = self._accumulate_staff_tokens(
                         staff_response, staff_token_stats, staff_token_callback
                     )
-                    
-                    # Tool calling result
+
+                    # Fail to identify the schedule -> surface before recording a staff turn
+                    if staff_response['type'] == 'tool' and staff_response.get('tmp_flag') == 'retrieve':
+                        result_dict = staff_response['result_dict']
+                        raise DataNotFoundError(colorstr("red", "Error: Patient information not found error."))
+
+                    # Record the staff utterance (clarification 'text' or test/schedule proposal alike)
+                    rendered_response, _role = output.response, output.agent
+                    self.dialog_history['test_scheduling'].append({"role": "Staff", "content": rendered_response})
+                    log(f"{staff_role(role=_role):<25}: {rendered_response}")
+
+                    # Advance simulation state based on the structured result
                     if staff_response['type'] == 'tool':
-                        # Fail to identify the schedule
-                        if staff_response.get('tmp_flag') == 'retrieve':
-                            result_dict = staff_response['result_dict']
-                            raise DataNotFoundError(colorstr("red", "Error: Patient information not found error."))
-                        
-                        # Successful case
-                        else:
-                            # Test retrieval case
-                            if 'test_list' in staff_response['result']:
-                                result = staff_response['result']
-                                _patient_info = result['patient_fv']
-                                test_list = result['test_list']
-                                staff_known_data.update({'patient_fv': _patient_info})
-                                staff_known_data.update({'department': _patient_info['department']})
-                                staff_known_data.update({'attending_physician': _patient_info['attending_physician']})
-                                staff_known_data.update({'required_tests': test_list})
-                                required_test_codes = [_test['test_code'] for _test in test_list]
-                                filtered_doctor_information = self.environment.get_doctor_schedule(
-                                    doctor_information=doctor_information,
-                                    department=staff_known_data['department'],
-                                    fhir_integration=self.fhir_integration and doctor_information is None,
-                                )
-                                filtered_test_device_information = self.environment.get_test_device_schedule(
-                                    test_device_information=test_device_information,
-                                    test_code=required_test_codes,
-                                    fhir_integration=self.fhir_integration and test_device_information is None,
-                                )
+                        # Test retrieval case -> update known data + rebuild agent with test tools
+                        if 'test_list' in staff_response['result']:
+                            result = staff_response['result']
+                            _patient_info = result['patient_fv']
+                            test_list = result['test_list']
+                            staff_known_data.update({'patient_fv': _patient_info})
+                            staff_known_data.update({'department': _patient_info['department']})
+                            staff_known_data.update({'attending_physician': _patient_info['attending_physician']})
+                            staff_known_data.update({'required_tests': test_list})
+                            required_test_codes = [_test['test_code'] for _test in test_list]
+                            filtered_doctor_information = self.environment.get_doctor_schedule(
+                                doctor_information=doctor_information,
+                                department=staff_known_data['department'],
+                                fhir_integration=self.fhir_integration and doctor_information is None,
+                            )
+                            filtered_test_device_information = self.environment.get_test_device_schedule(
+                                test_device_information=test_device_information,
+                                test_code=required_test_codes,
+                                fhir_integration=self.fhir_integration and test_device_information is None,
+                            )
 
-                                # Rebuild the staff agent so subsequent turns have the test-scheduling tools.
-                                tool_calling_agent = self.scheduling_agent.build_agent(
-                                    rule=self.rules,
-                                    doctor_info=filtered_doctor_information,
-                                    patient_schedule_list=patient_info,
-                                    gt_idx=gt_data[0]['index'],
-                                    filtered_test_device_information=filtered_test_device_information,
-                                    required_test_codes=required_test_codes,
-                                )
+                            # Rebuild the staff agent so subsequent turns have the test-scheduling tools.
+                            tool_calling_agent = self.scheduling_agent.build_agent(
+                                rule=self.rules,
+                                doctor_info=filtered_doctor_information,
+                                patient_schedule_list=patient_info,
+                                gt_idx=gt_data[0]['index'],
+                                filtered_test_device_information=filtered_test_device_information,
+                                required_test_codes=required_test_codes,
+                            )
 
-                                # Response
-                                rendered_response, _role = output.response, output.agent
-                                self.dialog_history['test_scheduling'].append({"role": "Staff", "content": rendered_response})
-                                log(f"{staff_role(role=_role):<25}: {rendered_response}")
-
-                            # A successful test schedule ends the inner dialog loop.
-                            elif 'test_schedule' in staff_response['result']:
-                                pred_schedule  = staff_response['result']
-
-                                # Response
-                                rendered_response, _role = output.response, output.agent
-                                self.dialog_history['test_scheduling'].append({"role": "Staff", "content": rendered_response})
-                                log(f"{staff_role(role=_role):<25}: {rendered_response}")
-
-                                break
+                        # A successful test schedule ends the inner dialog loop.
+                        elif 'test_schedule' in staff_response['result']:
+                            pred_schedule = staff_response['result']
+                            break
 
                     tries += 1
                     if tries > max_inferences:
@@ -912,7 +904,7 @@ class OPFUSchedulingSimulation:
                 # Preference rejection logic (OPFU: asap vs batch)
                 next_pref_differs = (i != len(gt_data) - 1) and \
                     (gt_data[i + 1]['preference'] != gt_data[i]['preference'])
-                if random.random() < preference_reject_prob and next_pref_differs:
+                if random.random() < preference_reject_prob and next_pref_differs and len(pred_schedule['test_visit_dates']) > 1:
                     preference_reject_prob *= self.preference_rejection_prob_decay
                 ## Non-rejection case
                 else:
