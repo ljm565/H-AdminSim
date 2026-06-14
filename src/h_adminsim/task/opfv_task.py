@@ -13,7 +13,6 @@ from h_adminsim.environment import (
     OPFVIntakeSimulation,
     OPFVSchedulingSimulation
 )
-from h_adminsim.environment.hospital import HospitalEnvironment
 from h_adminsim.tools.sanity_checker import SanityChecker
 from h_adminsim.registry import (
     STATUS_CODES,
@@ -29,6 +28,7 @@ from h_adminsim.utils.common_utils import *
 
 if TYPE_CHECKING:
     from h_adminsim.pipeline import HospitalMAS
+    from h_adminsim.environment.hospital import HospitalEnvironment
 
 
 
@@ -174,7 +174,7 @@ class OutpatientFirstIntake(OutpatientTask):
                  data_pair: Tuple[dict, dict], 
                  agent_test_data: dict, 
                  agent_results: dict, 
-                 environment: HospitalEnvironment, 
+                 environment: "HospitalEnvironment", 
                  verbose: bool = False,
                  **kwargs) -> dict:
         """
@@ -384,7 +384,7 @@ class OutpatientFirstScheduling(OutpatientTask):
     
     def _init_simulation(self,
                          system_prompt_path: str,
-                         environment: HospitalEnvironment,
+                         environment: "HospitalEnvironment",
                          additional_patient_conditions: dict = {}) -> OPFVSchedulingSimulation:
         """
         Initialize an outpatient first-visit intake and scheduling simulation.
@@ -467,7 +467,7 @@ class OutpatientFirstScheduling(OutpatientTask):
 
     def cancellation_request(self, 
                         doctor_information: dict, 
-                        environment: HospitalEnvironment, 
+                        environment: "HospitalEnvironment", 
                         idx: Optional[int] = None, 
                         verbose: bool = False) -> Tuple[dict, Optional[dict]]:
         """
@@ -539,7 +539,7 @@ class OutpatientFirstScheduling(OutpatientTask):
 
     def rescheduling_request(self,
                              doctor_information: dict,
-                             environment: HospitalEnvironment, 
+                             environment: "HospitalEnvironment", 
                              idx: Optional[int] = None, 
                              verbose: bool = False) -> Tuple[dict, Optional[dict]]:
         """
@@ -612,7 +612,7 @@ class OutpatientFirstScheduling(OutpatientTask):
 
     def automatic_waiting_list_update(self, 
                                       sim_environment: OPFVSchedulingSimulation,
-                                      environment: HospitalEnvironment,
+                                      environment: "HospitalEnvironment",
                                       doctor_information: Optional[dict] = None) -> Tuple[dict, dict]:
         """
         Automatically update the waiting list by attempting to reschedule patients.
@@ -656,7 +656,7 @@ class OutpatientFirstScheduling(OutpatientTask):
     def update_env(self, 
                    status: bool, 
                    prediction: Union[dict, str], 
-                   environment: HospitalEnvironment, 
+                   environment: "HospitalEnvironment", 
                    patient_information: Optional[dict] = None):
         """
         Update the simulation environment with scheduling results and optionally synchronize FHIR resources.
@@ -695,7 +695,7 @@ class OutpatientFirstScheduling(OutpatientTask):
                  data_pair: Tuple[dict, dict], 
                  agent_test_data: dict, 
                  agent_results: dict, 
-                 environment: HospitalEnvironment, 
+                 environment: "HospitalEnvironment", 
                  verbose: bool = False,
                  **kwargs) -> dict:
         """

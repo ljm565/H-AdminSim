@@ -1,19 +1,15 @@
 import os
 import json
 import random
-from copy import deepcopy
 from decimal import getcontext
 from importlib import resources
-from typing import Tuple, Union, Optional
 from dotenv import load_dotenv, find_dotenv
+from typing import Tuple, Union, Optional, TYPE_CHECKING
 
 from patientsim import PatientAgent
 
 from h_adminsim.task import OutpatientTask
-from h_adminsim.agent import SchedulingAdminStaffAgent
 from h_adminsim.environment import OPFUSchedulingSimulation
-from h_adminsim.environment.hospital import HospitalEnvironment
-from h_adminsim.tools import DataConverter
 from h_adminsim.tools.sanity_checker import SanityChecker
 from h_adminsim.registry import (
     STATUS_CODES, 
@@ -25,12 +21,16 @@ from h_adminsim.utils.mas_utils import *
 from h_adminsim.utils.fhir_utils import *
 from h_adminsim.utils.common_utils import *
 
+if TYPE_CHECKING:
+    from h_adminsim.pipeline import HospitalMAS
+    from h_adminsim.environment.hospital import HospitalEnvironment
+
 
 
 class OutpatientFollowUpScheduling(OutpatientTask):
     def __init__(self, 
                  patient_model: str,
-                 admin_staff_model: str,
+                 admin_staff_mas: "HospitalMAS",
                  preference_rejection_prob: float = 0.3,
                  preference_rejection_prob_decay: float = 0.5,
                  fhir_integration: bool = False,
@@ -48,18 +48,8 @@ class OutpatientFollowUpScheduling(OutpatientTask):
         self.name = 'follow_up_visit_scheduling'
         self.patient_model, self.patient_vllm_endpoint, self.patient_use_vllm \
             = init_task_models(patient_model, patient_vllm_endpoint)
-        self.admin_staff_model, self.admin_staff_vllm_endpoint, self.admin_staff_use_vllm \
-            = init_task_models(admin_staff_model, admin_staff_vllm_endpoint)
+        self.admin_staff_mas = admin_staff_mas
         
-        # Initialize scheduling methods and a staff agent
-        self.admin_staff_agent = SchedulingAdminStaffAgent(
-            target_task='follow_up_visit_scheduling',
-            model=self.admin_staff_model,
-            use_vllm=self.admin_staff_use_vllm,
-            vllm_endpoint=self.admin_staff_vllm_endpoint,
-            temperature=0 if not 'gpt-5' in self.admin_staff_model.lower() else 1
-        )
-
         # Scheduling parameters
         self.preference_rejection_prob = preference_rejection_prob
         self.preference_rejection_prob_decay = preference_rejection_prob_decay
@@ -73,12 +63,12 @@ class OutpatientFollowUpScheduling(OutpatientTask):
             colorstr("red", 'Scheduling strategy must be either `reasoning` or `tool_calling`')
         self.schedule_patient_system_prompt_path = str(resources.files("h_adminsim.assets.prompts").joinpath('opfu_schedule_patient_system.txt'))
         self.patient_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.patient_model.lower() else {}
-        self.staff_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.admin_staff_model.lower() else {}
+        self.staff_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.admin_staff_mas.get_agent(self.name).model.lower() else {}
 
     
     def _init_simulation(self,
                          system_prompt_path: str,
-                         environment: HospitalEnvironment,
+                         environment: "HospitalEnvironment",
                          additional_patient_conditions: dict = {}) -> OPFUSchedulingSimulation:
         """
         Initialize an outpatient first-visit intake and scheduling simulation.
@@ -103,7 +93,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
         )
         sim_environment = OPFUSchedulingSimulation(
             patient_agent=patient_agent, 
-            admin_staff_agent=self.admin_staff_agent, 
+            admin_staff_mas=self.admin_staff_mas, 
             metadata=self._metadata,
             department_data=self._department_data,
             environment=environment,
@@ -118,7 +108,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
 
     def get_first_visit_patient_information(self, 
                                             gt: dict, 
-                                            environment: HospitalEnvironment) -> Tuple[int, Optional[dict]]:
+                                            environment: "HospitalEnvironment") -> Tuple[int, Optional[dict]]:
         """
         Extracts the patient name and predicted department from agent results.
         If predictions are not available, falls back to using ground truth labels.
@@ -140,7 +130,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
 
     def cancellation_request(self, 
                         doctor_information: dict, 
-                        environment: HospitalEnvironment, 
+                        environment: "HospitalEnvironment", 
                         idx: Optional[int] = None, 
                         verbose: bool = False) -> Tuple[dict, Optional[dict]]:
         """
@@ -212,7 +202,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
 
     def rescheduling_request(self,
                              doctor_information: dict,
-                             environment: HospitalEnvironment, 
+                             environment: "HospitalEnvironment", 
                              idx: Optional[int] = None, 
                              verbose: bool = False) -> Tuple[dict, Optional[dict]]:
         """
@@ -284,7 +274,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
             
 
     def _record_prescribed_tests_on_fv_appointment(self,
-                                                   environment: HospitalEnvironment,
+                                                   environment: "HospitalEnvironment",
                                                    fv_patient_info: dict,
                                                    required_test_list: list,
                                                    code_to_test_name: dict):
@@ -339,7 +329,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
     def update_env(self,
                    status: bool,
                    prediction: Union[dict, str],
-                   environment: HospitalEnvironment,
+                   environment: "HospitalEnvironment",
                    patient_information: Optional[dict] = None):
         """
         Update the simulation environment with scheduling results and optionally synchronize FHIR resources.
@@ -356,38 +346,28 @@ class OutpatientFollowUpScheduling(OutpatientTask):
         fhir_test_appointments = []
         if status and self.fhir_integration:
             if patient_information is not None:
-                fhir_patient = DataConverter.data_to_patient(
-                    {
-                        'metadata': deepcopy(self._metadata),
-                        'department': deepcopy(self._department_data),
-                        'patient': {
-                            prediction['patient']: {
-                                'department': prediction['department'],
-                                'gender': patient_information['gender'],
-                                'telecom': [{'system': 'phone', 'value': patient_information['phone_number'], 'use': 'mobile'}],
-                                'birthDate': personal_id_to_birth_date(patient_information['personal_id']),
-                                'identifier': [{'value': patient_information['personal_id'], 'use': 'official'}],
-                                'address': [{'type': 'postal', 'text': patient_information['address'], 'use': 'home'}],
-                            }
-                        }
-                    }
-                )[0]
+                fhir_patient = self.get_patient_fhir_resource(
+                    self._metadata,
+                    self._department_data,
+                    patient_information,
+                    prediction['department']
+                )
 
             # To avoid None case of follow-up appointment
             if prediction['schedule']:
-                fhir_appointment = DataConverter.get_fhir_appointment(data={
-                    'metadata': deepcopy(self._metadata),
-                    'department': deepcopy(self._department_data),
-                    'information': deepcopy(prediction)
-                })
+                fhir_appointment = self.get_appointment_fhir_resource(
+                    self._metadata,
+                    self._department_data,
+                    prediction,
+                )
 
             # Tests can be booked even when the follow-up consultation slot is out of range
             if prediction.get('test'):
-                fhir_test_appointments = DataConverter.get_fhir_test_appointments(data={
-                    'metadata': deepcopy(self._metadata),
-                    'department': deepcopy(self._department_data),
-                    'information': deepcopy(prediction),
-                })
+                fhir_test_appointments = self.get_test_appointment_fhir_resource(
+                    self._metadata,
+                    self._department_data,
+                    prediction,
+                )
 
         appointments = ([fhir_appointment] if fhir_appointment else []) + fhir_test_appointments
         environment.update_env(
@@ -401,7 +381,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                  data_pair: Tuple[dict, dict], 
                  agent_test_data: dict, 
                  agent_results: dict, 
-                 environment: HospitalEnvironment, 
+                 environment: "HospitalEnvironment", 
                  verbose: bool = False,
                  **kwargs) -> dict:
         """

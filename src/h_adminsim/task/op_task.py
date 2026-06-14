@@ -112,4 +112,29 @@ class OutpatientTask:
             }
         )
         return fhir_appointment
+    
+
+    def get_test_appointment_fhir_resource(self,
+                                           metadata: dict,
+                                           department_data: dict,
+                                           schedule_data: dict) -> dict:
+        """
+        Generate a FHIR Appointment resource for the test based on the provided scheduling information.
+
+        Args:
+            metadata (dict): Hospital metadata information.
+            department_data (dict): Hospital department information.
+            schedule_data (dict): Scheduling information for the patient.
+        
+        Returns:
+            dict: The generated FHIR Appointment resource.
+        """
+        fhir_appointment = DataConverter.get_fhir_test_appointments(
+            data={
+                'metadata': deepcopy(metadata),
+                'department': deepcopy(department_data),
+                'information': deepcopy(schedule_data)
+            }
+        )
+        return fhir_appointment
                                       
