@@ -191,10 +191,12 @@ class OutpatientFollowUpScheduling(OutpatientTask):
         Returns:
             Tuple[dict, dict, Optional[dict]]: Updated doctor information, test information, and a result dictionary after cancellation.
         """
-        # Candidates are scheduled follow-up bookings that carry prescribed tests
+        # Candidates are follow-up bookings that carry prescribed tests ('not_yet' covers bookings whose follow-up slot was out of range)
         if idx is None:
             candidate_idx = [i for i, schedule in enumerate(environment.patient_schedules)
-                             if schedule['visit_type'] == 'follow_up_visit' and schedule['status'] == SCHEDULE_STATUS['scheduled'] and schedule.get('test')]
+                             if schedule['visit_type'] == 'follow_up_visit'
+                             and schedule['status'] in (SCHEDULE_STATUS['scheduled'], SCHEDULE_STATUS['not_yet'])
+                             and schedule.get('test')]
             idx = random.choice(candidate_idx) if len(candidate_idx) else -1
 
         if idx >= 0:
@@ -268,10 +270,13 @@ class OutpatientFollowUpScheduling(OutpatientTask):
             Tuple[dict, dict, Optional[dict]]: Updated doctor information, test information, and a result dictionary after rescheduling.
         """
         result_dict = init_result_dict()
-        # Candidates: scheduled follow-up bookings whose every test is still scheduled (none performed), not already waiting
+        # Candidates: follow-up bookings whose every test is still scheduled (none performed), not already waiting
+        # ('not_yet' covers bookings whose follow-up slot was out of range; the per-test check still excludes performed tests)
         if idx is None:
             candidate_idx = [i for i, schedule in enumerate(environment.patient_schedules)
-                             if schedule['visit_type'] == 'follow_up_visit' and schedule['status'] == SCHEDULE_STATUS['scheduled'] and schedule.get('test')
+                             if schedule['visit_type'] == 'follow_up_visit'
+                             and schedule['status'] in (SCHEDULE_STATUS['scheduled'], SCHEDULE_STATUS['not_yet'])
+                             and schedule.get('test')
                              and all(t.get('status') == SCHEDULE_STATUS['scheduled'] for t in schedule['test'])
                              and all(schedule != s[1] for s in environment.waiting_list)]
             idx = random.choice(candidate_idx) if len(candidate_idx) else -1
