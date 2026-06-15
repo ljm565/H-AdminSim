@@ -463,6 +463,34 @@ class OutpatientFirstScheduling(OutpatientTask):
             sanity = True
 
         return patient_info, department, sanity
+    
+
+    def _book_schedule(self,
+                       status: bool,
+                       prediction: dict,
+                       doctor_information: dict,
+                       environment: "HospitalEnvironment",
+                       patient_information: Optional[dict] = None):
+        """
+        Book a first-visit prediction: append first-visit consultation slot, then sync the env.
+
+        Args:
+            status (bool): Whether the scheduling task was successful. If True, FHIR resources may be updated.
+            prediction (dict): The first-vist booking to apply.
+            doctor_information (dict): Doctor schedules to update in place.
+            environment (HospitalEnvironment): Hospital environment.
+            patient_information (Optional[dict], optional): Patient-related predicted (or GT) information to generate FHIR Patient resources. Defaults to None.
+        """
+        if status:
+            doctor_information[prediction['attending_physician']]['schedule'][prediction['date']].append(prediction['schedule'])
+            doctor_information[prediction['attending_physician']]['schedule'][prediction['date']].sort()
+        
+        self.update_env(
+            status=status,
+            prediction=prediction,
+            environment=environment,
+            patient_information=patient_information,
+        )
 
 
     def cancellation_request(self, 
@@ -594,14 +622,7 @@ class OutpatientFirstScheduling(OutpatientTask):
 
                 if result_dict['status'][0] is not False:   # No GT and correct case
                     if 'patient' in result_dict['pred'][0]:
-                        new_schedule = result_dict['pred'][0]
-                        doctor_information[new_schedule['attending_physician']]['schedule'][new_schedule['date']].append(new_schedule['schedule'])
-                        doctor_information[new_schedule['attending_physician']]['schedule'][new_schedule['date']].sort()
-                        self.update_env(
-                            status=True,
-                            prediction=new_schedule,
-                            environment=environment,
-                        )
+                        self._book_schedule(True, result_dict['pred'][0], doctor_information, environment)
 
                 return doctor_information, result_dict
 
@@ -635,13 +656,7 @@ class OutpatientFirstScheduling(OutpatientTask):
 
             if result_dict['status'][0]:
                 new_schedule, original = result_dict['pred'][0], result['original']
-                doctor_information[new_schedule['attending_physician']]['schedule'][new_schedule['date']].append(new_schedule['schedule'])
-                doctor_information[new_schedule['attending_physician']]['schedule'][new_schedule['date']].sort()
-                self.update_env(
-                    status=True,
-                    prediction=new_schedule,
-                    environment=environment,
-                )
+                self._book_schedule(True, new_schedule, doctor_information, environment)
                 log(f'{colorstr("[RESCHEDULED]")}: {original} is rescheduled to {new_schedule}')
 
             all_result_dict['gt'].extend(result_dict['gt'])
@@ -802,13 +817,10 @@ class OutpatientFirstScheduling(OutpatientTask):
             log(f'Final Status: {status_code}\n\n\n')
 
         # Update the simulation environment and the doctor information in the agent test data
-        if status:
-            doctor_information[prediction['attending_physician']]['schedule'][prediction['date']].append(prediction['schedule'])
-            doctor_information[prediction['attending_physician']]['schedule'][prediction['date']].sort()
-        
-        self.update_env(
+        self._book_schedule(
             status=status,
             prediction=prediction,
+            doctor_information=doctor_information,
             environment=environment,
             patient_information=patient_info,
         )
