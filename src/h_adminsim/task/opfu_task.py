@@ -215,7 +215,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
 
             # Test cancellation simulation
             doctor_information, test_information, result_dict = run_with_retry(
-                sim_environment.canceling_simulate,
+                sim_environment.test_canceling_simulate,
                 gt_idx=idx,
                 doctor_information=doctor_information,
                 test_device_information=test_information,
@@ -294,7 +294,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
 
             # Rescheduling request simulation
             doctor_information, test_information, result_dict = run_with_retry(
-                sim_environment.rescheduling_simulate,
+                sim_environment.test_rescheduling_simulate,
                 gt_idx=idx,
                 doctor_information=doctor_information,
                 test_device_information=test_information,
