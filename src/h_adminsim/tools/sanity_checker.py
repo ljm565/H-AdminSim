@@ -299,7 +299,7 @@ class SanityChecker:
 
         ############################ Coverage ############################
         # Check predicted test coverage
-        gt_test_codes = {t['code'] for t in gt_patient_condition['required_tests']}
+        gt_test_codes = {t['code'] for t in gt_patient_condition['test']}
         try:
             pred_test_codes = {test['code'] for test in prediction['test_schedule']}
             if not pred_test_codes.issubset(gt_test_codes):
