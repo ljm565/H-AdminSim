@@ -1327,6 +1327,10 @@ def create_tools(rule: SchedulingRule,
 
     # Only scheduling tools are needed
     if only_schedule_tool:
+        if test_device_information is not None and required_test_codes is not None:
+            return [
+                follow_up_asap_test_schedule, follow_up_batch_test_schedule,
+            ]
         return [physician_filter_tool, date_filter_tool, get_all_time_tool]
 
     # After determine the patient's tests

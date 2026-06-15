@@ -169,8 +169,10 @@ class SchedulingAdminStaffAgent(BaseAgent):
         
         # Initialilze with the only scheduling tool calling prompt
         if not sc_tool_calling_prompt_path:
-            # TODO: Add sc-tool calling prompt in OPFU case
-            prompt_file_name = 'opfv_schedule_staff_sc_tool_calling.txt'
+            if self.target_task == 'first_visit_scheduling':
+                prompt_file_name = 'opfv_schedule_staff_sc_tool_calling.txt'
+            elif self.target_task == 'follow_up_visit_scheduling':
+                prompt_file_name = 'opfu_schedule_staff_sc_tool_calling.txt'
             file_path = resources.files("h_adminsim.assets.prompts").joinpath(prompt_file_name)
             self.sc_tool_calling_prompt = file_path.read_text()
         

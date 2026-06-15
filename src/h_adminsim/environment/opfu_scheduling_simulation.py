@@ -1420,9 +1420,6 @@ class OPFUSchedulingSimulation:
             assert doctor_information is not None, colorstr("red", f"Doctor information must be provided if you don't use FHIR.")
 
         required_test_codes = [t['code'] for t in known_condition.get('test') or []]
-        attending_physician = known_condition['attending_physician']
-        if 'Dr.' not in attending_physician:
-            attending_physician = f'Dr. {attending_physician}'
         filtered_doctor_information = self.environment.get_doctor_schedule(
             doctor_information=doctor_information,
             department=known_condition['department'],
@@ -1434,20 +1431,27 @@ class OPFUSchedulingSimulation:
             fhir_integration=self.fhir_integration and test_device_information is None,
         )
 
-        # Re-schedule the tests by the booking's original preference
-        if known_condition.get('preference') == 'batch':
-            result = self.rules.schedule_tests_batch(filtered_test_device_information, required_test_codes)
-        else:
-            result = self.rules.schedule_tests_asap(filtered_test_device_information, required_test_codes)
-
-        # Recompute the follow-up consultation after all results are ready
-        fu_appn = self.rules.physician_filter(filtered_doctor_information, attending_physician, result['all_results_ready_at'])
-        result['fu_schedule'] = self.rules.find_earliest_time(fu_appn)
-        new_schedule = OPFUSchedulingSimulation.postprocessing(
-            strategy='tool_calling',
-            data=result,
-            filtered_doctor_information=filtered_doctor_information,
+        # The agent picks the follow-up test-scheduling tool (asap/batch) by the booking's original preference
+        _schedule_client = self.scheduling_agent.build_agent(
+            rule=self.rules,
+            doctor_info=filtered_doctor_information,
+            only_schedule_tool=True,
+            required_test_codes=required_test_codes,
+            test_device_information=filtered_test_device_information,
         )
+        # Express the original preference and re-supply required tests for the reasoning fallback
+        known_condition = {
+            **known_condition,
+            'required_tests': [{'test_code': t['code']} for t in known_condition.get('test') or []],
+        }
+        new_schedule = self.test_scheduling(
+            client=_schedule_client,
+            known_condition=known_condition,
+            doctor_information=doctor_information,
+            test_device_information=test_device_information,
+            reschedule_flag=True,
+            **kwargs,
+        )['result']
         return new_schedule
 
 
