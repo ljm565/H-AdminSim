@@ -314,7 +314,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                     combination.append({
                         'name': code_to_test[test_code],
                         'priority': priority,
-                        'test_code': test_code,
+                        'code': test_code,
                         'department': dept,
                         'device_name': device_name,
                         'schedule': chosen_slot,
@@ -721,7 +721,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                     assert len(pdata['required_tests']) > 0, \
                         colorstr('red', f'Follow-up patient {patient_name} has no required tests')
                     for test in pdata['required_tests']:
-                        assert 'test_code' in test, \
+                        assert 'code' in test, \
                             colorstr('red', f'Patient {patient_name} has test with missing fields')
                         assert len(test['schedule']) == 2, \
                             colorstr('red', f'Patient {patient_name} has test with invalid schedule')
