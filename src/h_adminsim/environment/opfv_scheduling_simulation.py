@@ -542,7 +542,8 @@ class OPFVSchedulingSimulation:
         Yields:
             dict: Updated (or not updated) doctor information and a result dictionary.
         """
-        for turn, (idx, original) in enumerate(self.environment.waiting_list):
+        # Snapshot the list: a successful reschedule pops the entry from `waiting_list` mid-iteration
+        for turn, (idx, original) in enumerate(list(self.environment.waiting_list)):
             if original['status'] == SCHEDULE_STATUS['scheduled']:
                 new_schedule = self._get_rescheduled_result(
                     known_condition=original,
