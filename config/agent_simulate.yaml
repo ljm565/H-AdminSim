@@ -23,3 +23,7 @@ outpatient_intake:
     intake_max_inference: 5
 schedule_task:
     scheduling_strategy: tool_calling   # ['llm', 'tool_calling']
+    opfv_schedule_cancellation_prob: 0.1    # First-visit scheduling cancellation prob.
+    opfv_request_early_schedule_prob: 0.15  # First-visit scheduling rescheduling prob.
+    opfu_schedule_cancellation_prob: 0.05   # Follow-up-visit scheduling cancellation prob.
+    opfu_request_early_schedule_prob: 0.08  # Follow-up-visit scheduling rescheduling prob.
