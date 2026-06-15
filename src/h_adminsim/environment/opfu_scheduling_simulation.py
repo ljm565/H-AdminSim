@@ -18,6 +18,7 @@ from h_adminsim.registry.errors import (
 )
 from h_adminsim.registry import (
     STATUS_CODES,
+    SCHEDULE_STATUS,
     OPFU_PREFERENCE_PHRASE_STAFF,
     OPFU_PREFERENCE_PHRASE_PATIENT,
 )
@@ -152,6 +153,7 @@ class OPFUSchedulingSimulation:
         self.dialog_history = {
             'test_scheduling': [],
             'test_cancel': [],
+            'test_reschedule': [],
         }
 
     
@@ -211,6 +213,27 @@ class OPFUSchedulingSimulation:
                              if k in ['patient', 'attending_physician', 'department', 'date', 'test']}
                 return f"I've cancelled all your scheduled tests: {cancelled}"
 
+            # Test rescheduling confirmation
+            if reply_type == 'test_reschedule':
+                tmp_flag = staff_response.get('tmp_flag')
+                result = staff_response['result']
+
+                # Failure cases have nothing to confirm; the loop surfaces them as raises.
+                if tmp_flag not in ('waiting_list', 'reschedule'):
+                    return ""
+
+                original = {k: v for k, v in result['original_schedule'].items()
+                            if k in ['patient', 'attending_physician', 'department', 'date', 'test']}
+
+                # No earlier slot available -> added to the waiting list
+                if tmp_flag == 'waiting_list':
+                    return f"There are no earlier times right now. I've added your tests to the waiting list: {original}"
+
+                # Successfully moved every test earlier
+                new = {k: v for k, v in result['new_schedule'].items()
+                       if k in ['patient', 'attending_physician', 'department', 'date', 'test']}
+                return f"I've moved your tests earlier: {new}"
+
             if 'test_list' in staff_response['result']:
                 test_list = staff_response['result']['test_list']
                 test_list_desc = ', '.join([t['name'] for t in test_list])
@@ -252,7 +275,7 @@ class OPFUSchedulingSimulation:
 
                 # Notify the patient of any required tests that the agent could not
                 # fit within the simulation window (no deferred booking is attempted).
-                required_test_codes = {t['test_code'] for t in gt_patient_condition.get('required_tests', [])}
+                required_test_codes = {t['code'] for t in gt_patient_condition.get('test', [])}
                 unscheduled_tests = {test_info['name'] for test_info in pred_test_schedules if test_info['code'] not in required_test_codes}
                 if unscheduled_tests:
                     parts.append(
@@ -396,7 +419,7 @@ class OPFUSchedulingSimulation:
                 assert 'test_schedule' in text_dict
                 assert isinstance(text_dict['test_schedule'], list)
 
-                code_to_test = {t['test_code']: t for t in (required_tests or [])}
+                code_to_test = {t['code']: t for t in (required_tests or [])}
                 device_to_code = {
                     dev: code
                     for code, info in (filtered_test_device_information or {}).get('test', {}).items()
@@ -642,14 +665,14 @@ class OPFUSchedulingSimulation:
         # If tool calling fails, fallback to LLM-based scheduling
         except Exception as e:
             log(f'Exception occured: {e}', 'warning')
-            # Fallback only applies after retrieve_patient_tests has populated required_tests.
-            if not known_condition.get('required_tests'):
+            # Fallback only applies after retrieve_tests_after_first_visit has populated required_tests.
+            if not known_condition.get('test'):
                 raise ToolCallingError(colorstr('red', 'Reasoning fallback without test retrieval.'))
 
             if self.scheduling_strategy == 'tool_calling':
                 log('Failed to select an appropriate tool. Falling back to reasoning-based scheduling.', level='warning')
 
-            required_test_codes = [t['test_code'] for t in known_condition['required_tests']]
+            required_test_codes = [t['code'] for t in known_condition['test']]
             filtered_doctor_information = self.environment.get_doctor_schedule(
                 doctor_information=doctor_information,
                 department=department,
@@ -669,7 +692,7 @@ class OPFUSchedulingSimulation:
                 DEPARTMENT=department,
                 PREFERENCE=known_condition['patient_intention'],
                 DAY=self._DAY,
-                TESTS=json.dumps(known_condition['required_tests'], indent=2),
+                TESTS=json.dumps(known_condition['test'], indent=2),
                 TEST_DEVICES=json.dumps(filtered_test_device_information, indent=2),
             )
 
@@ -685,7 +708,7 @@ class OPFUSchedulingSimulation:
                     strategy='reasoning',
                     data=schedule,
                     filtered_doctor_information=filtered_doctor_information,
-                    required_tests=known_condition['required_tests'],
+                    required_tests=known_condition['test'],
                     filtered_test_device_information=filtered_test_device_information,
                     utc_offset=self.environment._utc_offset,
                     rule=self.rules,
@@ -929,8 +952,8 @@ class OPFUSchedulingSimulation:
                             staff_known_data.update({'patient_fv': _patient_info})
                             staff_known_data.update({'department': _patient_info['department']})
                             staff_known_data.update({'attending_physician': _patient_info['attending_physician']})
-                            staff_known_data.update({'required_tests': test_list})
-                            required_test_codes = [_test['test_code'] for _test in test_list]
+                            staff_known_data.update({'test': test_list})
+                            required_test_codes = [_test['code'] for _test in test_list]
                             filtered_doctor_information = self.environment.get_doctor_schedule(
                                 doctor_information=doctor_information,
                                 department=staff_known_data['department'],
@@ -1289,3 +1312,539 @@ class OPFUSchedulingSimulation:
         log("Simulation completed.", color=True)
         self._finish_scheduling_turn('test_cancel', verbose)
         return doctor_information, test_device_information, result_dict
+
+
+    def test_rescheduling(self,
+                          client: AgentExecutor,
+                          patient_intention: str,
+                          chat_history: list = []) -> dict:
+        """
+        Handle a multi-turn test rescheduling request using a tool-calling agent.
+
+        Args:
+            client (AgentExecutor): The agent executor to handle tool calls or conversation.
+            patient_intention (str): The patient's utterance expressing a rescheduling request.
+            chat_history (list, optional): Chat history. Defaults to [].
+
+        Raises:
+            TypeError: If the returned type is not supported.
+
+        Returns:
+            dict: Rescheduling processed result.
+        """
+        # Initialize
+        result_dict = init_result_dict()
+
+        # Invoke
+        prediction = scheduling_tool_calling(
+            client=client,
+            user_prompt=patient_intention,
+            history=chat_history,
+        )
+
+        if prediction['type'] == 'tool':
+            res = prediction['result']
+            st = res['status']
+            idx = res['index']
+
+            # Booking not found case: -> text
+            if st is None and idx['pred'] == -1:
+                prediction['type'] = 'text'
+                prediction['result'] = "Sorry, we couldn't find your scheduled tests. Could you please check your details again (patient and doctor names)?"
+                return prediction
+
+            # Build retrieval result_dict
+            if st is None:  # No GT, retrieved
+                result_dict['gt'].append({'reschedule': None})
+                result_dict['pred'].append({'reschedule': idx['pred']})
+                result_dict['status'].append(None)
+                result_dict['status_code'].append(None)
+            elif st is False:  # GT exists, identification failed
+                result_dict['gt'].append({'reschedule': idx['gt']})
+                result_dict['pred'].append({'reschedule': idx['pred']})
+                result_dict['status'].append(False)
+                result_dict['status_code'].append(STATUS_CODES['reschedule']['identify'])
+                prediction['result_dict'] = result_dict
+                prediction['tmp_flag'] = 'retrieve'
+                return prediction
+            else:  # True
+                result_dict['gt'].append({'reschedule': idx['gt']})
+                result_dict['pred'].append({'reschedule': idx['pred']})
+                result_dict['status'].append(True)
+                result_dict['status_code'].append(STATUS_CODES['correct'])
+
+            # Translate pipeline action into tmp_flag + result_dict updates
+            action = res.get('action')
+            if action == 'reschedule':
+                result_dict['pred'] = [res['new_schedule']]
+                prediction['tmp_flag'] = 'reschedule'
+            elif action == 'waiting_list':
+                prediction['tmp_flag'] = 'waiting_list'
+            elif action == 'schedule_fail':
+                result_dict['pred'] = [res['new_schedule']]
+                result_dict['status'] = [False]
+                result_dict['status_code'] = [STATUS_CODES['reschedule']['schedule'].format(
+                    status_code=res.get('schedule_status_code') or STATUS_CODES['format'])]
+                prediction['tmp_flag'] = 'schedule'
+
+            prediction['result_dict'] = result_dict
+            return prediction
+
+        # Clarification message case -> return: str
+        elif prediction['type'] == 'text':
+            return prediction
+
+        # Error
+        else:
+            raise TypeError(colorstr("red", "Error: Unexpected return type from rescheduling method."))
+
+
+    def _get_rescheduled_test_result(self,
+                                     known_condition: dict,
+                                     doctor_information: Optional[dict] = None,
+                                     test_device_information: Optional[dict] = None,
+                                     **kwargs) -> dict:
+        """
+        Re-run the whole-test-set scheduling (ASAP/Batch by the booking's preference) to find an earlier schedule.
+
+        Args:
+            known_condition (dict): The original follow-up booking being rescheduled.
+            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s).
+            test_device_information (Optional[dict], optional): Test device information containing device schedules.
+
+        Returns:
+            dict: Rescheduled test-set schedule (test-scheduling shape).
+        """
+        # Sanity check
+        if not self.fhir_integration:
+            assert doctor_information is not None, colorstr("red", f"Doctor information must be provided if you don't use FHIR.")
+
+        required_test_codes = [t['code'] for t in known_condition.get('test') or []]
+        attending_physician = known_condition['attending_physician']
+        if 'Dr.' not in attending_physician:
+            attending_physician = f'Dr. {attending_physician}'
+        filtered_doctor_information = self.environment.get_doctor_schedule(
+            doctor_information=doctor_information,
+            department=known_condition['department'],
+            fhir_integration=self.fhir_integration and doctor_information is None,
+        )
+        filtered_test_device_information = self.environment.get_test_device_schedule(
+            test_device_information=test_device_information,
+            test_code=required_test_codes,
+            fhir_integration=self.fhir_integration and test_device_information is None,
+        )
+
+        # Re-schedule the tests by the booking's original preference
+        if known_condition.get('preference') == 'batch':
+            result = self.rules.schedule_tests_batch(filtered_test_device_information, required_test_codes)
+        else:
+            result = self.rules.schedule_tests_asap(filtered_test_device_information, required_test_codes)
+
+        # Recompute the follow-up consultation after all results are ready
+        fu_appn = self.rules.physician_filter(filtered_doctor_information, attending_physician, result['all_results_ready_at'])
+        result['fu_schedule'] = self.rules.find_earliest_time(fu_appn)
+        new_schedule = OPFUSchedulingSimulation.postprocessing(
+            strategy='tool_calling',
+            data=result,
+            filtered_doctor_information=filtered_doctor_information,
+        )
+        return new_schedule
+
+
+    def _check_test_reschedule_validity(self,
+                                        idx: int,
+                                        new_schedule: dict,
+                                        original_schedule: dict,
+                                        doctor_information: dict,
+                                        test_device_information: dict) -> Optional[dict]:
+        """
+        Check the rescheduling availability under the booking's preference-based improvement criterion.
+
+        Args:
+            idx (int): Index of the requested booking (original booking index).
+            new_schedule (dict): New candidate test-set schedule.
+            original_schedule (dict): The original follow-up booking.
+            doctor_information (dict): A dictionary containing information about the doctor(s).
+            test_device_information (dict): Test device information containing device schedules.
+
+        Returns:
+            Optional[dict]: New follow-up prediction if the rescheduling improves the booking; otherwise None.
+        """
+        # Original metrics
+        original_tests = original_schedule.get('test') or []
+        original_dates = {t['date'] for t in original_tests}
+        original_ready = None
+        for t in original_tests:
+            if t.get('result_ready_at') and (original_ready is None or compare_iso_time(t['result_ready_at'], original_ready)):
+                original_ready = t['result_ready_at']
+        new_ready = new_schedule.get('all_results_ready_at')
+        new_dates = set(new_schedule.get('test_visit_dates') or [])
+
+        # `new_t` is strictly earlier than `old_t`
+        def _strictly_earlier(new_t, old_t):
+            return new_t is not None and old_t is not None and compare_iso_time(old_t, new_t) and new_t != old_t
+
+        # Preference-based improvement: batch minimizes visit dates first, asap minimizes result-ready time
+        if original_schedule.get('preference') == 'batch':
+            improved = len(new_dates) < len(original_dates) or \
+                (len(new_dates) == len(original_dates) and _strictly_earlier(new_ready, original_ready))
+        else:
+            improved = _strictly_earlier(new_ready, original_ready)
+
+        if not improved:
+            return None
+
+        # Free the old booking, then build the new follow-up prediction (booking is done by the caller)
+        self.rules.cancel_test_schedule(idx, doctor_information, test_device_information, original_schedule)
+        fu_slot = new_schedule['fu_schedule']
+        fu_schedule = fu_slot[next(iter(fu_slot))] if fu_slot else None
+        for item in new_schedule['test_schedule']:
+            item['schedule'] = [item.pop('start'), item.pop('end')]
+
+        final_schedule = {
+            'visit_type': 'follow_up_visit',
+            'patient': original_schedule['patient'],
+            'attending_physician': original_schedule['attending_physician'],
+            'department': original_schedule['department'],
+            'date': fu_schedule['date'] if fu_schedule else None,
+            'schedule': [fu_schedule['start'], fu_schedule['end']] if fu_schedule else None,
+            'patient_intention': original_schedule.get('patient_intention'),
+            'preference': original_schedule.get('preference'),
+            'preferred_doctor': original_schedule.get('preferred_doctor'),
+            'valid_from': original_schedule.get('valid_from'),
+            'test': new_schedule['test_schedule'],
+            'last_updated_time': self.environment.current_time,
+        }
+        return final_schedule
+
+
+    def _make_test_reschedule_pipeline(self,
+                                       doctor_information: Optional[dict] = None,
+                                       test_device_information: Optional[dict] = None,
+                                       **kwargs):
+        """
+        Build a callable that runs the post-retrieval rescheduling pipeline:
+        _get_rescheduled_test_result -> test_schedule_check -> _check_test_reschedule_validity -> waiting list.
+
+        Args:
+            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s).
+            test_device_information (Optional[dict], optional): Test device information containing device schedules.
+            **kwargs: Additional keyword arguments forwarded to the inner scheduling agent.
+
+        Returns:
+            Callable[[int, dict], dict]: A pipeline function returning a dict with keys
+                'action' ('reschedule' | 'waiting_list' | 'schedule_fail'),
+                'new_schedule' (dict | None), and optional 'status_code'.
+        """
+        def pipeline(idx: int, original_schedule: dict) -> dict:
+            try:
+                new_schedule = self._get_rescheduled_test_result(
+                    known_condition=original_schedule,
+                    doctor_information=doctor_information,
+                    test_device_information=test_device_information,
+                    **kwargs,
+                )
+            except Exception:
+                return {'action': 'schedule_fail', 'new_schedule': None,
+                        'status_code': STATUS_CODES['format']}
+
+            if self.sanity_checker is not None:
+                filtered_test_device_information = self.environment.get_test_device_schedule(
+                    test_device_information=test_device_information,
+                    test_code=[t['code'] for t in original_schedule.get('test') or []],
+                    fhir_integration=self.fhir_integration and test_device_information is None,
+                )
+                ok, code = self.sanity_checker.test_schedule_check(
+                    prediction=new_schedule,
+                    gt_patient_condition=original_schedule,
+                    test_device_information=filtered_test_device_information,
+                    doctor_information=doctor_information,
+                    environment=self.environment,
+                    rule=self.rules,
+                )
+                if not ok:
+                    return {'action': 'schedule_fail', 'new_schedule': new_schedule,
+                            'status_code': code}
+
+            try:
+                final = self._check_test_reschedule_validity(
+                    idx=idx,
+                    new_schedule=new_schedule,
+                    original_schedule=original_schedule,
+                    doctor_information=doctor_information,
+                    test_device_information=test_device_information,
+                )
+                if final is not None:
+                    return {'action': 'reschedule', 'new_schedule': final, 'status_code': None}
+                self.environment.add_waiting_list(idx, True)
+                return {'action': 'waiting_list', 'new_schedule': None, 'status_code': None}
+            except Exception:
+                return {'action': 'schedule_fail', 'new_schedule': new_schedule,
+                        'status_code': STATUS_CODES['format']}
+
+        return pipeline
+
+
+    def rescheduling_simulate(self,
+                              gt_idx: Optional[int] = None,
+                              doctor_information: Optional[dict] = None,
+                              test_device_information: Optional[dict] = None,
+                              patient_schedules: Optional[list[dict]] = None,
+                              verbose: bool = True,
+                              max_inferences: int = 5,
+                              patient_kwargs: dict = {},
+                              staff_kwargs: dict = {},
+                              **kwargs) -> Tuple[dict, dict, dict]:
+        """
+        Simulate a multi-turn conversation for moving a patient's whole test set earlier.
+
+        Args:
+            gt_idx (Optional[int], optional): Ground-truth index of the follow-up booking to be rescheduled. Defaults to None.
+            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s).
+            test_device_information (Optional[dict], optional): Test device information containing device schedules. Defaults to None.
+            patient_schedules (Optional[list[dict]], optional): List of patient appointment schedules. Defaults to None.
+            verbose (bool, optional): Whether to print conversation logs. Defaults to True.
+            max_inferences (int, optional): Maximum number of dialogue turns.
+            patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent.
+            staff_kwargs (dict, optional): Additional keyword arguments passed to the staff agent.
+            **kwargs: Additional keyword arguments passed to the patient and staff agents.
+
+        Raises:
+            TypeError: If the return type from the rescheduling method is unexpected.
+            DataNotFoundError: Schedule not found error.
+            SchedulingError: Scheduling error.
+
+        Returns:
+            Tuple[dict, dict, dict]: Updated doctor information, test device information, and a result dictionary after rescheduling.
+        """
+        # Sanity Check
+        if not self.fhir_integration:
+            assert doctor_information is not None, colorstr("red", f"Doctor information must be provided if you don't use FHIR.")
+
+        # Initialize agents and result dictionary
+        result_dict = init_result_dict()
+        self._init_history()
+        self._init_agents(verbose=verbose)
+        patient_schedules = self.environment.patient_schedules if patient_schedules is None else patient_schedules
+        doctor_information = self.environment.get_general_doctor_info_from_fhir() if self.fhir_integration else doctor_information
+        merged_patient_kwargs = {**patient_kwargs, **kwargs}
+        merged_staff_kwargs = {**staff_kwargs, **kwargs}
+        tool_calling_agent = self.scheduling_agent.build_agent(
+            rule=self.rules,
+            doctor_info=doctor_information,
+            patient_schedule_list=patient_schedules,
+            gt_idx=gt_idx,
+            test_device_information=test_device_information,
+            reschedule_pipeline=self._make_test_reschedule_pipeline(doctor_information, test_device_information, **merged_staff_kwargs),
+        )
+
+        # Staff turn closure: routes the structured rescheduling turn through the MAS.
+        holder = {}
+        def staff_turn(user_prompt: str) -> Tuple[str, bool]:
+            staff_response = self.test_rescheduling(
+                client=tool_calling_agent,
+                patient_intention=user_prompt,
+                chat_history=self._to_lc_history('test_reschedule'),
+            )
+            holder['response'] = staff_response
+            return self._render_staff_reply(staff_response, 'test_reschedule'), False
+
+        # Start conversation
+        staff_greet = self.admin_staff_mas.root.agent.staff_greet
+        self.dialog_history['test_reschedule'].append({"role": "Staff", "content": staff_greet})
+        self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
+        log(f"{staff_role(role=self.admin_staff_mas.path[-1].name):<25}: {staff_greet}")
+
+        try:
+            for _ in range(max_inferences):
+                # Obtain response from patient
+                patient_response = self.patient_agent(
+                    self.dialog_history['test_reschedule'][-1]["content"],
+                    using_multi_turn=True,
+                    verbose=False,
+                    **merged_patient_kwargs
+                )
+                self.dialog_history['test_reschedule'].append({"role": "Patient", "content": patient_response})
+                role = f"{colorstr('green', 'Patient')} (move)"
+                log(f"{role:<25}: {patient_response}")
+
+                # Rescheduling from staff
+                output = self.admin_staff_mas.chat(
+                    user_prompt=patient_response,
+                    callback=staff_turn,
+                    using_multi_turn=False,
+                    verbose=False,
+                )
+
+                # If wrong agent activated
+                if output.agent != self._chief_agent_name:
+                    raise AgentSelectionError(colorstr('red', f'Wrong agent activated, expected {self._chief_agent_name} but got {output.agent}'))
+
+                staff_response = holder.pop('response')
+
+                # Tool-calling failures resolve nothing -> surface them before recording a staff turn.
+                if staff_response['type'] == 'tool':
+                    tmp_flag = staff_response.get('tmp_flag')
+                    if tmp_flag == 'retrieve':
+                        result_dict = staff_response['result_dict']
+                        raise DataNotFoundError(colorstr("red", "Error: Schedule not found error."))
+                    elif tmp_flag == 'schedule':
+                        result_dict = staff_response['result_dict']
+                        raise SchedulingError(colorstr("red", "Error: Scheduling error."))
+                    elif tmp_flag not in ('waiting_list', 'reschedule'):
+                        raise TypeError(colorstr("red", "Error: Unexpected return type from rescheduling method."))
+
+                rendered_response, _role = output.response, output.agent
+                self.dialog_history['test_reschedule'].append({"role": "Staff", "content": rendered_response})
+                log(f"{staff_role(role=_role):<25}: {rendered_response}")
+
+                # Tool calling result -> successful reschedule / waiting-list
+                if staff_response['type'] == 'tool':
+                    result_dict = staff_response['result_dict']
+
+                    # Final response of patient
+                    self.dialog_history['test_reschedule'].append({"role": "Patient", "content": self.end_phrase})
+                    role = f"{colorstr('green', 'Patient')} (move)"
+                    log(f"{role:<25}: {self.end_phrase}")
+
+                    result_dict['dialog'].append(preprocess_dialog(self.dialog_history['test_reschedule']))
+                    break
+
+            # The case without any determination during the simulation
+            if not len(result_dict['gt']):
+                result_dict = {
+                    'gt': [{'reschedule': gt_idx}],
+                    'pred': [None],
+                    'status': [False],
+                    'status_code': [STATUS_CODES['reschedule']['identify']],
+                    'dialog': [preprocess_dialog(self.dialog_history['test_reschedule'])]
+                }
+
+        # Requested schedule indentification error
+        except DataNotFoundError:
+            result_dict['dialog'].append(preprocess_dialog(self.dialog_history['test_reschedule']))
+
+        # Scheduling Error:
+        except SchedulingError:
+            result_dict['dialog'].append(preprocess_dialog(self.dialog_history['test_reschedule']))
+
+        # Wrong agent activated
+        except AgentSelectionError as e:
+            log(str(e), level='warning')
+            result_dict = {
+                'gt': [{'reschedule': gt_idx}],
+                'pred': [None],
+                'status': [False],
+                'status_code': [STATUS_CODES['agent']],
+                'dialog': [preprocess_dialog(self.dialog_history['test_reschedule'])]
+            }
+
+        # Tool calling error
+        except TypeError:
+            result_dict = {
+                'gt': [{'reschedule': gt_idx}],
+                'pred': [None],
+                'status': [False],
+                'status_code': [STATUS_CODES['reschedule']['type']],
+                'dialog': [preprocess_dialog(self.dialog_history['test_reschedule'])]
+            }
+
+        # Otherwise
+        except Exception as e:
+            status_code = STATUS_CODES['unexpected'].format(e=e)
+            log(status_code, level='warning')
+            result_dict = {
+                'gt': [{'reschedule': gt_idx}],
+                'pred': [None],
+                'status': [False],
+                'status_code': [status_code],
+                'dialog': [preprocess_dialog(self.dialog_history['test_reschedule'])]
+            }
+
+        log("Simulation completed.", color=True)
+        self._finish_scheduling_turn('test_reschedule', verbose)
+        return doctor_information, test_device_information, result_dict
+
+
+    def automatic_waiting_list_update(self,
+                                      doctor_information: dict,
+                                      test_device_information: dict,
+                                      **kwargs):
+        """
+        Update waiting list availability automatically.
+
+        Args:
+            doctor_information (dict): A dictionary containing information about the doctor(s).
+            test_device_information (dict): Test device information containing device schedules.
+
+        Yields:
+            dict: Updated (or not updated) doctor information, test device information, and a result dictionary.
+        """
+        # Snapshot the list: a successful reschedule pops the entry from `waiting_list` mid-iteration
+        for turn, (idx, original) in enumerate(list(self.environment.waiting_list)):
+            if original['status'] == SCHEDULE_STATUS['scheduled'] and original.get('visit_type') == 'follow_up_visit':
+                new_schedule = self._get_rescheduled_test_result(
+                    known_condition=original,
+                    doctor_information=doctor_information,
+                    test_device_information=test_device_information,
+                    **kwargs
+                )
+
+                # Sanity check
+                ## No GT case
+                if self.sanity_checker is None:
+                    status, status_code = True, STATUS_CODES['correct']
+                else:
+                    filtered_test_device_information = self.environment.get_test_device_schedule(
+                        test_device_information=test_device_information,
+                        test_code=[t['code'] for t in original.get('test') or []],
+                        fhir_integration=self.fhir_integration and test_device_information is None,
+                    )
+                    status, status_code = self.sanity_checker.test_schedule_check(
+                        prediction=new_schedule,
+                        gt_patient_condition=original,
+                        test_device_information=filtered_test_device_information,
+                        doctor_information=doctor_information,
+                        environment=self.environment,
+                        rule=self.rules,
+                    )
+
+                if status:
+                    try:
+                        final_schedule = self._check_test_reschedule_validity(
+                            idx=idx,
+                            new_schedule=new_schedule,
+                            original_schedule=original,
+                            doctor_information=doctor_information,
+                            test_device_information=test_device_information,
+                        )
+                        if final_schedule is not None:
+                            result_dict = {
+                                'gt': ['automatic rescheduling'],
+                                'pred': [final_schedule],
+                                'status': [True],
+                                'status_code': [STATUS_CODES['correct']],
+                                'dialog': ['automatic waiting list update from the system']
+                            }
+                            yield {'doctor_information': doctor_information, 'test_device_information': test_device_information, 'result_dict': result_dict, 'original': original}
+
+                    except:
+                        log('No sanity checker is available; an error occurred while parsing the prediction. Returning a failure result.', level='warning')
+                        result_dict = {
+                            'gt': ['automatic rescheduling'],
+                            'pred': [new_schedule],
+                            'status': [False],
+                            'status_code': [STATUS_CODES['reschedule']['schedule'].format(status_code=STATUS_CODES['format'])],
+                            'dialog': ['automatic waiting list update from the system']
+                        }
+                        yield {'doctor_information': doctor_information, 'test_device_information': test_device_information, 'result_dict': result_dict, 'original': original}
+
+                else:
+                    result_dict = {
+                        'gt': ['automatic rescheduling'],
+                        'pred': [new_schedule],
+                        'status': [status],
+                        'status_code': [STATUS_CODES['reschedule']['schedule'].format(status_code=status_code)],
+                        'dialog': ['automatic waiting list update from the system']
+                    }
+                    yield {'doctor_information': doctor_information, 'test_device_information': test_device_information, 'result_dict': result_dict, 'original': original}

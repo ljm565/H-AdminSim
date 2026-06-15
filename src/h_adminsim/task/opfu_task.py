@@ -32,6 +32,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                  patient_model: str,
                  admin_staff_mas: "HospitalMAS",
                  schedule_cancellation_prob: float = 0.05,
+                 request_early_schedule_prob: float = 0.1,
                  preference_rejection_prob: float = 0.3,
                  preference_rejection_prob_decay: float = 0.5,
                  fhir_integration: bool = False,
@@ -53,6 +54,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
         
         # Scheduling parameters
         self.schedule_cancellation_prob = schedule_cancellation_prob
+        self.request_early_schedule_prob = request_early_schedule_prob
         self.preference_rejection_prob = preference_rejection_prob
         self.preference_rejection_prob_decay = preference_rejection_prob_decay
 
@@ -65,6 +67,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
             colorstr("red", 'Scheduling strategy must be either `reasoning` or `tool_calling`')
         self.schedule_patient_system_prompt_path = str(resources.files("h_adminsim.assets.prompts").joinpath('opfu_schedule_patient_system.txt'))
         self.cancel_patient_system_prompt_path = str(resources.files("h_adminsim.assets.prompts").joinpath('opfu_cancel_patient_system.txt'))
+        self.reschedule_patient_system_prompt_path = str(resources.files("h_adminsim.assets.prompts").joinpath('opfu_reschedule_patient_system.txt'))
         self.patient_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.patient_model.lower() else {}
         self.staff_reasoning_kwargs = {'reasoning_effort': 'low'} if 'gpt-5' in self.admin_staff_mas.get_agent(self.name).model.lower() else {}
 
@@ -129,6 +132,43 @@ class OutpatientFollowUpScheduling(OutpatientTask):
             if fv_schedule['visit_type'] == 'first_visit' and fv_schedule['patient'] == name and fv_schedule['status'] == SCHEDULE_STATUS['completed']:
                 return idx, fv_schedule
         return -1, None
+    
+
+    def _book_schedule(self,
+                       status: bool,
+                       prediction: dict,
+                       doctor_information: dict,
+                       test_information: dict,
+                       environment: "HospitalEnvironment"):
+        """
+        Book a follow-up prediction: append each test's device slot + the follow-up consultation slot, then sync the env.
+
+        Args:
+            status (bool): Whether the scheduling task was successful. If True, FHIR resources may be updated.
+            prediction (dict): The follow-up booking to apply.
+            doctor_information (dict): Doctor schedules to update in place.
+            test_information (dict): Test device schedules to update in place.
+            environment (HospitalEnvironment): Hospital environment.
+        """
+        if status:
+            device_to_schedule = {device: info['schedule'] for _, tests in test_information.items() for test in tests for device, info in test['devices'].items()}
+            
+            # Test schedule
+            for entry in prediction.get('test') or []:
+                device, date, slot = entry['device'], entry['date'], entry['schedule']
+                device_to_schedule[device][date].append(slot)
+                device_to_schedule[device][date].sort()
+            
+            # Follow-up visit consultation
+            if prediction['schedule']:
+                doctor_information[prediction['attending_physician']]['schedule'][prediction['date']].append(prediction['schedule'])
+                doctor_information[prediction['attending_physician']]['schedule'][prediction['date']].sort()
+        
+        self.update_env(
+            status=status, 
+            prediction=prediction, 
+            environment=environment
+        )
 
 
     def cancellation_request(self,
@@ -187,6 +227,21 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                 max_retries=self.max_retries,
             )
 
+            # Successfully cancelled
+            if result_dict['status'][0] is not False:   # No GT and correct case
+                # Update waiting list due to the freed slots
+                doctor_information, test_information, rs_result_dict = self.automatic_waiting_list_update(
+                    sim_environment=sim_environment,
+                    environment=environment,
+                    doctor_information=doctor_information,
+                    test_information=test_information,
+                )
+
+                # Update result dictionary
+                for key in result_dict.keys():
+                    if len(rs_result_dict[key]):
+                        result_dict[key].append(tuple(rs_result_dict[key]))
+
             return doctor_information, test_information, result_dict
 
         return doctor_information, test_information, None
@@ -194,76 +249,111 @@ class OutpatientFollowUpScheduling(OutpatientTask):
 
     def rescheduling_request(self,
                              doctor_information: dict,
-                             environment: "HospitalEnvironment", 
-                             idx: Optional[int] = None, 
-                             verbose: bool = False) -> Tuple[dict, Optional[dict]]:
+                             test_information: dict,
+                             environment: "HospitalEnvironment",
+                             idx: Optional[int] = None,
+                             verbose: bool = False) -> Tuple[dict, dict, Optional[dict]]:
         """
-        Add a patient schedule to the waiting list in the given environment.
+        Move all of a patient's scheduled tests (and the follow-up consultation) to an earlier time.
 
         Args:
             doctor_information (dict): A dictionary containing information about the doctor(s) involved,
                                        including availability and other relevant details.
+            test_information (dict): A dictionary containing test device schedules.
             environment (HospitalEnvironment): Hospital environment.
             idx (int, optional): Specific patient schedule index.
             verbose (bool, optional): Whether logging the each result or not. Defaults to False.
-        
+
         Returns:
-            Tuple[dict, Optional[dict]]: Updated doctor information and a result dictionary after cancellation.
+            Tuple[dict, dict, Optional[dict]]: Updated doctor information, test information, and a result dictionary after rescheduling.
         """
         result_dict = init_result_dict()
+        # Candidates: scheduled follow-up bookings whose every test is still scheduled (none performed), not already waiting
         if idx is None:
-            candidate_idx = [i for i, schedule in enumerate(environment.patient_schedules) if schedule['status'] == SCHEDULE_STATUS['scheduled']]
+            candidate_idx = [i for i, schedule in enumerate(environment.patient_schedules)
+                             if schedule['visit_type'] == 'follow_up_visit' and schedule['status'] == SCHEDULE_STATUS['scheduled'] and schedule.get('test')
+                             and all(t.get('status') == SCHEDULE_STATUS['scheduled'] for t in schedule['test'])
+                             and all(schedule != s[1] for s in environment.waiting_list)]
             idx = random.choice(candidate_idx) if len(candidate_idx) else -1
-        
+
         if idx >= 0:
+            # Ground-truth rescheduling requested booking
             requested_schedule = environment.patient_schedules[idx]
-            if all(requested_schedule != s[1] for s in environment.waiting_list):
-                # Ground-truth rescheduling requested schedule
-                patient = requested_schedule['patient']
-                doctor, date, time = requested_schedule['attending_physician'], requested_schedule['date'], requested_schedule['schedule']
+            patient = requested_schedule['patient']
+            doctor = requested_schedule['attending_physician']
 
-                # Initialize simulation environment for rescheduling request
-                sim_environment = self._init_simulation(
-                    system_prompt_path=self.reschedule_patient_system_prompt_path,
-                    environment=environment,
-                    additional_patient_conditions={
-                        'patient_name': patient,
-                        'doctor_name': doctor,
-                        'date': date,
-                        'start_time': hour_to_hhmmss(time[0])
-                    }
-                )
+            # Initialize simulation environment for rescheduling request
+            sim_environment = self._init_simulation(
+                system_prompt_path=self.reschedule_patient_system_prompt_path,
+                environment=environment,
+                additional_patient_conditions={
+                    'patient_name': patient,
+                    'doctor_name': doctor,
+                }
+            )
 
-                # Rescheduling request simulation
-                doctor_information, result_dict = run_with_retry(
-                    sim_environment.rescheduling_simulate,
-                    gt_idx=idx,
-                    doctor_information=doctor_information,
-                    patient_schedules=environment.patient_schedules,
-                    verbose=verbose,
-                    max_inferences=self.max_inferences,
-                    patient_kwargs=self.patient_reasoning_kwargs,
-                    staff_kwargs=self.staff_reasoning_kwargs,
-                    max_retries=self.max_retries,
-                )
+            # Rescheduling request simulation
+            doctor_information, test_information, result_dict = run_with_retry(
+                sim_environment.rescheduling_simulate,
+                gt_idx=idx,
+                doctor_information=doctor_information,
+                test_device_information=test_information,
+                patient_schedules=environment.patient_schedules,
+                verbose=verbose,
+                max_inferences=self.max_inferences,
+                patient_kwargs=self.patient_reasoning_kwargs,
+                staff_kwargs=self.staff_reasoning_kwargs,
+                max_retries=self.max_retries,
+            )
 
-                if result_dict['status'][0] is not False:   # No GT and correct case
-                    if 'patient' in result_dict['pred'][0]:
-                        new_schedule = result_dict['pred'][0]
-                        doctor_information[new_schedule['attending_physician']]['schedule'][new_schedule['date']].append(new_schedule['schedule'])
-                        doctor_information[new_schedule['attending_physician']]['schedule'][new_schedule['date']].sort()
-                        self.update_env(
-                            status=True,
-                            prediction=new_schedule,
-                            environment=environment,
-                        )
+            # Successfully rescheduled -> book the new (earlier) schedule
+            if result_dict['status'][0] is not False:   # No GT and correct case
+                if 'patient' in result_dict['pred'][0]:
+                    self._book_schedule(True, result_dict['pred'][0], doctor_information, test_information, environment)
 
-                return doctor_information, result_dict
+            return doctor_information, test_information, result_dict
 
-            return doctor_information, None
+        return doctor_information, test_information, None
+    
 
-        return doctor_information, None
-            
+    def automatic_waiting_list_update(self,
+                                      sim_environment: OPFUSchedulingSimulation,
+                                      environment: "HospitalEnvironment",
+                                      doctor_information: dict,
+                                      test_information: dict) -> Tuple[dict, dict, dict]:
+        """
+        Automatically update the waiting list by attempting to move waiting test sets earlier.
+
+        Args:
+            sim_environment (OPFUSchedulingSimulation): The simulation environment used for scheduling.
+            environment (HospitalEnvironment): Hospital environment.
+            doctor_information (dict): A dictionary containing information about the doctor(s).
+            test_information (dict): A dictionary containing test device schedules.
+
+        Returns:
+            Tuple[dict, dict, dict]: Updated doctor information, test information, and a result dictionary.
+        """
+        all_result_dict = init_result_dict()
+        for result in sim_environment.automatic_waiting_list_update(
+            doctor_information=doctor_information,
+            test_device_information=test_information,
+            **self.staff_reasoning_kwargs,
+        ):
+            doctor_information, test_information, result_dict = result['doctor_information'], result['test_device_information'], result['result_dict']
+
+            if result_dict['status'][0]:
+                new_schedule, original = result_dict['pred'][0], result['original']
+                self._book_schedule(True, new_schedule, doctor_information, test_information, environment)
+                log(f'{colorstr("[RESCHEDULED]")}: {original} is rescheduled to {new_schedule}')
+
+            all_result_dict['gt'].extend(result_dict['gt'])
+            all_result_dict['pred'].extend(result_dict['pred'])
+            all_result_dict['status'].extend(result_dict['status'])
+            all_result_dict['status_code'].extend(result_dict['status_code'])
+            all_result_dict['dialog'].extend(result_dict['dialog'])
+
+        return doctor_information, test_information, all_result_dict
+
 
     def _record_prescribed_tests_on_fv_appointment(self,
                                                    environment: "HospitalEnvironment",
@@ -306,12 +396,12 @@ class OutpatientFollowUpScheduling(OutpatientTask):
         existing = appointment.get('supportingInformation', [])
         existing_refs = {entry.get('reference') for entry in existing if entry.get('reference')}
         for test in required_test_list:
-            ref = f"HealthcareService/{get_healthcareservice_id(hospital_name, test['test_code'])}"
+            ref = f"HealthcareService/{get_healthcareservice_id(hospital_name, test['code'])}"
             if ref in existing_refs:
                 continue
             existing.append({
                 'reference': ref,
-                'display': code_to_test_name.get(test['test_code'], test['test_code']),
+                'display': code_to_test_name.get(test['code'], test['code']),
             })
             existing_refs.add(ref)
         appointment['supportingInformation'] = existing
@@ -410,7 +500,6 @@ class OutpatientFollowUpScheduling(OutpatientTask):
         test_information = environment.get_general_test_info_from_fhir() if self.fhir_integration else agent_test_data.get('test')
         gt_idx, fv_patient_info = self.get_first_visit_patient_information(gt, environment)
         code_to_test_name = {test['code']: test['name'] for _, tests in test_information.items() for test in tests}
-        device_to_schedule = {device: info['schedule'] for _, tests in test_information.items() for test in tests for device, info in test['devices'].items()}
         results = init_result_dict()
         self.reset_token_data()
 
@@ -440,7 +529,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                 'patient_fv': fv_patient_info,
                 'department': department,
                 'attending_physician': attending_physician,
-                'required_tests': required_test_list,
+                'test': required_test_list,
                 'preference': preference,
             } for preference in gt.get('preference')
         ]
@@ -451,12 +540,12 @@ class OutpatientFollowUpScheduling(OutpatientTask):
             'patient_fv': None,
             'department': None,
             'attending_physician': None,
-            'required_tests': None,
+            'test': None,
             'patient_intention': None,
         }
         preference = gt_data[0].get('preference')
         preference_desc = OPFU_PREFERENCE_PHRASE_PATIENT[preference]
-        required_test_desc = [f"{i+1}. {code_to_test_name[test['test_code']]}" for i, test in enumerate(gt_data[0]['required_tests'])]
+        required_test_desc = [f"{i+1}. {code_to_test_name[test['code']]}" for i, test in enumerate(gt_data[0]['test'])]
         sim_environment = self._init_simulation(
             system_prompt_path=self.schedule_patient_system_prompt_path,
             environment=environment,
@@ -500,24 +589,12 @@ class OutpatientFollowUpScheduling(OutpatientTask):
             log(f'Final Status: {status_code}\n\n\n')
 
         # Update the simulation environment and the doctor information in the agent test data
-        if status:
-            # Test schedule
-            for entry in prediction['test']:
-                device = entry['device']
-                date, slot = entry['date'], entry['schedule']
-                dev_schedule = device_to_schedule[device]
-                dev_schedule[date].append(slot)
-                dev_schedule[date].sort()
-                        
-            # Follow-up visit consultation
-            if prediction['schedule']:
-                doctor_information[prediction['attending_physician']]['schedule'][prediction['date']].append(prediction['schedule'])
-                doctor_information[prediction['attending_physician']]['schedule'][prediction['date']].sort()
-        
-        self.update_env(
+        self._book_schedule(
             status=status,
             prediction=prediction,
-            environment=environment,
+            doctor_information=doctor_information,
+            test_information=test_information,
+            environment=environment
         )
         agent_test_data['doctor'] = doctor_information
         agent_test_data['test'] = test_information
@@ -532,6 +609,29 @@ class OutpatientFollowUpScheduling(OutpatientTask):
         ## Simulate the test cancellation requests
         if random.random() < self.schedule_cancellation_prob:
             doctor_information, test_information, result_dict = self.cancellation_request(
+                doctor_information=doctor_information,
+                test_information=test_information,
+                environment=environment,
+                verbose=verbose,
+            )
+            if result_dict is not None:
+                agent_test_data['doctor'] = doctor_information
+                agent_test_data['test'] = test_information
+                results['gt'].extend(result_dict['gt'])
+                results['pred'].extend(result_dict['pred'])
+                results['status'].extend(result_dict['status'])
+                results['status_code'].extend(result_dict['status_code'])
+                results['dialog'].extend(result_dict['dialog'])
+                results['token'].extend([{}]*len(result_dict['gt']))
+
+                if verbose:
+                    log(f'Pred  : {result_dict["pred"]}')
+                    log(f'Status: {result_dict["status_code"]}')
+                    log(f'Final Status: {result_dict["status_code"]}\n\n\n')
+
+        ## Simulate the rescheduling (move tests earlier) requests
+        if random.random() < self.request_early_schedule_prob:
+            doctor_information, test_information, result_dict = self.rescheduling_request(
                 doctor_information=doctor_information,
                 test_information=test_information,
                 environment=environment,

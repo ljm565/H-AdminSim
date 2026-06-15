@@ -512,7 +512,8 @@ class OutpatientFirstScheduling(OutpatientTask):
             Tuple[dict, Optional[dict]]: Updated doctor information and a result dictionary after cancellation.
         """
         if idx is None:
-            candidate_idx = [i for i, schedule in enumerate(environment.patient_schedules) if schedule['status'] == SCHEDULE_STATUS['scheduled']]
+            candidate_idx = [i for i, schedule in enumerate(environment.patient_schedules)
+                             if schedule['visit_type'] == 'first_visit' and schedule['status'] == SCHEDULE_STATUS['scheduled']]
             idx = random.choice(candidate_idx) if len(candidate_idx) else -1
 
         if idx >= 0:
@@ -585,7 +586,8 @@ class OutpatientFirstScheduling(OutpatientTask):
         """
         result_dict = init_result_dict()
         if idx is None:
-            candidate_idx = [i for i, schedule in enumerate(environment.patient_schedules) if schedule['status'] == SCHEDULE_STATUS['scheduled']]
+            candidate_idx = [i for i, schedule in enumerate(environment.patient_schedules)
+                             if schedule['visit_type'] == 'first_visit' and schedule['status'] == SCHEDULE_STATUS['scheduled']]
             idx = random.choice(candidate_idx) if len(candidate_idx) else -1
         
         if idx >= 0:

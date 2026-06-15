@@ -544,7 +544,7 @@ class OPFVSchedulingSimulation:
         """
         # Snapshot the list: a successful reschedule pops the entry from `waiting_list` mid-iteration
         for turn, (idx, original) in enumerate(list(self.environment.waiting_list)):
-            if original['status'] == SCHEDULE_STATUS['scheduled']:
+            if original['status'] == SCHEDULE_STATUS['scheduled'] and original.get('visit_type') == 'first_visit':
                 new_schedule = self._get_rescheduled_result(
                     known_condition=original,
                     doctor_information=doctor_information,

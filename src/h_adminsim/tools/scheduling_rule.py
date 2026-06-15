@@ -229,20 +229,22 @@ class SchedulingRule:
             }
 
             for idx, patient_schedule in enumerate(patient_schedule_list):
-                if patient_schedule['status'] == status and \
-                        patient_schedule['patient'].lower() == patient_name.lower() and \
-                            patient_schedule['attending_physician'].lower() == doctor_name.lower() and \
-                                (date is None or patient_schedule['date'] == date) and \
-                                    (patient_schedule['attending_physician'].lower(), patient_schedule['date']) in candidate_pairs:
+                if (patient_schedule['status'] == status and
+                    patient_schedule['patient'].lower() == patient_name.lower() and
+                    patient_schedule['attending_physician'].lower() == doctor_name.lower() and
+                    (date is None or patient_schedule['date'] == date) and
+                    (patient_schedule['attending_physician'].lower(), patient_schedule['date']) in candidate_pairs
+                ):
                     return idx
             return -1
 
         # Without FHIR integration case
         for idx, patient_schedule in enumerate(patient_schedule_list):
-            if patient_schedule['status'] == status and \
-                    patient_schedule['patient'].lower() == patient_name.lower() and \
-                        patient_schedule['attending_physician'].lower() == doctor_name.lower() and \
-                            (date is None or patient_schedule['date'] == date):
+            if (patient_schedule['status'] == status and
+                patient_schedule['patient'].lower() == patient_name.lower() and
+                patient_schedule['attending_physician'].lower() == doctor_name.lower() and
+                (date is None or patient_schedule['date'] == date)
+            ):
                 return idx
         return -1
 
@@ -1129,12 +1131,64 @@ def create_tools(rule: SchedulingRule,
             'action': action,
             'schedule_status_code': schedule_status_code,
         }
-    
+
 
     @tool
-    def retrieve_patient_tests(patient_name: str, doctor_name: str) -> dict:
+    def reschedule_tests_tool(patient_name: str, doctor_name: str) -> dict:
         """
-        Retrieve the list of tests required for a patient based on their scheduled appointment.
+        Identify the patient's scheduled follow-up test booking and run the post-retrieval rescheduling pipeline to move every test earlier.
+
+        Args:
+            patient_name (str): Name of the patient requesting the rescheduling.
+            doctor_name (str): Name of the attending physician who ordered the tests.
+
+        Returns:
+            dict: A dictionary containing original_schedule, new_schedule, index, status,
+                  pipeline action, and optional schedule_status_code.
+        """
+        log(f'[TOOL CALL] reschedule_tests_tool | patient_name={patient_name}, doctor_name={doctor_name}', color=True)
+        prefix = 'Dr.'
+        if prefix not in doctor_name:
+            doctor_name = f'{prefix} {doctor_name}'
+        index = rule.find_idx(patient_schedule_list, patient_name, doctor_name, status=SCHEDULE_STATUS['scheduled'])
+
+        if index == -1 or gt_idx is None:
+            status = None
+        elif index == gt_idx:
+            status = True
+        else:
+            status = False
+
+        original_schedule, new_schedule = None, None
+        action, schedule_status_code = None, None
+
+        # Run pipeline only when retrieval succeeded (No-GT or correct GT match)
+        if index != -1 and (gt_idx is None or status):
+            original_schedule = patient_schedule_list[index]
+            if reschedule_pipeline is not None:
+                pipe_result = reschedule_pipeline(index, original_schedule)
+                action = pipe_result['action']
+                new_schedule = pipe_result['new_schedule']
+                schedule_status_code = pipe_result.get('status_code')
+
+        return {
+            'original_schedule': original_schedule,
+            'new_schedule': new_schedule,
+            'index': {'gt': gt_idx, 'pred': index},
+            'status': status,
+            'action': action,
+            'schedule_status_code': schedule_status_code,
+        }
+
+
+    @tool
+    def retrieve_tests_after_first_visit(patient_name: str, doctor_name: str) -> dict:
+        """
+        Retrieve the follow-up tests prescribed immediately after a completed first physician visit.
+
+        Use this tool only when scheduling newly prescribed diagnostic tests and
+        their corresponding follow-up physician visit after the initial consultation.
+        Do not use this tool for routine appointment retrieval, or rescheduling existing test appointments.
 
         Args:
             patient_name (str): Name of the patient.
@@ -1143,7 +1197,7 @@ def create_tools(rule: SchedulingRule,
         Returns:
             dict: A dictionary containing the test_list, patient_fv, index, and status.
         """
-        log(f'[TOOL CALL] retrieve_patient_tests | patient_name={patient_name}, doctor_name={doctor_name}', color=True)
+        log(f'[TOOL CALL] retrieve_tests_after_first_visit | patient_name={patient_name}, doctor_name={doctor_name}', color=True)
         test_list, patient_fv = None, None
         prefix = 'Dr.'
         if prefix not in doctor_name:
@@ -1267,7 +1321,8 @@ def create_tools(rule: SchedulingRule,
         cancel_tool,
         cancel_tests_tool,
         reschedule_tool,
-        retrieve_patient_tests,
+        reschedule_tests_tool,
+        retrieve_tests_after_first_visit,
     ]
 
     # Only scheduling tools are needed
