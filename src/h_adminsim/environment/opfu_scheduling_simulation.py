@@ -482,6 +482,7 @@ class OPFUSchedulingSimulation:
                                 'end': end_hour,
                             }
                         }
+                text_dict['test_schedule'].sort(key=lambda x: (x['date'], x['start']))
                 return text_dict
 
             except:
@@ -512,7 +513,7 @@ class OPFUSchedulingSimulation:
                 tmp_schedule['start'] = st_hour
                 tmp_schedule['end'] = tr_hour
                 schedule['test_schedule'].append(tmp_schedule)
-            
+            schedule['test_schedule'].sort(key=lambda x: (x['date'], x['start']))
             return schedule
 
 
