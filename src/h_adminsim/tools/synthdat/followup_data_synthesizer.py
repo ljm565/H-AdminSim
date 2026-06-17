@@ -267,6 +267,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         # Make all possible test combinations based on the vacant_test_schedule
         consecutive_failures = 0
         combination = []
+        best_combination = []
 
         while consecutive_failures < max_failures:
             # For the first test, only consider those without dependencies
@@ -345,12 +346,27 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                         (v['remain_n'] > 0) and len(set(v['depends_on']) - used_codes) == 0
                 )
 
+            # Keep the largest combination seen across retries
+            if len(combination) > len(best_combination):
+                best_combination = combination
+
             # Validate combination size
             if len(combination) < min_test_num:
                 consecutive_failures += 1
                 continue
 
-            # Commit: remove used slots and decrement remain_n
+            break
+
+        # If no full combination was built (every exit path failed the size check),
+        # fall back to the largest partial combination seen across retries
+        if len(combination) < min_test_num:
+            combination = best_combination
+
+        # Commit: remove used slots and decrement remain_n
+        if len(combination):
+            if len(combination) < min_test_num:
+                log(f'Combination length cannot meet your condition, you set min_test_num as {min_test_num}, but got {len(combination)}', level='warning')
+            
             for item in combination:
                 key = item.pop('_key')
                 slot_idx = item.pop('_slot_idx')
@@ -360,8 +376,6 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                 vacant_test_schedules[key]['remain_n'] -= 1
                 if vacant_test_schedules[key]['remain_n'] <= 0:
                     del vacant_test_schedules[key]
-
-            break
 
         return combination, vacant_test_schedules
     
