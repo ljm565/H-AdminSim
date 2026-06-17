@@ -155,6 +155,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         # Assign random fixed schedules for the tests
         dates = generate_date_range(start_date, days)
         scheduler = ScheduleAssigner(start_hour, end_hour, interval_hour)
+        day_closed_prob = fu_config.get('test_day_closed_prob', 0.0)
         for test_list in eligible_tests.values():
             for _test in test_list:
                 device_n = random.randint(fu_config.n_machines_per_test.min, fu_config.n_machines_per_test.max)
@@ -163,15 +164,18 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                 for i in range(device_n):
                     device_name = f"{_test['code']}-{i}"
                     _test['devices'][device_name] = dict()
-                    test_schedule = {
-                        date: scheduler(
-                            generate_random_prob(
+                    test_schedule = {}
+                    for date in dates:
+                        # Randomly close the whole day for this device (coverage=1.0 => zero vacancy)
+                        if random.random() < day_closed_prob:
+                            coverage = 1.0
+                        else:
+                            coverage = generate_random_prob(
                                 fu_config.test_has_schedule_prob,
                                 fu_config.test_fixed_schedule_ratio.min,
                                 fu_config.test_fixed_schedule_ratio.max,
                             )
-                        )[1] for date in dates
-                    }
+                        test_schedule[date] = scheduler(coverage)[1]
                     _test['devices'][device_name]['schedule'] = test_schedule
         
         # Pick out scheduling dependencies based on the current test information
