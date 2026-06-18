@@ -3,7 +3,7 @@ from decimal import Decimal
 from collections import defaultdict
 from langchain.tools import tool
 from langchain.agents import AgentExecutor
-from typing import Optional, TYPE_CHECKING
+from typing import Union, Optional, TYPE_CHECKING
 
 from .data_converter import DataConverter
 from h_adminsim.registry import SCHEDULE_STATUS
@@ -181,7 +181,7 @@ class SchedulingRule:
                  patient_schedule_list: list[dict], 
                  patient_name: str, 
                  doctor_name: str, 
-                 status: str,
+                 status: Union[str, list[str]],
                  date: Optional[str] = None) -> int:
         """
         Identify the index of the appointment corresponding to the patient's request
@@ -192,12 +192,15 @@ class SchedulingRule:
                                                 Each item contains appointment details such as doctor name, date, and time.
             patient_name (str): Name of the patient making the request.
             doctor_name (str): Name of the doctor associated with the target appointment.
-            status (str): Patient's appointment status.
+            status (Union[str, list[str]]): Patient's appointment status.
             date (Optional[str], optional): Date of the target appointment (YYYY-MM-DD). Defaults to None.
 
         Returns:
             int: The index of the appointment that matches the patient's request.
         """
+        if isinstance(status, str):
+            status = [status]
+
         # With FHIR integration case
         if self.fhir_integration:
             # Get patient resource
@@ -229,7 +232,7 @@ class SchedulingRule:
             }
 
             for idx, patient_schedule in enumerate(patient_schedule_list):
-                if (patient_schedule['status'] == status and
+                if (patient_schedule['status'] in status and
                     patient_schedule['patient'].lower() == patient_name.lower() and
                     patient_schedule['attending_physician'].lower() == doctor_name.lower() and
                     (date is None or patient_schedule['date'] == date) and
@@ -240,7 +243,7 @@ class SchedulingRule:
 
         # Without FHIR integration case
         for idx, patient_schedule in enumerate(patient_schedule_list):
-            if (patient_schedule['status'] == status and
+            if (patient_schedule['status'] in status and
                 patient_schedule['patient'].lower() == patient_name.lower() and
                 patient_schedule['attending_physician'].lower() == doctor_name.lower() and
                 (date is None or patient_schedule['date'] == date)
@@ -1066,7 +1069,7 @@ def create_tools(rule: SchedulingRule,
         prefix = 'Dr.'
         if prefix not in doctor_name:
             doctor_name = f'{prefix} {doctor_name}'
-        index = rule.find_idx(patient_schedule_list, patient_name, doctor_name, status=SCHEDULE_STATUS['scheduled'])
+        index = rule.find_idx(patient_schedule_list, patient_name, doctor_name, status=[SCHEDULE_STATUS['scheduled'], SCHEDULE_STATUS['not_yet']])
 
         # Update result_dict
         if index == -1 or gt_idx is None:
@@ -1150,7 +1153,7 @@ def create_tools(rule: SchedulingRule,
         prefix = 'Dr.'
         if prefix not in doctor_name:
             doctor_name = f'{prefix} {doctor_name}'
-        index = rule.find_idx(patient_schedule_list, patient_name, doctor_name, status=SCHEDULE_STATUS['scheduled'])
+        index = rule.find_idx(patient_schedule_list, patient_name, doctor_name, status=[SCHEDULE_STATUS['scheduled'], SCHEDULE_STATUS['not_yet']])
 
         if index == -1 or gt_idx is None:
             status = None
