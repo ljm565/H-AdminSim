@@ -67,5 +67,5 @@ hospital_data:
         cross_department_test_prob: 0.2             # Probability of tests from other departments
         include_consultation: True                 # Whether to include post-test doctor consultation
         preference:
-            type: ['asap', 'batch']    # Types of patient preferences.
-            probs: [0.5, 0.5]           # Types probability distribution.
+            type: ['throughput_max', 'visit_min', 'stay_min']    # Types of patient preferences.
+            probs: [0.3, 0.4, 0.4]           # Types probability distribution.
