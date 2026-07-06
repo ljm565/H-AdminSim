@@ -532,7 +532,6 @@ class OPFUSchedulingSimulation:
         """
         if patient_condition is not None and rejected_preference is not None:
             # Build new system prompts for rejection scenario.
-            # OPFU preferences are 'asap' and 'batch' only (no doctor / date).
             preference = patient_condition.get('preference')
             preference_desc = OPFU_PREFERENCE_PHRASE_PATIENT[preference]
             rejected_preference_desc = OPFU_PREFERENCE_PHRASE_STAFF[rejected_preference]
@@ -1371,6 +1370,13 @@ class OPFUSchedulingSimulation:
                         environment=self.environment,
                         rule=self.rules,
                     )
+                    if status and gt_patient_condition['preference'] == 'batch':
+                        test_codes_list = list({t['code'] for t in gt_patient_condition['test']})
+                        optimal = self.rules.schedule_tests_asap(filtered_test_device_information, test_codes_list)
+                        opt_ready, batch_ready = optimal['all_results_ready_at'], pred_schedule['all_results_ready_at']
+                        if opt_ready is not None and compare_iso_time(batch_ready, opt_ready):
+                            delta_h = (str_to_datetime(batch_ready) - str_to_datetime(opt_ready)).total_seconds() / 3600
+                            log(colorstr('magenta', f'ASAP: {opt_ready}, batch: {batch_ready} (+{delta_h:.1f}h)'))
 
                 if not status:
                     break

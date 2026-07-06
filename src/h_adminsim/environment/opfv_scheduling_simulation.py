@@ -368,7 +368,7 @@ class OPFVSchedulingSimulation:
             new_system_prompt (Optional[str], optional): New system prompt to be updated.
         """
         if patient_condition is not None and rejected_preference is not None:
-        # Build new system prompts for rejection scenario
+            # Build new system prompts for rejection scenario
             preference = patient_condition.get('preference')
             preference_desc = OPFV_PREFERENCE_PHRASE_PATIENT[preference] if preference != 'date' \
                     else OPFV_PREFERENCE_PHRASE_PATIENT[preference].format(date=patient_condition.get('valid_from'))
