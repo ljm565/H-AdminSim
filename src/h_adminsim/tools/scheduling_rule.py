@@ -392,7 +392,7 @@ class SchedulingRule:
         into the device's pre-existing fixed segments before computing free time.
 
         Args:
-            mode (str): 'asap' or 'batch' — whether this enumeration is for the ASAP scheduler or the batch scheduler. Affects tie-breaking of candidates.
+            mode (str): 'throughput_max' or 'visit_min' — whether this enumeration is for the `throughput_max` scheduler or the `visit_min` scheduler. Affects tie-breaking of candidates.
             test_info (dict): One entry from `filtered_test_device_information['test'][code]`.
             after_iso (str): Earliest acceptable ISO start time considering priority and depends_on conditions.
             forbidden_dates (set): Dates blocked by an already-placed test in `avoid_same_day`.
@@ -402,9 +402,9 @@ class SchedulingRule:
                                            Applied to every device (a patient cannot be at two devices at once). Defaults to None.
             is_last_test (bool): Whether this is the last test in the sequence. Defaults to False.
             is_last_in_priority_cluster (bool): True if no subsequent test in `ordered` shares this test's priority. 
-                                                ASAP additionally collapses to one globally earliest candidate; batch collapses to one earliest per date. Defaults to False.
+                                                `throughput_max` additionally collapses to one globally earliest candidate; `visit_min` collapses to one earliest per date. Defaults to False.
             placed_dates (Optional[set]): Set of dates already used by previously-placed tests in this branch.
-                                          Only consulted when `is_last_test and mode == 'batch'` to keep at most one
+                                          Only consulted when `is_last_test and mode == 'visit_min'` to keep at most one
                                           candidate (existing-date earliest if any, else new-date earliest). Defaults to None.
 
         Returns:
@@ -474,15 +474,15 @@ class SchedulingRule:
                         end_iso = get_iso_time(end_hr, date, utc_offset=self._utc_offset)
                         candidates.append((device_name, date, start_iso, end_iso))
 
-                if allocate_first_fit and mode == 'asap':
+                if allocate_first_fit and mode == 'throughput_max':
                     break
 
         candidates.sort(key=lambda x: (x[2], x[0]))
 
-        if mode == 'asap':
+        if mode == 'throughput_max':
             if is_last_in_priority_cluster:
                 candidates = candidates[:1]  # earliest dominates — see `is_last_in_priority_cluster` docstring
-        elif mode == 'batch':
+        elif mode == 'visit_min':
             # If an existing date exists, the earliest of that date; otherwise, the earliest in the whole
             if is_last_test:
                 placed = placed_dates or set()
@@ -617,8 +617,8 @@ class SchedulingRule:
 
         Objective (lex-min):
 
-        - `mode == 'asap'`: `(per_priority_unscheduled, max_result_ready_at)`.
-        - `mode == 'batch'`: `(per_priority_unscheduled, num_test_visit_dates, max_result_ready_at)`.
+        - `mode == 'throughput_max'`: `(per_priority_unscheduled, max_result_ready_at)`.
+        - `mode == 'visit_min'`: `(per_priority_unscheduled, num_test_visit_dates, max_result_ready_at)`.
 
         `per_priority_unscheduled` is a tuple indexed by priority ascending
         (lower number first), so the search first protects the most important
@@ -633,7 +633,7 @@ class SchedulingRule:
             tests (dict): `{test_code: test_info}`.
             ordered (list[str]): Processing order from `_topological_order`.
             avoid (dict): Symmetric closure of `avoid_same_day`.
-            mode (str): `'asap'` or `'batch'`.
+            mode (str): `'throughput_max'` or `'visit_min'`.
 
         Returns:
             dict: `{'placed': {code: assignment}, 'unscheduled': [codes], 'objective': tuple}`.
@@ -679,7 +679,7 @@ class SchedulingRule:
             else:
                 max_ready = ''
                 num_dates = 0
-            if mode == 'asap':
+            if mode == 'throughput_max':
                 return (pu, max_ready)
             return (pu, num_dates, max_ready)
 
@@ -734,7 +734,7 @@ class SchedulingRule:
 
             hyp_ready = _future_max_ready_lb(hypo_end, hypo_ready, hypo_pri, base, idx + 1)
 
-            if mode == 'asap':
+            if mode == 'throughput_max':
                 return (pu, hyp_ready)
             hyp_dates = {a['date'] for a in assigned.values()}
             hyp_dates.add(date)
@@ -752,7 +752,7 @@ class SchedulingRule:
 
             cur_max_ready = _future_max_ready_lb(hypo_end, hypo_ready, hypo_pri, base, idx + 1)
 
-            if mode == 'asap':
+            if mode == 'throughput_max':
                 return (pu, cur_max_ready)
             cur_dates = {a['date'] for a in assigned.values()}
             return (pu, len(cur_dates), cur_max_ready)
@@ -868,11 +868,11 @@ class SchedulingRule:
         }
 
 
-    def schedule_tests_asap(self,
+    def schedule_tests_throughput_max(self,
                             filtered_test_device_information: dict,
                             test_codes: list) -> dict:
         """
-        Backtracking ASAP scheduler — finds the assignment that minimizes `(unscheduled_count, max_result_ready_at)` 
+        Backtracking `throughput_max` scheduler — finds the assignment that minimizes `(unscheduled_count, max_result_ready_at)` 
         over every (device, date, start) combination. Priority is a hard time-ordering constraint
         (`priority(A) < priority(B)` implies `A.end <= B.start`).
 
@@ -909,15 +909,15 @@ class SchedulingRule:
         )
 
         avoid = self._build_avoid_pairs(tests)
-        result = self._backtrack_schedule(tests, ordered, avoid, mode='asap')
+        result = self._backtrack_schedule(tests, ordered, avoid, mode='throughput_max')
         return self._assemble_schedule_result(result['placed'], missing, result['unscheduled'])
 
 
-    def schedule_tests_batch(self,
+    def schedule_tests_visit_min(self,
                              filtered_test_device_information: dict,
                              test_codes: list) -> dict:
         """
-        Backtracking batch scheduler — finds the assignment that minimizes `(unscheduled_count, num_test_visit_dates, max_result_ready_at)` 
+        Backtracking `visit_min` scheduler — finds the assignment that minimizes `(unscheduled_count, num_test_visit_dates, max_result_ready_at)` 
         over every (device, date, start) combination. Priority is a hard time-ordering constraint.
 
         Args:
@@ -925,7 +925,7 @@ class SchedulingRule:
             test_codes (list[str]): Codes of the tests the patient must take.
 
         Returns:
-            dict: Same shape as `schedule_tests_asap`.
+            dict: `{'tests', 'test_visit_dates', 'all_results_ready_at', 'unscheduled', 'status'}`.
         """
         empty_result = {
             'tests': {}, 'test_visit_dates': [], 'all_results_ready_at': None,
@@ -953,7 +953,7 @@ class SchedulingRule:
         )
 
         avoid = self._build_avoid_pairs(tests)
-        result = self._backtrack_schedule(tests, ordered, avoid, mode='batch')
+        result = self._backtrack_schedule(tests, ordered, avoid, mode='visit_min')
         return self._assemble_schedule_result(result['placed'], missing, result['unscheduled'])
 
 
@@ -1228,7 +1228,7 @@ def create_tools(rule: SchedulingRule,
     
 
     @tool
-    def follow_up_asap_test_schedule(attending_physician: str) -> dict:
+    def follow_up_throughput_max_test_schedule(attending_physician: str) -> dict:
         """
         Schedule each required test at its earliest available slot to MINIMIZE the
         overall time until all results are ready. Visit-date count is NOT minimized;
@@ -1261,11 +1261,11 @@ def create_tools(rule: SchedulingRule,
             dict: Mapping of test schedules with fields `tests`, `test_visit_dates`,
                 `all_results_ready_at`, `unscheduled`, `fu_schedule`, and `status`.
         """
-        log(f'[TOOL CALL] follow_up_asap_test_schedule | attending_physician={attending_physician}', color=True)
+        log(f'[TOOL CALL] follow_up_throughput_max_test_schedule | attending_physician={attending_physician}', color=True)
         prefix = 'Dr.'
         if prefix not in attending_physician:
             attending_physician = f'{prefix} {attending_physician}'
-        result = rule.schedule_tests_asap(test_device_information, required_test_codes)
+        result = rule.schedule_tests_throughput_max(test_device_information, required_test_codes)
         fu_appn = rule.physician_filter(doctor_info, attending_physician, result['all_results_ready_at'])
         fu_appn = rule.find_earliest_time(fu_appn)
         result['fu_schedule'] = fu_appn
@@ -1274,7 +1274,7 @@ def create_tools(rule: SchedulingRule,
 
 
     @tool
-    def follow_up_batch_test_schedule(attending_physician: str) -> dict:
+    def follow_up_visit_min_test_schedule(attending_physician: str) -> dict:
         """
         Group the required tests into the SMALLEST possible number of visit days,
         accepting that some tests may finish later than they could individually.
@@ -1286,7 +1286,7 @@ def create_tools(rule: SchedulingRule,
         day", "together", "in one trip", "all at once", "one visit", or any
         equivalent phrasing that targets visit-count rather than speed. Do NOT use
         this tool when the patient only expresses a speed/urgency preference; use
-        `follow_up_asap_test_schedule` for that case.
+        `follow_up_throughput_max_test_schedule` for that case.
 
         IMPORTANT:
             DO NOT call this tool if `attending_physician` is unknown, omitted,
@@ -1305,11 +1305,11 @@ def create_tools(rule: SchedulingRule,
             dict: Mapping of test schedules with fields `tests`, `test_visit_dates`,
                 `all_results_ready_at`, `unscheduled` and `status`.
         """
-        log(f'[TOOL CALL] follow_up_batch_test_schedule | attending_physician={attending_physician}', color=True)
+        log(f'[TOOL CALL] follow_up_visit_min_test_schedule | attending_physician={attending_physician}', color=True)
         prefix = 'Dr.'
         if prefix not in attending_physician:
             attending_physician = f'{prefix} {attending_physician}'
-        result = rule.schedule_tests_batch(test_device_information, required_test_codes)
+        result = rule.schedule_tests_visit_min(test_device_information, required_test_codes)
         fu_appn = rule.physician_filter(doctor_info, attending_physician, result['all_results_ready_at'])
         fu_appn = rule.find_earliest_time(fu_appn)
         result['fu_schedule'] = fu_appn
@@ -1332,14 +1332,14 @@ def create_tools(rule: SchedulingRule,
     if only_schedule_tool:
         if test_device_information is not None and required_test_codes is not None:
             return [
-                follow_up_asap_test_schedule, follow_up_batch_test_schedule,
+                follow_up_throughput_max_test_schedule, follow_up_visit_min_test_schedule,
             ]
         return [physician_filter_tool, date_filter_tool, get_all_time_tool]
 
     # After determine the patient's tests
     if test_device_information is not None and required_test_codes is not None:
         tools = [
-            follow_up_asap_test_schedule, follow_up_batch_test_schedule,
+            follow_up_throughput_max_test_schedule, follow_up_visit_min_test_schedule,
         ]
     return tools
 

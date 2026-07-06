@@ -41,8 +41,8 @@ STATUS_CODES = {
         'dependency': 'test_schedule: dependency violated',
         'avoid_same_day': 'test_schedule: avoid_same_day violated',
         'preference': {
-            'asap': 'test_schedule: not earliest result-ready time',
-            'batch': 'test_schedule: not minimum visit-date count',
+            'throughput_max': 'test_schedule: not earliest result-ready time',
+            'visit_min': 'test_schedule: not minimum visit-date count',
         },
         'fu_schedule': 'test_schedule: not earliest follow-up appointment',
     },

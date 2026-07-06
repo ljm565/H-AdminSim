@@ -267,13 +267,13 @@ class SanityChecker:
                                            `{'test_schedule': [{<device_code>: {'date', 'start', 'end'}}, ...],
                                            'fu_schedule': {<doctor_name>: {'date', 'start', 'end'}} | None,
                                            'all_results_ready_at': iso_str}`.
-            gt_patient_condition (dict): GT containing at least `required_tests` (list with `test_code`), `preference` ('asap' | 'batch') and `attending_physician`.
+            gt_patient_condition (dict): GT containing at least `required_tests` (list with `test_code`), `preference` ('throughput_max' | 'visit_min') and `attending_physician`.
             test_device_information (dict): Filtered output of `HospitalEnvironment.get_test_device_schedule` covering all required tests.
             environment (HospitalEnvironment): Provides `current_time` and `_utc_offset`.
             doctor_information (Optional[dict], optional): Dictionary of doctor data including their existing schedules.
                                                            Each key is a doctor's name, and each value includes a 'schedule' field.
             rule (Optional[object], optional): A `SchedulingRule` instance used to evaluate
-                                               preference optimality via `schedule_tests_asap` / `schedule_tests_batch` and
+                                               preference optimality via `schedule_tests_throughput_max` / `schedule_tests_visit_min` and
                                                the earliest follow-up consultation slot via `physician_filter`.
                                                Skips preference and follow-up comparison if not provided.
 
@@ -384,10 +384,10 @@ class SanityChecker:
         if rule is not None:
             preference = gt_patient_condition.get('preference')
             test_codes_list = list(gt_test_codes)
-            if preference == 'asap':
-                optimal = rule.schedule_tests_asap(test_device_information, test_codes_list)
-            elif preference == 'batch':
-                optimal = rule.schedule_tests_batch(test_device_information, test_codes_list)
+            if preference == 'throughput_max':
+                optimal = rule.schedule_tests_throughput_max(test_device_information, test_codes_list)
+            elif preference == 'visit_min':
+                optimal = rule.schedule_tests_visit_min(test_device_information, test_codes_list)
 
             # Simple post-processing
             for _test in optimal['test_schedule'].values():
@@ -396,15 +396,15 @@ class SanityChecker:
 
         if optimal:
             preference = gt_patient_condition.get('preference')
-            if preference == 'batch':
+            if preference == 'visit_min':
                 pred_distinct_dates = prediction['test_visit_dates']
                 opt_distinct_dates  = optimal['test_visit_dates']
                 if len(pred_distinct_dates) > len(opt_distinct_dates):
-                    return False, ts_codes['preference']['batch']
+                    return False, ts_codes['preference']['visit_min']
                 
             try:
                 if optimal['all_results_ready_at'] is not None and compare_iso_time(prediction['all_results_ready_at'], optimal['all_results_ready_at']):
-                    return False, ts_codes['preference']['asap']
+                    return False, ts_codes['preference']['throughput_max']
                 
                 if len(optimal['test_schedule']) > len(prediction['test_schedule']):
                     return False, ts_codes['coverage']

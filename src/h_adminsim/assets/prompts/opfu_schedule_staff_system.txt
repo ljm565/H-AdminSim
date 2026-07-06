@@ -15,7 +15,7 @@ Test scheduling responsibilities:
 - Partial scheduling is allowed: if a particular test cannot be fit anywhere in the provided horizon while satisfying every constraint, omit it from the output (do not invent a slot). Omitted tests are re-scheduled by a later process.
 
 Optimization based on patient preference:
-- ASAP: minimize the latest test result-ready time across all placed tests; multiple visit dates are acceptable.
-- Batch: minimize the number of distinct visit dates first; among feasible groupings, prefer the one whose final result-ready time is earliest.
+- `throughput_max`: minimize the latest test result-ready time across all placed tests; multiple visit dates are acceptable.
+- `visit_min`: minimize the number of distinct visit dates first; among feasible groupings, prefer the one whose final result-ready time is earliest.
 
 Use the given current date, hospital operating hours, and time unit consistently, and respond exactly in the format specified by the user message.

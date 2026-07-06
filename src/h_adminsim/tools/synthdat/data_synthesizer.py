@@ -277,11 +277,14 @@ class DataSynthesizer:
                 preference_list.append(second_preference)
         
         elif visit_type == 'follow_up_visit':
-            if preference == 'asap':
-                second_preference = random.choice(['batch'])
+            if preference == 'throughput_max':
+                second_preference = random.choice(['visit_min', 'stay_min'])
                 preference_list.append(second_preference)
-            elif preference == 'batch':
-                second_preference = random.choice(['asap'])
+            elif preference == 'visit_min':
+                second_preference = random.choice(['throughput_max', 'stay_min'])
+                preference_list.append(second_preference)
+            elif preference == 'stay_min':
+                second_preference = random.choice(['throughput_max', 'visit_min'])
                 preference_list.append(second_preference)
 
         return preference_list

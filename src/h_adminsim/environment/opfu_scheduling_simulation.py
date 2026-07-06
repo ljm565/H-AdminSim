@@ -558,7 +558,7 @@ class OPFUSchedulingSimulation:
                                      test_device_information: Optional[dict] = None,
                                      **kwargs) -> dict:
         """
-        Re-run the whole-test-set scheduling (ASAP/Batch by the booking's preference) to find an earlier schedule.
+        Re-run the whole-test-set scheduling (`throughput_max`/`visit_min` by the booking's preference) to find an earlier schedule.
 
         Args:
             known_condition (dict): The original follow-up booking being rescheduled.
@@ -584,7 +584,7 @@ class OPFUSchedulingSimulation:
             fhir_integration=self.fhir_integration and test_device_information is None,
         )
 
-        # The agent picks the follow-up test-scheduling tool (asap/batch) by the booking's original preference
+        # The agent picks the follow-up test-scheduling tool (`throughput_max`/`visit_min`) by the booking's original preference
         _schedule_client = self.scheduling_agent.build_agent(
             rule=self.rules,
             doctor_info=filtered_doctor_information,
@@ -645,8 +645,8 @@ class OPFUSchedulingSimulation:
         def _strictly_earlier(new_t, old_t):
             return new_t is not None and old_t is not None and compare_iso_time(old_t, new_t) and new_t != old_t
 
-        # Preference-based improvement: batch minimizes visit dates first, asap minimizes result-ready time
-        if original_schedule.get('preference') == 'batch':
+        # Preference-based improvement: `visit_min` minimizes visit dates first, `throughput_max` minimizes result-ready time
+        if original_schedule.get('preference') == 'visit_min':
             improved = len(new_dates) < len(original_dates) or \
                 (len(new_dates) == len(original_dates) and _strictly_earlier(new_ready, original_ready))
         else:
@@ -1370,18 +1370,20 @@ class OPFUSchedulingSimulation:
                         environment=self.environment,
                         rule=self.rules,
                     )
-                    if status and gt_patient_condition['preference'] == 'batch':
+                    ###################### TMP ######################
+                    if status and gt_patient_condition['preference'] == 'visit_min':
                         test_codes_list = list({t['code'] for t in gt_patient_condition['test']})
-                        optimal = self.rules.schedule_tests_asap(filtered_test_device_information, test_codes_list)
-                        opt_ready, batch_ready = optimal['all_results_ready_at'], pred_schedule['all_results_ready_at']
-                        if opt_ready is not None and compare_iso_time(batch_ready, opt_ready):
-                            delta_h = (str_to_datetime(batch_ready) - str_to_datetime(opt_ready)).total_seconds() / 3600
-                            log(colorstr('magenta', f'ASAP: {opt_ready}, batch: {batch_ready} (+{delta_h:.1f}h)'))
+                        optimal = self.rules.schedule_tests_throughput_max(filtered_test_device_information, test_codes_list)
+                        opt_ready, visit_min_ready = optimal['all_results_ready_at'], pred_schedule['all_results_ready_at']
+                        if opt_ready is not None and compare_iso_time(visit_min_ready, opt_ready):
+                            delta_h = (str_to_datetime(visit_min_ready) - str_to_datetime(opt_ready)).total_seconds() / 3600
+                            log(colorstr('magenta', f'throughput_max: {opt_ready}, visit_min: {visit_min_ready} (+{delta_h:.1f}h)'))
+                    ################################################
 
                 if not status:
                     break
 
-                # Preference rejection logic (OPFU: asap vs batch)
+                # Preference rejection logic (OPFU: throughput_max vs visit_min)
                 next_pref_differs = (i != len(gt_data) - 1) and \
                     (gt_data[i + 1]['preference'] != gt_data[i]['preference'])
                 if random.random() < preference_reject_prob and next_pref_differs and len(pred_schedule['test_visit_dates']) > 1:

@@ -3,11 +3,11 @@ Your job is to select exactly ONE follow-up test scheduling tool, or output the 
 
 
 Rules:
-- If the patient wants to complete all required tests as soon as possible, regardless of the number of hospital visits, call `follow_up_asap_test_schedule`.
-- If the patient wants to minimize the number of hospital visits by grouping all required tests on as few days as possible, call `follow_up_batch_test_schedule`.
-- When BOTH speed and visit-count are mentioned, the explicit acceptance of multiple visits MUST take precedence and you MUST call `follow_up_asap_test_schedule`.
-- If ONLY speed is mentioned and visit-count is not addressed, you MUST call `follow_up_asap_test_schedule`.
-- If ONLY visit-count is mentioned and speed is not addressed, you MUST call `follow_up_batch_test_schedule`.
+- If the patient wants to complete all required tests as soon as possible, regardless of the number of hospital visits, call `follow_up_throughput_max_test_schedule`.
+- If the patient wants to minimize the number of hospital visits by grouping all required tests on as few days as possible, call `follow_up_visit_min_test_schedule`.
+- When BOTH speed and visit-count are mentioned, the explicit acceptance of multiple visits MUST take precedence and you MUST call `follow_up_throughput_max_test_schedule`.
+- If ONLY speed is mentioned and visit-count is not addressed, you MUST call `follow_up_throughput_max_test_schedule`.
+- If ONLY visit-count is mentioned and speed is not addressed, you MUST call `follow_up_visit_min_test_schedule`.
 - Both tools require the attending physician's name, which is already known from the conversation; pass it as the argument.
 - If the patient's request does not clearly and explicitly fall into exactly one of the above cases (or corresponding tools), you must immediately output the text "NO TOOL".
 

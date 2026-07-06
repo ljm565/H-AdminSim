@@ -14,8 +14,8 @@ Respond in JSON format only, as shown in the examples below.
 * Department: {DEPARTMENT}
 * Patient utterance expressing scheduling preference: {PREFERENCE}
 * Tips:
-    * ASAP case: All required tests must finish (including the time required for results to be ready) as early as possible, even if the patient must visit the hospital on multiple distinct days.
-    * Batch case: Minimize the number of distinct visit dates by clustering tests on as few days as possible. Among feasible groupings, prefer the one whose final test result becomes available the earliest.
+    * `throughput_max` case: All required tests must finish (including the time required for results to be ready) as early as possible, even if the patient must visit the hospital on multiple distinct days.
+    * `visit_min` case: Minimize the number of distinct visit dates by clustering tests on as few days as possible. Among feasible groupings, prefer the one whose final test result becomes available the earliest.
 
 
 ## Required tests (each entry includes duration_hour, result_hours, priority, depends_on, avoid_same_day):
@@ -60,8 +60,8 @@ Schedule as many of the required tests as you can while satisfying every constra
 
 
 ## Optimization based on the patient's preference:
-* **ASAP**: minimize the latest ``end + result_hours`` across the placed tests (i.e., make the slowest result-ready time as early as possible). Multiple visit dates are acceptable.
-* **Batch**: minimize the number of distinct visit dates first; among feasible groupings, prefer the one whose final ``end + result_hours`` is earliest.
+* **`throughput_max`**: minimize the latest ``end + result_hours`` across the placed tests (i.e., make the slowest result-ready time as early as possible). Multiple visit dates are acceptable.
+* **`visit_min`**: minimize the number of distinct visit dates first; among feasible groupings, prefer the one whose final ``end + result_hours`` is earliest.
 
 
 ## Step-by-step procedure (follow this when reasoning):
@@ -71,8 +71,8 @@ Schedule as many of the required tests as you can while satisfying every constra
    b. Walk through D's listed dates in chronological order. Remember: a date with ``[]`` is fully free; treat any free interval of length ``T.duration_hour`` that fits within operating hours as a candidate.
    c. Reject any candidate slot that (i) starts at or before ``Current time``, (ii) overlaps an occupied interval, (iii) starts before any already-placed test of strictly lower priority ends, (iv) starts before ``predecessor.end + predecessor.result_hours`` for any predecessor in ``depends_on``, (v) lands on a date that conflicts with ``avoid_same_day``, (vi) overlaps in time with any already-placed test of this patient on another device on the same date (single patient, single location at a time), or (vii) has ``start`` or ``end`` that is not an exact integer multiple of ``Time unit``.
    d. Among the remaining candidates, pick:
-      * For **ASAP**: the earliest start ISO timestamp overall.
-      * For **Batch**: a slot on a date already used by another placed test if such a slot exists and is valid; otherwise the earliest start ISO timestamp.
+      * For **`throughput_max`**: the earliest start ISO timestamp overall.
+      * For **`visit_min`**: a slot on a date already used by another placed test if such a slot exists and is valid; otherwise the earliest start ISO timestamp.
    e. If no candidate exists for T after scanning all devices and dates, OMIT T (do not place it).
 3. **Sort the final list** by ISO start timestamp ascending. Because step 1 ordered by priority and step 2c forbids out-of-priority placements, this will automatically satisfy both ordering rules (#9, #10).
 
@@ -84,12 +84,12 @@ Do NOT include ``fu_schedule``, ``test_visit_dates``, ``all_results_ready_at``, 
 
 
 ## Answer format examples:
-Example 1 (ASAP, all tests placed):
+Example 1 (`throughput_max`, all tests placed):
 ```json
 {{"test_schedule": [{{"IMCAR-T02-1": {{"date": "2025-06-13", "start": 9.0, "end": 9.5}}}}, {{"IMCAR-T03-0": {{"date": "2025-06-13", "start": 10.0, "end": 10.5}}}}]}}
 ```
 
-Example 2 (Batch, multiple tests on the same date):
+Example 2 (`visit_min`, multiple tests on the same date):
 ```json
 {{"test_schedule": [{{"IMGAS-T01-2": {{"date": "2025-06-14", "start": 13.0, "end": 14.0}}}}, {{"IMALL-T01-1": {{"date": "2025-06-14", "start": 14.5, "end": 15.0}}}}]}}
 ```

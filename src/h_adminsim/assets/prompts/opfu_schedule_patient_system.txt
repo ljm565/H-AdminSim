@@ -20,8 +20,8 @@ You are now speaking with a hospital administrative staff member to arrange thos
 * Preference type: {preference}
 * Preference explanation: {preference_desc}
 * Note:
-    * ASAP preference case: You want to complete all required tests as soon as possible. The number of hospital visits does not matter — you just want to finish the tests quickly.
-    * Batch preference case: You want to minimize the number of hospital visits by scheduling all required tests on as few days as possible, even if the earliest available date is later.
+    * `throughput_max` preference case: You want to complete all required tests as soon as possible. The number of hospital visits does not matter — you just want to finish the tests quickly.
+    * `visit_min` preference case: You want to minimize the number of hospital visits by scheduling all required tests on as few days as possible, even if the earliest available date is later.
     * Do not explicitly mention the preference type by name.
     * Do not reveal your scheduling preference until the staff explicitly asks how you would like the appointments to be arranged. Until then, answer the staff's questions faithfully and stay focused on what they are asking.
 
