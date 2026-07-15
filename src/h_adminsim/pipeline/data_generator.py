@@ -110,7 +110,8 @@ class DataGenerator:
             ValueError: If `task` is empty or contains unknown values.
 
         Returns:
-            Information: Container holding `save_dir` and the built synthesizer(s) keyed by task name.
+            Information: Container holding the requested `tasks` set, `save_dir`, and the
+                eagerly-built `fv_synthesizer`. The follow-up synthesizer is built later in `build()`.
         """
         task, valid_tasks = list(task), {'first_visit', 'follow_up_visit'}
         unknown = set(task) - valid_tasks
@@ -126,20 +127,16 @@ class DataGenerator:
 
         # Initialize task
         _task = Information()
+        _task.update(tasks=set(task))
         if 'first_visit' in task:
             fv_synthesizer = FirstVisitDataSynthesizer(self.config)
             _task.update(
                 save_dir=fv_synthesizer.save_dir,
-                first_visit=fv_synthesizer
+                fv_synthesizer=fv_synthesizer,
             )
-        if 'follow_up_visit' in task:
-            _task.update(
-                fu_synthesizer=FollowUpDataSynthesizer(
-                    self.config, 
-                    str(_task.save_dir / 'data')
-                )
-            )
-        
+        # `fu_synthesizer` reads first-visit output at construction time, so it is
+        # built lazily in `build()` once first-visit data has been written to disk.
+
         return _task
 
 
@@ -186,7 +183,7 @@ class DataGenerator:
         data, all_resource_list, agent_data_list = None, None, None
 
         # First-visit data synthesis
-        if 'fv_synthesizer' in self.task:
+        if 'first_visit' in self.task.tasks:
             try:
                 data = self.task.fv_synthesizer.synthesize(department_info_path)
                 log(f"Data synthesis completed successfully", color=True)
@@ -195,13 +192,14 @@ class DataGenerator:
                 raise
 
         # Follow-up visit data synthesis
-        if 'fu_synthesizer' in self.task:
+        if 'follow_up_visit' in self.task.tasks:
             assert hasattr(self.config.hospital_data, 'follow_up_visit'), \
                 colorstr("red", "Config must contain a 'hospital_data.follow_up_visit' section for follow-up synthesis.")
 
             try:
-                # First-visit data already generated -> merge follow-up into existing files
-                data = self.task.fu_synthesizer.synthesize(
+                # First-visit data already written to disk -> merge follow-up into existing files
+                fu_synthesizer = FollowUpDataSynthesizer(self.config, str(self.task.save_dir / 'data'))
+                data = fu_synthesizer.synthesize(
                     sanity_check=sanity_check,
                     department_info_path=department_info_path,
                 )
