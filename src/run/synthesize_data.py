@@ -1,19 +1,11 @@
 import os
 import sys
-import random
-import numpy as np
 from sconf import Config
 from argparse import ArgumentParser
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
 from h_adminsim.pipeline import DataGenerator
-from h_adminsim.utils import log
 
-
-
-def env_setup(config):
-    random.seed(config.seed)
-    np.random.seed(config.seed)
 
 
 def load_config(config_path):
@@ -26,9 +18,6 @@ def main(args):
     config = load_config(args.config)
     config.yaml_file = args.config
     
-    # Init environment
-    env_setup(config)
-
     # Generate data
     data_generator = DataGenerator(
         task=args.type,
