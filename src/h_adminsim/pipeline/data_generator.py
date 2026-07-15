@@ -17,7 +17,7 @@ from h_adminsim.utils.filesys_utils import get_files, json_load
 
 class DataGenerator:
     def __init__(self,
-                 task: Union[str, list[str], tuple[str, ...]] = ('first_visit',),
+                 task: Union[str, list[str]] = ['first_visit'],
                  care_level: str = 'primary',
                  config: Optional[Union[str, Config]] = None):
         """
@@ -26,7 +26,7 @@ class DataGenerator:
         Otherwise, a built-in config is loaded based on `care_level`.
 
         Args:
-            task (Union[str, list[str], tuple[str, ...]], optional): Task(s) to synthesize. Defaults to ('first_visit',).
+            task (Union[str, list[str]], optional): Task(s) to synthesize. Defaults to ['first_visit'].
             care_level (str, optional): Care level preset used when `config` is None. One of 'primary', 'secondary', 'tertiary'. Defaults to 'primary'.
             config (Optional[Union[str, Config]], optional): A file path or Config instance. Defaults to None.
 
@@ -49,19 +49,16 @@ class DataGenerator:
 
         ## Task type
         if isinstance(task, str):
-            task = (task,)
-        elif not isinstance(task, (list, tuple)):
+            task = [task]
+        elif not isinstance(task, list):
             raise TypeError(colorstr("red", f'Invalid task type: {type(task).__name__}'))    
 
         # Initialize necessary information
         self.config = self.load_config(config)
-        self.task = self.__init_task(task)
+        self.task = self.__task_builder(task)
         self.__env_setup(self.config)
         self.fhir_url = self.config.get('fhir_url', None)
-        if 'first_visit' in self.task:
-            self.fv_synthesizer = FirstVisitDataSynthesizer(self.config)
-            self.save_dir = self.fv_synthesizer.save_dir
-            log(f'Data saving directory: {colorstr(self.save_dir)}')
+        log(f'Data saving directory: {colorstr(self.task.save_dir)}')
 
         
     def load_config(self, config: Optional[Union[str, Config]] = None) -> Config:
@@ -101,31 +98,47 @@ class DataGenerator:
         )
     
 
-    def __init_task(self, task: list[str]) -> set:
+    def __task_builder(self, task: list[str]) -> Information:
         """
-        Initialize task set.
+        Build the synthesizers for the requested tasks.
+        `follow_up_visit` cannot run standalone, so `first_visit` is added automatically when missing.
 
         Args:
-            task (list[str]): Task list for synthesizing data.
+            task (list[str]): Task list for synthesizing data. Valid values: 'first_visit', 'follow_up_visit'.
 
         Raises:
-            ValueError: If none of task is specified.
+            ValueError: If `task` is empty or contains unknown values.
 
         Returns:
-            set: Initialized task set.
+            Information: Container holding `save_dir` and the built synthesizer(s) keyed by task name.
         """
-        _task = set()
-        if 'first_visit' in task:
-            _task.add('first_visit')
-        if 'follow_up_visit' in task:
-            _task.add('follow_up_visit')
-        
-        if 'follow_up_visit' in _task and 'first_visit' not in _task:
-            log("'follow_up_visit' task requires 'first_visit' task. Adding 'first_visit' to task set.", level="warning")
-            _task.add('first_visit')
+        task, valid_tasks = list(task), {'first_visit', 'follow_up_visit'}
+        unknown = set(task) - valid_tasks
 
-        if not _task:
-            raise ValueError(colorstr("red", f"No valid task specified. Got: {task}. Expected 'first_visit' and/or 'follow_up_visit'."))
+        # Check task validity
+        if not task or unknown:
+            raise ValueError(colorstr("red", f"Invalid task(s): {unknown}. Expected {valid_tasks}."))
+        
+        # `follow_up_visit` cannot run standalone; it requires first_visit data
+        if 'follow_up_visit' in task and 'first_visit' not in task:
+            log("'follow_up_visit' task requires 'first_visit' task. Adding 'first_visit' to task set.", level="warning")
+            task.append('first_visit')
+
+        # Initialize task
+        _task = Information()
+        if 'first_visit' in task:
+            fv_synthesizer = FirstVisitDataSynthesizer(self.config)
+            _task.update(
+                save_dir=fv_synthesizer.save_dir,
+                first_visit=fv_synthesizer
+            )
+        if 'follow_up_visit' in task:
+            _task.update(
+                fu_synthesizer=FollowUpDataSynthesizer(
+                    self.config, 
+                    str(_task.save_dir / 'data')
+                )
+            )
         
         return _task
 
@@ -145,7 +158,6 @@ class DataGenerator:
               sanity_check: bool = True,
               convert_to_fhir: bool = False,
               build_agent_data: bool = True,
-              source_data_dir: Optional[str] = None,
               department_info_path: Optional[str] = None,
               symptom_file_path: Optional[str] = None) -> Information:
         """
@@ -159,8 +171,6 @@ class DataGenerator:
             sanity_check (bool, optional): Whether to perform validation checks. Defaults to True.
             convert_to_fhir (bool, optional): If True, converts data into FHIR resources. Defaults to False.
             build_agent_data (bool, optional): If True, generates agent simulation data. Defaults to True.
-            source_data_dir (Optional[str], optional): Path to existing hospital data for follow-up synthesis.
-                If None, uses `self.save_dir / 'data'`. Defaults to None.
             department_info_path (Optional[str], optional): Path to a file containing department information. If provided, it will be used to load names. 
                                                             Defaults to None.
             symptom_file_path (Optional[str], optional): Path to the symptom file used during agent construction. Defaults to None.
@@ -176,25 +186,22 @@ class DataGenerator:
         data, all_resource_list, agent_data_list = None, None, None
 
         # First-visit data synthesis
-        if 'first_visit' in self.task:
+        if 'fv_synthesizer' in self.task:
             try:
-                data = self.fv_synthesizer.synthesize(department_info_path)
+                data = self.task.fv_synthesizer.synthesize(department_info_path)
                 log(f"Data synthesis completed successfully", color=True)
             except Exception:
                 log("Data synthesis failed.", level="error")
                 raise
 
         # Follow-up visit data synthesis
-        if 'follow_up_visit' in self.task:
+        if 'fu_synthesizer' in self.task:
             assert hasattr(self.config.hospital_data, 'follow_up_visit'), \
                 colorstr("red", "Config must contain a 'hospital_data.follow_up_visit' section for follow-up synthesis.")
 
             try:
                 # First-visit data already generated -> merge follow-up into existing files
-                if source_data_dir is None:
-                    source_data_dir = str(self.save_dir / 'data')
-                followup_synthesizer = FollowUpDataSynthesizer(self.config, source_data_dir)
-                data = followup_synthesizer.synthesize(
+                data = self.task.fu_synthesizer.synthesize(
                     sanity_check=sanity_check,
                     department_info_path=department_info_path,
                 )
@@ -208,7 +215,7 @@ class DataGenerator:
             converter = DataConverter(self.config)
             try:
                 all_resource_list = converter(
-                    self.save_dir / 'fhir_data', 
+                    self.task.save_dir / 'fhir_data', 
                     sanity_check
                 )
                 log(f"Data FHIR conversion completed successfully", color=True)
@@ -221,7 +228,7 @@ class DataGenerator:
             builder = AgentDataBuilder(self.config)
             try:
                 agent_data_list = builder(
-                    self.save_dir / 'agent_data',
+                    self.task.save_dir / 'agent_data',
                     symptom_file_path,
                 )
                 log(f"Agent data generation completed successfully", color=True)
