@@ -17,13 +17,45 @@ from h_adminsim.utils.filesys_utils import get_files, json_load
 
 class DataGenerator:
     def __init__(self,
-                 task: Optional[list[str]] = None,
+                 task: Union[str, list[str], tuple[str, ...]] = ('first_visit',),
                  care_level: str = 'primary',
                  config: Optional[Union[str, Config]] = None):
+        """
+        Initialize the data generator.
+        If `config` is provided, `care_level` is ignored and the config is used as-is.
+        Otherwise, a built-in config is loaded based on `care_level`.
 
-        # Initialize
-        self.config = self.load_config(care_level, config)
-        self.task = self.__init_task(task or ['first_visit'])
+        Args:
+            task (Union[str, list[str], tuple[str, ...]], optional): Task(s) to synthesize. Defaults to ('first_visit',).
+            care_level (str, optional): Care level preset used when `config` is None. One of 'primary', 'secondary', 'tertiary'. Defaults to 'primary'.
+            config (Optional[Union[str, Config]], optional): A file path or Config instance. Defaults to None.
+
+        Raises:
+            ValueError: If `care_level` is invalid.
+            TypeError: If `task` is not a str, list, or tuple.
+        """
+
+        # Initialize variable conditions
+        ## Configuration type
+        if config is not None:
+            if care_level != 'primary':     # Non-default care_level is silently overridden by config
+                log(f'care_level={care_level} is ignored because config is provided.', level='warning')
+            self._care_level = None
+        else:
+            valid_levels = ('primary', 'secondary', 'tertiary')
+            if care_level not in valid_levels:
+                raise ValueError(colorstr("red", f"Invalid care_level: '{care_level}'. Expected one of: {valid_levels}."))
+            self._care_level = care_level
+
+        ## Task type
+        if isinstance(task, str):
+            task = (task,)
+        elif not isinstance(task, (list, tuple)):
+            raise TypeError(colorstr("red", f'Invalid task type: {type(task).__name__}'))    
+
+        # Initialize necessary information
+        self.config = self.load_config(config)
+        self.task = self.__init_task(task)
         self.__env_setup(self.config)
         self.fhir_url = self.config.get('fhir_url', None)
         if 'first_visit' in self.task:
@@ -32,18 +64,15 @@ class DataGenerator:
             log(f'Data saving directory: {colorstr(self.save_dir)}')
 
         
-    def load_config(self, care_level: str, config: Optional[Union[str, Config]]) -> Config:
+    def load_config(self, config: Optional[Union[str, Config]] = None) -> Config:
         """
         Load a configuration object.
-
-        If `config` is None, a default configuration is loaded based on the given
-        `care_level`. If `config` is a string, it is treated as a file path and
-        loaded as a Config object. If a Config instance is provided, it is returned
-        as-is.
+        If `config` is None, a default configuration is loaded based on the given `self._care_level`. 
+        If `config` is a string, it is treated as a file path and loaded as a Config object. 
+        If a Config instance is provided, it is returned as-is.
 
         Args:
-            care_level (str): Care level used to select the default config.
-            config (Optional[Union[str, Config]]): A file path or Config instance.
+            config (Optional[Union[str, Config]]): A file path or Config instance. Defaults to None.
 
         Raises:
             TypeError: If `config` is not None, str, or Config.
@@ -53,10 +82,8 @@ class DataGenerator:
         """
         # Case 1: config is None -> load built-in config based on care_level
         if config is None:
-            log(f"No config provided; using default {care_level} config.", "warning")
-            assert care_level in ['primary', 'secondary', 'tertiary'], \
-                colorstr("red", f"Invalid care_level: '{care_level}'. Expected one of: primary, secondary, tertiary.")
-            default_path = str(resources.files("h_adminsim.assets.configs").joinpath(f"data4{care_level}.yaml"))
+            log(f"No config provided; using default {self._care_level} config.", "warning")
+            default_path = str(resources.files("h_adminsim.assets.configs").joinpath(f"data4{self._care_level}.yaml"))
             return Config(default_path)
 
         # Case 2: config is a string path
@@ -70,7 +97,7 @@ class DataGenerator:
 
         # Otherwise error
         raise TypeError(
-            log(f"Invalid config: expected None, str, or Config, got {type(config).__name__}", "error")
+            colorstr("red", f"Invalid config: expected None, str, or Config, got {type(config).__name__}")
         )
     
 
@@ -80,6 +107,9 @@ class DataGenerator:
 
         Args:
             task (list[str]): Task list for synthesizing data.
+
+        Raises:
+            ValueError: If none of task is specified.
 
         Returns:
             set: Initialized task set.
@@ -93,6 +123,9 @@ class DataGenerator:
         if 'follow_up_visit' in _task and 'first_visit' not in _task:
             log("'follow_up_visit' task requires 'first_visit' task. Adding 'first_visit' to task set.", level="warning")
             _task.add('first_visit')
+
+        if not _task:
+            raise ValueError(colorstr("red", f"No valid task specified. Got: {task}. Expected 'first_visit' and/or 'follow_up_visit'."))
         
         return _task
 
