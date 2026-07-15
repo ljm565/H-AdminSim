@@ -20,17 +20,17 @@ from h_adminsim.utils.random_utils import (
 
 
 class DataSynthesizer:
-    def __init__(self, config, existint_data_dir: Optional[str] = None):
+    def __init__(self, config, existing_data_dir: Optional[str] = None):
         # Initialize configuration, path and save directory
         self.config = config
         self._n = self.config.hospital_data.hospital_n
-        if existint_data_dir is None:
+        if existing_data_dir is None:
             self.save_dir = make_project_dir(self.config)
             self.data_save_dir = self.save_dir / 'data'
             yaml_save(self.save_dir / 'args.yaml', self.config)
             os.makedirs(self.data_save_dir, exist_ok=True)
         else:
-            self.data_save_dir = existint_data_dir
+            self.data_save_dir = existing_data_dir
             os.makedirs(self.data_save_dir, exist_ok=True)
         getcontext().prec = 10
         
