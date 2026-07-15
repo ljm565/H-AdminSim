@@ -147,3 +147,6 @@ class Information:
     def update(self, **kwargs):
         self.__dict__.update(kwargs)
         return self
+    
+    def __contains__(self, key):
+        return key in self.__dict__
