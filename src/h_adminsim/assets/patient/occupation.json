@@ -1,0 +1,1682 @@
+{
+    "Office Worker": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.8,
+                "explanation": "Uses a single day of paid leave and prefers to finish everything in one visit."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Accountant": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.8,
+                "explanation": "Salaried with limited leave; consolidates errands into one visit."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Lawyer": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.8,
+                "explanation": "Billable hours are costly to repeat, so one consolidated visit is preferred."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.55,
+                "detail": [
+                    "am"
+                ],
+                "explanation": "Court sessions typically run in the morning."
+            }
+        }
+    },
+    "Software Engineer": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.7,
+                "explanation": "Prefers one visit to avoid repeated context switching from work."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Data Analyst": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.7,
+                "explanation": "Desk-bound and salaried; prefers to handle it all in one leave day."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Financial Advisor": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.75,
+                "explanation": "Client meetings are hard to reschedule, so a single visit is preferred."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Insurance Agent": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.7,
+                "explanation": "Takes one day off to avoid disrupting client appointments repeatedly."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Marketing Manager": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.75,
+                "explanation": "Meeting-heavy schedule; prefers a single day away from the office."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Human Resources Manager": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.75,
+                "explanation": "Prefers to use one day of leave rather than leaving repeatedly."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Architect": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.7,
+                "explanation": "Prefers one visit but sometimes has afternoon site inspections."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.4,
+                "detail": [
+                    "pm"
+                ],
+                "explanation": "Site visits are often scheduled in the afternoon."
+            }
+        }
+    },
+    "Civil Engineer": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.7,
+                "explanation": "Salaried; prefers one visit despite occasional field days."
+            },
+            "unavailable": {
+                "type": "day",
+                "prob": 0.4,
+                "detail": [
+                    1,
+                    2
+                ],
+                "explanation": "Travels to project sites a couple of days most weeks."
+            }
+        }
+    },
+    "Bank Teller": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.7,
+                "explanation": "Fixed banking hours make repeat visits costly; prefers one leave day."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Administrative Assistant": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.75,
+                "explanation": "Desk role with limited leave; prefers to finish in one visit."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Editor": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.7,
+                "explanation": "Deadline-driven; prefers to take a single day and be done."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Librarian": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.75,
+                "explanation": "Regular weekday hours; prefers to consolidate into one visit."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Museum Curator": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.7,
+                "explanation": "Structured weekday role; prefers a single leave day."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Civil Servant": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.8,
+                "explanation": "Uses formal leave and prefers to complete everything in one visit."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Government Clerk": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.8,
+                "explanation": "Fixed office hours and formal leave; prefers one visit."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "IT Support Technician": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.7,
+                "explanation": "Prefers one visit to minimize gaps in support coverage."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Network Administrator": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.7,
+                "explanation": "Prefers one visit; occasional off-hours maintenance windows."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.4,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "Maintenance windows can block either half of certain days."
+            }
+        }
+    },
+    "Recruiter": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.7,
+                "explanation": "Interview-heavy days; prefers to take a single leave day."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Data Entry Clerk": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.8,
+                "explanation": "Fixed shift at a workstation; prefers one leave day."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.6,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "Bound to a fixed shift covering one half of the day."
+            }
+        }
+    },
+    "Call Center Agent": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.8,
+                "explanation": "Hard to leave the desk mid-shift; prefers one full leave day."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.7,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "Locked to a fixed call-center shift covering one half of the day."
+            }
+        }
+    },
+    "Dentist": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.7,
+                "explanation": "Booked patient columns are costly to break; prefers one visit."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Physical Therapist": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.7,
+                "explanation": "Patient sessions are pre-booked; prefers a single leave day."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Veterinarian": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.7,
+                "explanation": "Appointment-driven clinic; prefers to consolidate into one visit."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Pharmacist": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.7,
+                "explanation": "Fixed pharmacy hours; prefers one leave day."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.5,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "Covers a fixed pharmacy shift on one half of the day."
+            }
+        }
+    },
+    "Physician": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.7,
+                "explanation": "Clinic and rounds are hard to repeat; prefers one visit."
+            },
+            "unavailable": {
+                "type": "day",
+                "prob": 0.4,
+                "detail": [
+                    1,
+                    2
+                ],
+                "explanation": "On-call duty blocks a day or two most weeks."
+            }
+        }
+    },
+    "University Professor": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.7,
+                "explanation": "Fixed lecture slots; prefers to consolidate into one visit."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.45,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "Lectures occupy one half of certain teaching days."
+            }
+        }
+    },
+    "School Teacher": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.8,
+                "explanation": "Teaches through school hours; prefers a single leave day."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.7,
+                "detail": [
+                    "am"
+                ],
+                "explanation": "Classes run through the morning school session."
+            }
+        }
+    },
+    "Kindergarten Teacher": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.8,
+                "explanation": "Supervises children through the morning; prefers one leave day."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.7,
+                "detail": [
+                    "am"
+                ],
+                "explanation": "Responsible for children through the morning session."
+            }
+        }
+    },
+    "Graphic Designer": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": null,
+                "prob": null,
+                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Web Developer": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": null,
+                "prob": null,
+                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Translator": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": null,
+                "prob": null,
+                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Writer": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": null,
+                "prob": null,
+                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Painter (Artist)": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": null,
+                "prob": null,
+                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Photographer": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": null,
+                "prob": null,
+                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+            },
+            "unavailable": {
+                "type": "day",
+                "prob": 0.5,
+                "detail": [
+                    1,
+                    2
+                ],
+                "explanation": "Books shoots on a couple of days most weeks."
+            }
+        }
+    },
+    "Actor": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": null,
+                "prob": null,
+                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+            },
+            "unavailable": {
+                "type": "day",
+                "prob": 0.5,
+                "detail": [
+                    1,
+                    2
+                ],
+                "explanation": "Rehearsal and shooting days block a day or two most weeks."
+            }
+        }
+    },
+    "Musician": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.6,
+                "explanation": "Daytime is usually free, so short repeat visits are easy."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.6,
+                "detail": [
+                    "pm"
+                ],
+                "explanation": "Performs and rehearses in the afternoon and evening."
+            }
+        }
+    },
+    "Tutor": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": null,
+                "prob": null,
+                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.6,
+                "detail": [
+                    "pm"
+                ],
+                "explanation": "Lessons are concentrated in the afternoon and evening."
+            }
+        }
+    },
+    "Nurse": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Can step out briefly between shifts but cannot be away long."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.7,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "Rotating shifts block either the morning or afternoon."
+            }
+        }
+    },
+    "Paramedic": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Works long shifts; prefers short visits squeezed between them."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.7,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "Long rotating shifts block one half of the day."
+            }
+        }
+    },
+    "Home Health Aide": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Moves between client homes; prefers short, frequent visits."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.6,
+                "detail": [
+                    "am"
+                ],
+                "explanation": "Morning client care blocks the earlier half of the day."
+            }
+        }
+    },
+    "Caregiver": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Tied to a care recipient's routine; prefers short visits."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.6,
+                "detail": [
+                    "am"
+                ],
+                "explanation": "Morning caregiving duties block the earlier half of the day."
+            }
+        }
+    },
+    "Retail Salesperson": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Works a fixed shift but can slip out briefly; prefers short visits."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.6,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "On the sales floor for one half of the day."
+            }
+        }
+    },
+    "Cashier": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Fixed register shift; prefers short visits around it."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.6,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "Covers a register shift for one half of the day."
+            }
+        }
+    },
+    "Shop Owner": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.8,
+                "explanation": "Must mind the store, so short, frequent visits are preferred."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.5,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "Has to keep the store open during one half of the day."
+            }
+        }
+    },
+    "Waiter": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Free in the morning; prefers short visits before service."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.7,
+                "detail": [
+                    "pm"
+                ],
+                "explanation": "Lunch and dinner service occupy the afternoon and evening."
+            }
+        }
+    },
+    "Chef": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Kitchen prep starts midday; prefers short morning visits."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.7,
+                "detail": [
+                    "pm"
+                ],
+                "explanation": "Kitchen service runs through the afternoon and evening."
+            }
+        }
+    },
+    "Barista": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Morning rush requires presence; prefers short afternoon visits."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.6,
+                "detail": [
+                    "am"
+                ],
+                "explanation": "The morning coffee rush requires being on shift."
+            }
+        }
+    },
+    "Bartender": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Works nights and is free by day; prefers short daytime visits."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.7,
+                "detail": [
+                    "pm"
+                ],
+                "explanation": "Night bar shifts block the afternoon and evening."
+            }
+        }
+    },
+    "Hotel Receptionist": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Desk is covered in shifts; prefers short visits between them."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.7,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "Front-desk shifts cover one half of the day."
+            }
+        }
+    },
+    "Hairdresser": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Can book around clients; prefers short, flexible visits."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Barber": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Self-schedules between clients; prefers short visits."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Esthetician": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Appointment gaps allow short, frequent visits."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Real Estate Agent": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.6,
+                "explanation": "Self-schedules around showings; short visits fit best."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Taxi Driver": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Sets own hours and can pause driving; prefers short visits."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Construction Worker": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.8,
+                "explanation": "On site every day; prefers to come often but stay briefly."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.7,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "On-site work occupies one half of the working day."
+            }
+        }
+    },
+    "Electrician": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Job calls fill the day; prefers short visits between them."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.6,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "Service calls block one half of the day."
+            }
+        }
+    },
+    "Plumber": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Moves between job sites; prefers short, frequent visits."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.6,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "Service calls block one half of the day."
+            }
+        }
+    },
+    "Carpenter": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "On-site work all day; prefers short visits."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.6,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "On-site work covers one half of the day."
+            }
+        }
+    },
+    "Welder": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Workshop hours are fixed; prefers short visits."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.6,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "Workshop shift covers one half of the day."
+            }
+        }
+    },
+    "Housepainter": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Paints on site by day; prefers short visits."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.6,
+                "detail": [
+                    "am"
+                ],
+                "explanation": "Painting work fills the morning while the light is best."
+            }
+        }
+    },
+    "Auto Mechanic": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Garage bookings fill the day; prefers short visits."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.6,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "Garage shift covers one half of the day."
+            }
+        }
+    },
+    "Machinist": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Runs machines on a fixed shift; prefers short visits."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.7,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "Machine shift covers one half of the day."
+            }
+        }
+    },
+    "Factory Worker": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.8,
+                "explanation": "Locked to a production shift; prefers short visits around it."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.8,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "Fixed production shift covers one half of the day."
+            }
+        }
+    },
+    "Assembly Line Worker": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.8,
+                "explanation": "Line work is rigid; prefers short visits between shifts."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.8,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "Assembly-line shift covers one half of the day."
+            }
+        }
+    },
+    "Warehouse Worker": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Shift-based picking; prefers short visits."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.7,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "Warehouse shift covers one half of the day."
+            }
+        }
+    },
+    "Forklift Operator": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Tied to warehouse shift; prefers short visits."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.7,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "Warehouse shift covers one half of the day."
+            }
+        }
+    },
+    "Gardener": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Outdoor work in the morning; prefers short afternoon visits."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.6,
+                "detail": [
+                    "am"
+                ],
+                "explanation": "Groundskeeping is done in the cooler morning hours."
+            }
+        }
+    },
+    "Landscaper": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Crew work by day; prefers short visits."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.6,
+                "detail": [
+                    "am"
+                ],
+                "explanation": "Outdoor crew work fills the morning."
+            }
+        }
+    },
+    "Truck Driver": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.6,
+                "explanation": "On multi-day hauls, so a single visit while home is preferred."
+            },
+            "unavailable": {
+                "type": "day",
+                "prob": 0.8,
+                "detail": [
+                    2,
+                    3
+                ],
+                "explanation": "Long-haul routes keep the driver away two to three days most weeks."
+            }
+        }
+    },
+    "Delivery Driver": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Runs a route by day; prefers short visits around it."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.6,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "Delivery route covers one half of the day."
+            }
+        }
+    },
+    "Bus Driver": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Drives a shift; prefers short visits between runs."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.7,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "Driving shift covers one half of the day."
+            }
+        }
+    },
+    "Train Conductor": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.6,
+                "explanation": "Route rosters include overnights; prefers short visits."
+            },
+            "unavailable": {
+                "type": "day",
+                "prob": 0.6,
+                "detail": [
+                    1,
+                    2
+                ],
+                "explanation": "Route rosters keep the conductor away a day or two most weeks."
+            }
+        }
+    },
+    "Flight Attendant": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.6,
+                "explanation": "Away on multi-day trips, so one visit while home is preferred."
+            },
+            "unavailable": {
+                "type": "day",
+                "prob": 0.8,
+                "detail": [
+                    2,
+                    3
+                ],
+                "explanation": "Flight rotations keep the crew away two to three days most weeks."
+            }
+        }
+    },
+    "Pilot": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.6,
+                "explanation": "Multi-day rotations make a single visit while home preferable."
+            },
+            "unavailable": {
+                "type": "day",
+                "prob": 0.8,
+                "detail": [
+                    2,
+                    3
+                ],
+                "explanation": "Flight rotations keep the pilot away two to three days most weeks."
+            }
+        }
+    },
+    "Sailor": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.55,
+                "explanation": "At sea for long stretches; strongly prefers one visit ashore."
+            },
+            "unavailable": {
+                "type": "day",
+                "prob": 0.85,
+                "detail": [
+                    2,
+                    3
+                ],
+                "explanation": "Voyages keep the sailor away up to three days most weeks."
+            }
+        }
+    },
+    "Fisherman": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.6,
+                "explanation": "Out at sea early; prefers short visits on shore days."
+            },
+            "unavailable": {
+                "type": "day",
+                "prob": 0.7,
+                "detail": [
+                    2,
+                    3
+                ],
+                "explanation": "Fishing trips keep the crew at sea two to three days most weeks."
+            }
+        }
+    },
+    "Miner": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.65,
+                "explanation": "Remote-site rosters; prefers short visits on off days."
+            },
+            "unavailable": {
+                "type": "day",
+                "prob": 0.7,
+                "detail": [
+                    2,
+                    3
+                ],
+                "explanation": "Remote rosters keep the miner on site two to three days most weeks."
+            }
+        }
+    },
+    "Oil Rig Worker": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.55,
+                "explanation": "Offshore rotations make one visit while home strongly preferred."
+            },
+            "unavailable": {
+                "type": "day",
+                "prob": 0.85,
+                "detail": [
+                    2,
+                    3
+                ],
+                "explanation": "Offshore rotations keep the worker away up to three days most weeks."
+            }
+        }
+    },
+    "Field Sales Representative": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.6,
+                "explanation": "Travels to clients; prefers one visit when back at base."
+            },
+            "unavailable": {
+                "type": "day",
+                "prob": 0.6,
+                "detail": [
+                    2,
+                    3
+                ],
+                "explanation": "Client travel keeps the rep on the road two to three days most weeks."
+            }
+        }
+    },
+    "Freelance Consultant": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.6,
+                "explanation": "Travels to client sites; prefers one visit between trips."
+            },
+            "unavailable": {
+                "type": "day",
+                "prob": 0.5,
+                "detail": [
+                    1,
+                    2
+                ],
+                "explanation": "Client engagements require travel a day or two most weeks."
+            }
+        }
+    },
+    "Tour Guide": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.6,
+                "explanation": "Leads tours on set days; prefers short visits otherwise."
+            },
+            "unavailable": {
+                "type": "day",
+                "prob": 0.6,
+                "detail": [
+                    1,
+                    2
+                ],
+                "explanation": "Guided tours block a day or two most weeks."
+            }
+        }
+    },
+    "Journalist": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.6,
+                "explanation": "Field assignments are unpredictable; short visits fit best."
+            },
+            "unavailable": {
+                "type": "day",
+                "prob": 0.5,
+                "detail": [
+                    1,
+                    2
+                ],
+                "explanation": "Field reporting blocks a day or two most weeks."
+            }
+        }
+    },
+    "Farmer": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Morning farm chores; prefers short afternoon visits."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.7,
+                "detail": [
+                    "am"
+                ],
+                "explanation": "Farm chores fill the early morning."
+            }
+        }
+    },
+    "Police Officer": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Works rotating shifts; prefers short visits between them."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.7,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "Rotating patrol shifts block one half of the day."
+            }
+        }
+    },
+    "Firefighter": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Long on-duty shifts; prefers short visits when off."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.7,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "Long on-duty shifts block one half of the day."
+            }
+        }
+    },
+    "Security Guard": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Night-shift guard sleeps by day; prefers short afternoon visits."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.7,
+                "detail": [
+                    "am"
+                ],
+                "explanation": "Night shifts mean sleeping through the morning."
+            }
+        }
+    },
+    "Soldier": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.6,
+                "explanation": "Duty rosters limit free days, so one visit is preferred."
+            },
+            "unavailable": {
+                "type": "day",
+                "prob": 0.7,
+                "detail": [
+                    2,
+                    3
+                ],
+                "explanation": "Duty and training keep the soldier away two to three days most weeks."
+            }
+        }
+    },
+    "Mail Carrier": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Delivers in the morning; prefers short afternoon visits."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.7,
+                "detail": [
+                    "am"
+                ],
+                "explanation": "Mail delivery fills the morning route."
+            }
+        }
+    },
+    "Social Worker": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "visit_min",
+                "prob": 0.7,
+                "explanation": "Salaried but does field visits; prefers a single leave day."
+            },
+            "unavailable": {
+                "type": "day",
+                "prob": 0.4,
+                "detail": [
+                    1,
+                    2
+                ],
+                "explanation": "Home visits take the worker into the field a day or two most weeks."
+            }
+        }
+    },
+    "Childcare Worker": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Watches children while parents work; prefers short visits."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.7,
+                "detail": [
+                    "am"
+                ],
+                "explanation": "Children are in care through the morning."
+            }
+        }
+    },
+    "Nanny": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.7,
+                "explanation": "Tied to a family's daytime routine; prefers short visits."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.6,
+                "detail": [
+                    "am"
+                ],
+                "explanation": "On duty with the family through the morning."
+            }
+        }
+    },
+    "Sports Coach": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": "stay_min",
+                "prob": 0.6,
+                "explanation": "Runs afternoon practices; prefers short morning visits."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.6,
+                "detail": [
+                    "pm"
+                ],
+                "explanation": "Team practice runs in the afternoon."
+            }
+        }
+    },
+    "Homemaker": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": null,
+                "prob": null,
+                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Retiree": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": null,
+                "prob": null,
+                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "Unemployed": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": null,
+                "prob": null,
+                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+            },
+            "unavailable": {
+                "type": null,
+                "prob": null,
+                "detail": [],
+                "explanation": "No fixed weekly constraint; can generally attend at any time."
+            }
+        }
+    },
+    "University Student": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": null,
+                "prob": null,
+                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.5,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "Class timetable blocks one half of certain days."
+            }
+        }
+    },
+    "Graduate Student": {
+        "test_schedule_preference": {
+            "preference": {
+                "type": null,
+                "prob": null,
+                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+            },
+            "unavailable": {
+                "type": "half_day",
+                "prob": 0.5,
+                "detail": [
+                    "am",
+                    "pm"
+                ],
+                "explanation": "Lab and class hours block one half of certain days."
+            }
+        }
+    }
+}
