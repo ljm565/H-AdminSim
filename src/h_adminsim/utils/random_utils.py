@@ -360,3 +360,23 @@ def generate_random_specialty(department: str,
     if verbose:
         log(f'No matched department {department}. `{{PLACEHOLDER}}` string will return.', 'warning')
     return '{PLACEHOLDER}', '{PLACEHOLDER}'
+
+
+
+def generate_random_occupation(occupation_file_path: Optional[str] = None) -> str:
+    """
+    Generate a random occupation from a predefined list of occupations. 
+
+    Args:
+        occupation_file_path (Optional[str], optional): Path to the JSON file containing a list of occupations. If not provided, a default path is used.
+                                                        Defaults to None.
+    Returns:
+        str: A randomly selected occupation.
+    """
+    if occupation_file_path == None:
+        occupation_file_path = str(resources.files("h_adminsim.assets.occupation").joinpath("occupation.json"))
+
+    if registry.OCCUPATION is None:
+        registry.OCCUPATION = json_load(occupation_file_path)
+    
+    return random.choice(registry.OCCUPATION)
