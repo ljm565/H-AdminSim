@@ -423,3 +423,55 @@ def generate_random_occupation_preference(occupation: str,
         other_candidates,
         [1 / len(other_candidates)] * len(other_candidates)
     )
+
+
+def generate_random_occupation_unavailable(occupation: str,
+                                           dates: list[str],
+                                           occupation_file_path: Optional[str] = None) -> dict:
+    """
+    Generate unavailable schedule constraints based on occupation data.
+
+    Args:
+        occupation (str): Occupation name to look up.
+        dates (list[str]): Simulation date range.
+        occupation_file_path (Optional[str], optional): Path to the JSON file containing occupation data.
+                                                        If not provided, a default path is used.
+                                                        Defaults to None.
+
+    Returns:
+        dict: Unavailable schedule constraint.
+    """
+    if occupation_file_path == None:
+        occupation_file_path = str(resources.files("h_adminsim.assets.patient").joinpath("occupation.json"))
+
+    if registry.OCCUPATION is None:
+        registry.OCCUPATION = json_load(occupation_file_path)
+
+    unavailable_info = registry.OCCUPATION[occupation]['test_schedule_preference']['unavailable']
+    unavailable_type = unavailable_info['type']
+    unavailable_prob = unavailable_info['prob']
+    unavailable_detail = unavailable_info['detail']
+    explanation = unavailable_info['explanation']
+
+    unavailable = {
+        'type': None,
+        'day': [],
+        'half_day': None,
+        'explanation': explanation,
+    }
+
+    if unavailable_type is None or random.random() > unavailable_prob:
+        return unavailable
+
+    if unavailable_type == 'day':
+        scale = len(dates) / 7
+        min_day = unavailable_detail[0] * scale
+        max_day = unavailable_detail[1] * scale
+        unavailable_day_n = int(random.uniform(min_day, max_day))
+        unavailable['type'] = 'day'
+        unavailable['day'] = sorted(random.sample(dates, min(unavailable_day_n, len(dates))))
+    elif unavailable_type == 'half_day':
+        unavailable['type'] = 'half_day'
+        unavailable['half_day'] = random.choice(unavailable_detail)
+
+    return unavailable

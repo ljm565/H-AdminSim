@@ -17,6 +17,7 @@ from h_adminsim.utils.random_utils import (
     generate_random_prob,
     generate_random_code_with_prob,
     generate_random_occupation_preference,
+    generate_random_occupation_unavailable,
 )
 
 
@@ -413,6 +414,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         fixed_test_schedule = hospital_data['test']
         code_to_test = {t['code']: t['name'] for test_list in fixed_test_schedule.values() for t in test_list}
         hospital_time_segments = convert_time_to_segment(start_hour, end_hour, interval_hour)
+        dates = generate_date_range(metadata['start_date'], metadata['days'])
 
         # Extract hospital data
         doctor_info = hospital_data['doctor']
@@ -508,6 +510,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         
             preference = generate_random_occupation_preference(occupation, preference_candidates)
             preference_rank = DataSynthesizer.second_preference_generator(preference, visit_type)
+            unavailable = generate_random_occupation_unavailable(occupation, dates)
 
             if include_consultation:
                 last_time = max(
@@ -566,6 +569,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                     'date': date,
                     'schedule': appointment,
                     'preference': preference_rank,
+                    'unavailable': unavailable,
                     'symptom_level': symptom_level,
                     'required_tests': combination,
                     'gender': gender,
