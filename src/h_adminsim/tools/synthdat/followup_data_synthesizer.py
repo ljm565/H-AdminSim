@@ -15,7 +15,7 @@ from h_adminsim.utils.common_utils import *
 from h_adminsim.utils.filesys_utils import *
 from h_adminsim.utils.random_utils import (
     generate_random_prob,
-    generate_random_code_with_prob,    
+    generate_random_code_with_prob,
 )
 
 
@@ -422,6 +422,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         fu_config = config.hospital_data.follow_up_visit
         cross_dept_prob = fu_config.cross_department_test_prob
         include_consultation = fu_config.get('include_consultation', True)
+        preference_candidates = fu_config.preference.type
 
         # Collect vacant test schedules
         vacant_test_schedules = {}
@@ -475,15 +476,15 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         # Generate follow-up patient profiles based on the generated test combinations and merge them into patient_info
         for patient, infos in patient_info.items():
             # Initialize necessary info variables
-            gender, telecom, birth_date, identifier, address, symptom_level, department, doctor, prev_end_iso = \
-                None, None, None, None, None, None, None, None, None
+            gender, telecom, birth_date, identifier, address, occupation, symptom_level, department, doctor, prev_end_iso = \
+                None, None, None, None, None, None, None, None, None, None
             
             # Find the first-visit info
             for info in infos:
                 if info['visit_type'] == 'first_visit':
                     # Basic demographic info
-                    gender, telecom, birth_date, identifier, address = \
-                        info['gender'], info['telecom'], info['birthDate'], info['identifier'], info['address']
+                    gender, telecom, birth_date, identifier, address, occupation = \
+                        info['gender'], info['telecom'], info['birthDate'], info['identifier'], info['address'], info['occupation']
 
                     # Basic first-visit info
                     symptom_level, department, doctor = info['symptom_level'], info['department'], info['attending_physician']
@@ -492,7 +493,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                     prev_end_iso = get_iso_time(info['schedule'][1], info['date'])
                     break
 
-            assert all(v is not None for v in [gender, telecom, birth_date, identifier, address, symptom_level, department, doctor, prev_end_iso]), \
+            assert all(v is not None for v in [gender, telecom, birth_date, identifier, address, occupation, symptom_level, department, doctor, prev_end_iso]), \
                 colorstr("red", f"Missing required first-visit info for patient {patient}: ")
             
             # Make random test combination
@@ -503,10 +504,28 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                 log(f"Skipping follow-up for patient {patient}: no valid test combination could be built", level='warning')
                 continue
             duration = int(Decimal(str(1)) / Decimal(str(doctor_info[doctor]['capacity_per_hour'])) / Decimal(str(interval_hour)))
-            preference = generate_random_code_with_prob(
-                fu_config.preference.type,
-                fu_config.preference.probs
-            )
+            
+            # Generate preference rank based on occupation
+            if registry.OCCUPATION is None:
+                occupation_info_path = str(resources.files("h_adminsim.assets.patient").joinpath("occupation.json"))
+                registry.OCCUPATION = json_load(occupation_info_path)
+            occupation_info = registry.OCCUPATION
+            occupation_pref = occupation_info[occupation]['test_schedule_preference']['preference']
+            preferred_type = occupation_pref['type']
+            preferred_prob = occupation_pref['prob']
+            if preferred_type is None:
+                preference = generate_random_code_with_prob(
+                    preference_candidates,
+                    [1 / len(preference_candidates)] * len(preference_candidates)
+                )
+            elif random.random() <= preferred_prob:
+                preference = preferred_type
+            else:
+                other_candidates = [p for p in preference_candidates if p != preferred_type]
+                preference = generate_random_code_with_prob(
+                    other_candidates,
+                    [1 / len(other_candidates)] * len(other_candidates)
+                )
             preference_rank = DataSynthesizer.second_preference_generator(preference, visit_type)
 
             if include_consultation:
@@ -573,6 +592,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                     'birthDate': birth_date,
                     'identifier': identifier,
                     'address': address,
+                    'occupation': occupation,
                 }
             )
 
