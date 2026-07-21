@@ -380,3 +380,46 @@ def generate_random_occupation(occupation_file_path: Optional[str] = None) -> st
         registry.OCCUPATION = json_load(occupation_file_path)
     
     return random.choice(list(registry.OCCUPATION))
+
+
+
+def generate_random_occupation_detail(occupation: str,
+                                      preference_candidates: list[str],
+                                      occupation_file_path: Optional[str] = None) -> str:
+    """
+    Generate a first-priority test scheduling preference based on occupation data.
+
+    Args:
+        occupation (str): Occupation name to look up.
+        preference_candidates (list[str]): Candidate preference types.
+        occupation_file_path (Optional[str], optional): Path to the JSON file containing occupation data.
+                                                        If not provided, a default path is used.
+                                                        Defaults to None.
+
+    Returns:
+        str: First-priority test scheduling preference.
+    """
+    if occupation_file_path == None:
+        occupation_file_path = str(resources.files("h_adminsim.assets.patient").joinpath("occupation.json"))
+
+    if registry.OCCUPATION is None:
+        registry.OCCUPATION = json_load(occupation_file_path)
+
+    occupation_pref = registry.OCCUPATION[occupation]['test_schedule_preference']['preference']
+    preferred_type = occupation_pref['type']
+    preferred_prob = occupation_pref['prob']
+
+    if preferred_type is None:
+        return generate_random_code_with_prob(
+            preference_candidates,
+            [1 / len(preference_candidates)] * len(preference_candidates)
+        )
+
+    if random.random() <= preferred_prob:
+        return preferred_type
+
+    other_candidates = [p for p in preference_candidates if p != preferred_type]
+    return generate_random_code_with_prob(
+        other_candidates,
+        [1 / len(other_candidates)] * len(other_candidates)
+    )

@@ -16,6 +16,7 @@ from h_adminsim.utils.filesys_utils import *
 from h_adminsim.utils.random_utils import (
     generate_random_prob,
     generate_random_code_with_prob,
+    generate_random_occupation_detail,
 )
 
 
@@ -504,28 +505,8 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                 log(f"Skipping follow-up for patient {patient}: no valid test combination could be built", level='warning')
                 continue
             duration = int(Decimal(str(1)) / Decimal(str(doctor_info[doctor]['capacity_per_hour'])) / Decimal(str(interval_hour)))
-            
-            # Generate preference rank based on occupation
-            if registry.OCCUPATION is None:
-                occupation_info_path = str(resources.files("h_adminsim.assets.patient").joinpath("occupation.json"))
-                registry.OCCUPATION = json_load(occupation_info_path)
-            occupation_info = registry.OCCUPATION
-            occupation_pref = occupation_info[occupation]['test_schedule_preference']['preference']
-            preferred_type = occupation_pref['type']
-            preferred_prob = occupation_pref['prob']
-            if preferred_type is None:
-                preference = generate_random_code_with_prob(
-                    preference_candidates,
-                    [1 / len(preference_candidates)] * len(preference_candidates)
-                )
-            elif random.random() <= preferred_prob:
-                preference = preferred_type
-            else:
-                other_candidates = [p for p in preference_candidates if p != preferred_type]
-                preference = generate_random_code_with_prob(
-                    other_candidates,
-                    [1 / len(other_candidates)] * len(other_candidates)
-                )
+        
+            preference = generate_random_occupation_detail(occupation, preference_candidates)
             preference_rank = DataSynthesizer.second_preference_generator(preference, visit_type)
 
             if include_consultation:
