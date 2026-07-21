@@ -868,23 +868,40 @@ class SchedulingRule:
         }
 
 
-    def schedule_tests_throughput_max(self,
-                            filtered_test_device_information: dict,
-                            test_codes: list) -> dict:
+    def schedule_tests(self,
+                       mode: str,
+                       filtered_test_device_information: dict,
+                       test_codes: list) -> dict:
         """
-        Backtracking `throughput_max` scheduler — finds the assignment that minimizes `(unscheduled_count, max_result_ready_at)` 
-        over every (device, date, start) combination. Priority is a hard time-ordering constraint
-        (`priority(A) < priority(B)` implies `A.end <= B.start`).
+        Unified backtracking test scheduler. Searches every (device, date, start)
+        combination via `_backtrack_schedule` and returns the lex-minimal assignment
+        for the requested `mode`. Priority is a hard time-ordering constraint
+        (`priority(A) < priority(B)` implies `A.end <= B.start`); `depends_on` and
+        `avoid_same_day` are enforced during the search.
+
+        The objective per mode (all lexicographically minimized, most-important-tests
+        protected from being dropped first):
+
+        - `'throughput_max'`: `(per_priority_unscheduled, max_result_ready_at)` — get every
+          result ready as early as possible, regardless of visit count or on-site waiting.
+        - `'visit_min'`: `(per_priority_unscheduled, num_test_visit_dates, max_result_ready_at)`
+          — pack tests into the fewest distinct visit days.
+        - `'stay_min'`: `(per_priority_unscheduled, total_idle_wait_hours, max_result_ready_at)`
+          — minimize the patient's idle waiting between consecutive same-day tests, so tests
+          are split across days rather than left with long same-day gaps.
 
         Args:
+            mode (str): `'throughput_max'`, `'visit_min'`, or `'stay_min'`.
             filtered_test_device_information (dict): Output of `HospitalEnvironment.get_test_device_schedule`.
             test_codes (list[str]): Codes of the tests the patient must take.
 
         Returns:
-            dict: `{'tests', 'test_visit_dates', 'all_results_ready_at', 'unscheduled', 'status'}`.
+            dict: `{'test_schedule', 'test_visit_dates', 'all_results_ready_at', 'unscheduled', 'status'}`
+                  (see `_assemble_schedule_result`); the empty-input fast path returns the same
+                  keys with empty values.
         """
         empty_result = {
-            'tests': {}, 'test_visit_dates': [], 'all_results_ready_at': None,
+            'test_schedule': {}, 'test_visit_dates': [], 'all_results_ready_at': None,
             'unscheduled': [], 'status': 'ok',
         }
         if not test_codes:
@@ -909,53 +926,8 @@ class SchedulingRule:
         )
 
         avoid = self._build_avoid_pairs(tests)
-        result = self._backtrack_schedule(tests, ordered, avoid, mode='throughput_max')
+        result = self._backtrack_schedule(tests, ordered, avoid, mode=mode)
         return self._assemble_schedule_result(result['placed'], missing, result['unscheduled'])
-
-
-    def schedule_tests_visit_min(self,
-                             filtered_test_device_information: dict,
-                             test_codes: list) -> dict:
-        """
-        Backtracking `visit_min` scheduler — finds the assignment that minimizes `(unscheduled_count, num_test_visit_dates, max_result_ready_at)` 
-        over every (device, date, start) combination. Priority is a hard time-ordering constraint.
-
-        Args:
-            filtered_test_device_information (dict): Output of `HospitalEnvironment.get_test_device_schedule`.
-            test_codes (list[str]): Codes of the tests the patient must take.
-
-        Returns:
-            dict: `{'tests', 'test_visit_dates', 'all_results_ready_at', 'unscheduled', 'status'}`.
-        """
-        empty_result = {
-            'tests': {}, 'test_visit_dates': [], 'all_results_ready_at': None,
-            'unscheduled': [], 'status': 'ok',
-        }
-        if not test_codes:
-            return empty_result
-
-        tests_index = filtered_test_device_information.get('test', {})
-        tests = {c: tests_index[c] for c in test_codes if c in tests_index}
-        missing = [c for c in test_codes if c not in tests_index]
-
-        # Sanity check
-        ordered, unresolved = self._topological_order(tests)
-        assert not len(unresolved + missing), colorstr(
-            'red',
-            f'[SchedulingRule] infeasible test graph — unresolvable depends_on: {unresolved}, '
-            f'unknown test codes: {missing}'
-        )
-
-        offenders = self._check_priority_depends_consistency(tests)
-        assert not len(offenders), colorstr(
-            'red',
-            f'[SchedulingRule] priority/depends_on contradiction on tests: {offenders}'
-        )
-
-        avoid = self._build_avoid_pairs(tests)
-        result = self._backtrack_schedule(tests, ordered, avoid, mode='visit_min')
-        return self._assemble_schedule_result(result['placed'], missing, result['unscheduled'])
-
 
 
 def create_tools(rule: SchedulingRule,
@@ -1265,7 +1237,9 @@ def create_tools(rule: SchedulingRule,
         prefix = 'Dr.'
         if prefix not in attending_physician:
             attending_physician = f'{prefix} {attending_physician}'
-        result = rule.schedule_tests_throughput_max(test_device_information, required_test_codes)
+        result = rule.schedule_tests(
+            'throughput_max', test_device_information, required_test_codes
+        )
         fu_appn = rule.physician_filter(doctor_info, attending_physician, result['all_results_ready_at'])
         fu_appn = rule.find_earliest_time(fu_appn)
         result['fu_schedule'] = fu_appn
@@ -1309,7 +1283,58 @@ def create_tools(rule: SchedulingRule,
         prefix = 'Dr.'
         if prefix not in attending_physician:
             attending_physician = f'{prefix} {attending_physician}'
-        result = rule.schedule_tests_visit_min(test_device_information, required_test_codes)
+        result = rule.schedule_tests(
+            'visit_min', test_device_information, required_test_codes
+        )
+        fu_appn = rule.physician_filter(doctor_info, attending_physician, result['all_results_ready_at'])
+        fu_appn = rule.find_earliest_time(fu_appn)
+        result['fu_schedule'] = fu_appn
+        result['action'] = 'scheduling'
+        return result
+
+    
+    @tool
+    def follow_up_stay_min_test_schedule(attending_physician: str) -> dict:
+        """
+        Schedule the required tests so as to MINIMIZE the patient's total idle waiting
+        time spent at the hospital between consecutive tests on the same day. Two tests
+        that could be taken on one day but with a long gap in between are instead split
+        across days when that removes the on-site waiting (a test taken on its own day
+        adds no waiting). Neither overall completion speed nor visit-day count is
+        minimized. After scheduling the tests, this tool also schedules a follow-up
+        consultation appointment with the specified attending physician.
+
+        Use this tool ONLY when the patient EXPLICITLY prioritizes not waiting around at
+        the hospital between tests — e.g. "I don't want to wait between tests", "minimize
+        waiting time", "no long gaps", "don't want to sit around", or any equivalent
+        phrasing targeting on-site idle time. Do NOT use this tool for a plain
+        speed/urgency preference (use `follow_up_throughput_max_test_schedule`) or a
+        fewer-visits preference (use `follow_up_visit_min_test_schedule`).
+
+        IMPORTANT:
+            DO NOT call this tool if `attending_physician` is unknown, omitted,
+            ambiguous, or not explicitly confirmed by the patient.
+            This tool must be called only when the attending physician is explicitly
+            identified, since a follow-up consultation appointment will be scheduled
+            with that physician after all tests are completed.
+
+        Args:
+            attending_physician (str):
+                Name of the attending physician for whom the follow-up consultation
+                appointment should be scheduled after all required tests are completed.
+                This argument is mandatory and must be explicitly provided.
+
+        Returns:
+            dict: Mapping of test schedules with fields `tests`, `test_visit_dates`,
+                `all_results_ready_at`, `unscheduled`, `fu_schedule`, and `status`.
+        """
+        log(f'[TOOL CALL] follow_up_stay_min_test_schedule | attending_physician={attending_physician}', color=True)
+        prefix = 'Dr.'
+        if prefix not in attending_physician:
+            attending_physician = f'{prefix} {attending_physician}'
+        result = rule.schedule_tests(
+            'stay_min', test_device_information, required_test_codes
+        )
         fu_appn = rule.physician_filter(doctor_info, attending_physician, result['all_results_ready_at'])
         fu_appn = rule.find_earliest_time(fu_appn)
         result['fu_schedule'] = fu_appn
@@ -1332,14 +1357,18 @@ def create_tools(rule: SchedulingRule,
     if only_schedule_tool:
         if test_device_information is not None and required_test_codes is not None:
             return [
-                follow_up_throughput_max_test_schedule, follow_up_visit_min_test_schedule,
+                follow_up_throughput_max_test_schedule, 
+                follow_up_visit_min_test_schedule,
+                follow_up_stay_min_test_schedule,
             ]
         return [physician_filter_tool, date_filter_tool, get_all_time_tool]
 
     # After determine the patient's tests
     if test_device_information is not None and required_test_codes is not None:
         tools = [
-            follow_up_throughput_max_test_schedule, follow_up_visit_min_test_schedule,
+            follow_up_throughput_max_test_schedule, 
+            follow_up_visit_min_test_schedule,
+            follow_up_stay_min_test_schedule,
         ]
     return tools
 
