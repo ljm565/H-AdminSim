@@ -273,8 +273,9 @@ class SanityChecker:
             doctor_information (Optional[dict], optional): Dictionary of doctor data including their existing schedules.
                                                            Each key is a doctor's name, and each value includes a 'schedule' field.
             rule (Optional[object], optional): A `SchedulingRule` instance used to evaluate
-                                               preference optimality via `schedule_tests_throughput_max` / `schedule_tests_visit_min` and
-                                               the earliest follow-up consultation slot via `physician_filter`.
+                                               preference optimality via `schedule_tests` (the mode is
+                                               selected from `preference`) and the earliest follow-up
+                                               consultation slot via `physician_filter`.
                                                Skips preference and follow-up comparison if not provided.
 
         Returns:
@@ -385,9 +386,9 @@ class SanityChecker:
             preference = gt_patient_condition.get('preference')
             test_codes_list = list(gt_test_codes)
             if preference == 'throughput_max':
-                optimal = rule.schedule_tests_throughput_max(test_device_information, test_codes_list)
+                optimal = rule.schedule_tests('throughput_max', test_device_information, test_codes_list)
             elif preference == 'visit_min':
-                optimal = rule.schedule_tests_visit_min(test_device_information, test_codes_list)
+                optimal = rule.schedule_tests('visit_min', test_device_information, test_codes_list)
 
             # Simple post-processing
             for _test in optimal['test_schedule'].values():

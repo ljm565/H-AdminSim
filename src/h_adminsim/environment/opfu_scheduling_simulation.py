@@ -1373,7 +1373,7 @@ class OPFUSchedulingSimulation:
                     ###################### TMP ######################
                     if status and gt_patient_condition['preference'] == 'visit_min':
                         test_codes_list = list({t['code'] for t in gt_patient_condition['test']})
-                        optimal = self.rules.schedule_tests_throughput_max(filtered_test_device_information, test_codes_list)
+                        optimal = self.rules.schedule_tests('throughput_max', filtered_test_device_information, test_codes_list)
                         opt_ready, visit_min_ready = optimal['all_results_ready_at'], pred_schedule['all_results_ready_at']
                         if opt_ready is not None and compare_iso_time(visit_min_ready, opt_ready):
                             delta_h = (str_to_datetime(visit_min_ready) - str_to_datetime(opt_ready)).total_seconds() / 3600
