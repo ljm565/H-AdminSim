@@ -379,7 +379,6 @@ class SchedulingRule:
                                 after_iso: str,
                                 forbidden_dates: set,
                                 extra_busy: Optional[dict] = None,
-                                on_date: Optional[str] = None,
                                 patient_busy: Optional[dict] = None,
                                 is_last_test: bool = False,
                                 is_last_in_priority_cluster: bool = False,
@@ -392,17 +391,18 @@ class SchedulingRule:
         into the device's pre-existing fixed segments before computing free time.
 
         Args:
-            mode (str): 'throughput_max' or 'visit_min' — whether this enumeration is for the `throughput_max` scheduler or the `visit_min` scheduler. Affects tie-breaking of candidates.
+            mode (str): 'throughput_max', 'visit_min', or 'stay_min' — which scheduler this enumeration serves.
+                        Affects candidate reduction: `throughput_max`/`visit_min` prune to a few endpoints, while
+                        `stay_min` keeps every feasible start so the backtracker can pack tests back-to-back.
             test_info (dict): One entry from `filtered_test_device_information['test'][code]`.
             after_iso (str): Earliest acceptable ISO start time considering priority and depends_on conditions.
             forbidden_dates (set): Dates blocked by an already-placed test in `avoid_same_day`.
             extra_busy (Optional[dict]): `{device_name: {date: [[start_hr, end_hr], ...]}}` of slots booked earlier in this call. Defaults to None.
-            on_date (Optional[str]): If set, only enumerate candidates on this YYYY-MM-DD date.
             patient_busy (Optional[dict]): `{date: [[start_hr, end_hr], ...]}` of intervals during which the patient is already occupied by previously-placed tests. 
                                            Applied to every device (a patient cannot be at two devices at once). Defaults to None.
             is_last_test (bool): Whether this is the last test in the sequence. Defaults to False.
-            is_last_in_priority_cluster (bool): True if no subsequent test in `ordered` shares this test's priority. 
-                                                `throughput_max` additionally collapses to one globally earliest candidate; `visit_min` collapses to one earliest per date. Defaults to False.
+            is_last_in_priority_cluster (bool): True if no subsequent test in `ordered` shares this test's priority.
+                                                `throughput_max` additionally collapses to one globally earliest candidate; `visit_min` collapses to one earliest per date; `stay_min` performs no such collapse (all feasible starts are kept). Defaults to False.
             placed_dates (Optional[set]): Set of dates already used by previously-placed tests in this branch.
                                           Only consulted when `is_last_test and mode == 'visit_min'` to keep at most one
                                           candidate (existing-date earliest if any, else new-date earliest). Defaults to None.
@@ -418,13 +418,11 @@ class SchedulingRule:
         patient_busy = patient_busy or {}
 
         for device_name, device_info in test_info.get('devices', {}).items():
-            allocate_first_fit = False
+            stop_device_scan = False
             device_schedule = device_info.get('schedule', {})
             extra = (extra_busy or {}).get(device_name, {})
 
             for date in sorted(set(device_schedule.keys())):
-                if on_date is not None and date != on_date:
-                    continue
                 if date in forbidden_dates:
                     continue
 
@@ -440,9 +438,24 @@ class SchedulingRule:
 
                 runs = [run for run in group_consecutive_segments(free_time) if len(run) >= min_time_slot_n]
                 for run in runs:
+                    # `stay_min`: keep every feasible start; an interior slot may hug another same-day test
+                    if mode == 'stay_min':
+                        for i in range(len(run) - min_time_slot_n + 1):
+                            window = run[i:i + min_time_slot_n]
+                            start_hr, end_hr = convert_segment_to_time(
+                                self._START_HOUR, self._END_HOUR, self._TIME_UNIT, window
+                            )
+                            start_iso = get_iso_time(start_hr, date, utc_offset=self._utc_offset)
+                            end_iso = get_iso_time(end_hr, date, utc_offset=self._utc_offset)
+                            if compare_iso_time(after_iso, start_iso) or not compare_iso_time(start_iso, self.current_time):
+                                continue
+                            candidates.append((device_name, date, start_iso, end_iso))
+                        continue
+
                     # Keep both endpoints of each run as candidates: the earliest and the latest slot for the feasibility
                     earliest_idx = None
                     for i in range(len(run) - min_time_slot_n + 1):
+                        # Append the earliest available device schedule slot
                         window = run[i:i + min_time_slot_n]
                         start_hr, end_hr = convert_segment_to_time(
                             self._START_HOUR, self._END_HOUR, self._TIME_UNIT, window
@@ -455,15 +468,16 @@ class SchedulingRule:
                         earliest_idx = i
                         break
                     
-                    # If no available earliest slot, skip the latest slot check since it would be redundant
+                    # If no available earliest slot, skip the latest slot check since it also must be not available
                     if earliest_idx is None:
                         continue
 
-                    # Skip `latest` emission whenever this test is last in its priority cluster: with no
+                    # Last in its priority cluster: no later test needs the latest slot, so keep only the earliest
                     if is_last_in_priority_cluster:
-                        allocate_first_fit = True
+                        stop_device_scan = True
                         break
-
+                    
+                    # Append the latest available device schedule slot
                     latest_idx = len(run) - min_time_slot_n
                     if latest_idx != earliest_idx:
                         window = run[latest_idx:latest_idx + min_time_slot_n]
@@ -474,26 +488,35 @@ class SchedulingRule:
                         end_iso = get_iso_time(end_hr, date, utc_offset=self._utc_offset)
                         candidates.append((device_name, date, start_iso, end_iso))
 
-                if allocate_first_fit and mode == 'throughput_max':
+                # `throughput_max` only needs the single earliest slot here, so stop scanning further dates.
+                if stop_device_scan and mode == 'throughput_max':
                     break
-
+        
+        # Sort in order of `start_iso` and `device_name`
         candidates.sort(key=lambda x: (x[2], x[0]))
 
         if mode == 'throughput_max':
             if is_last_in_priority_cluster:
                 candidates = candidates[:1]  # earliest dominates — see `is_last_in_priority_cluster` docstring
+        
         elif mode == 'visit_min':
-            # If an existing date exists, the earliest of that date; otherwise, the earliest in the whole
+            # For the last test
             if is_last_test:
                 placed = placed_dates or set()
                 existing_earliest, new_earliest = None, None
                 for c in candidates:
+                    # If an existing date exists, the earliest of that date (if date in placed)
                     if c[1] in placed:
                         existing_earliest = c
                         break
+                    
+                    # Otherwise, the earliest in the whole (new_earliest)
                     if new_earliest is None:
                         new_earliest = c
+                
+                # Pick the existing-date earliest if any, else the global earliest
                 candidates = [existing_earliest] if existing_earliest else ([new_earliest] if new_earliest else [])
+            
             elif is_last_in_priority_cluster:
                 # Remain the earliest candidate per date
                 seen_dates = set()
@@ -503,6 +526,11 @@ class SchedulingRule:
                         pruned.append(c)
                         seen_dates.add(c[1])
                 candidates = pruned
+        
+        elif mode == 'stay_min':
+            # No reduction: an interior slot may be optimal to hug another same-day test, so keep all
+            pass
+        
         else:
             raise ValueError(f"Invalid mode: {mode}")
 
@@ -794,8 +822,13 @@ class SchedulingRule:
             print(idx, info['duration_hour'], info['result_hours'], after_iso)
             placed_dates_set = {a['date'] for a in assigned.values()} if is_last_test else None
             candidates = self._enumerate_device_slots(
-                mode, info, after_iso, forbidden, just_booked,
-                patient_busy=patient_busy, is_last_test=is_last_test,
+                mode=mode,
+                test_info=info,
+                after_iso=after_iso,
+                forbidden_dates=forbidden,
+                extra_busy=just_booked,
+                patient_busy=patient_busy, 
+                is_last_test=is_last_test,
                 is_last_in_priority_cluster=is_last_in_priority_cluster,
                 placed_dates=placed_dates_set,
             )
