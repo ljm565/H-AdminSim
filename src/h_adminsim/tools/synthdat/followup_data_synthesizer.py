@@ -16,7 +16,7 @@ from h_adminsim.utils.filesys_utils import *
 from h_adminsim.utils.random_utils import (
     generate_random_prob,
     generate_random_code_with_prob,
-    generate_random_occupation_detail,
+    generate_random_occupation_preference,
 )
 
 
@@ -506,7 +506,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                 continue
             duration = int(Decimal(str(1)) / Decimal(str(doctor_info[doctor]['capacity_per_hour'])) / Decimal(str(interval_hour)))
         
-            preference = generate_random_occupation_detail(occupation, preference_candidates)
+            preference = generate_random_occupation_preference(occupation, preference_candidates)
             preference_rank = DataSynthesizer.second_preference_generator(preference, visit_type)
 
             if include_consultation:

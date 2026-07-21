@@ -383,7 +383,7 @@ def generate_random_occupation(occupation_file_path: Optional[str] = None) -> st
 
 
 
-def generate_random_occupation_detail(occupation: str,
+def generate_random_occupation_preference(occupation: str,
                                       preference_candidates: list[str],
                                       occupation_file_path: Optional[str] = None) -> str:
     """
