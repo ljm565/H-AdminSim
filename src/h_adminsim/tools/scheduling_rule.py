@@ -630,6 +630,52 @@ class SchedulingRule:
         return offenders
 
 
+    @staticmethod
+    def _idle_wait(assignments, priority_floor: float = float('inf')) -> float:
+        """
+        Idle waiting hours the patient spends between consecutive same-day tests.
+
+        For each visit date the placed tests are sorted by start time and the gap
+        between one test's end and the next test's start is summed. Tests on
+        different dates contribute nothing (the patient goes home between visits),
+        so splitting tests across days is always at least as good as bunching them
+        with a gap. With the default `priority_floor` this is exactly the objective
+        `stay_min` minimizes.
+
+        `priority_floor` turns this into an admissible lower bound for the
+        branch-and-bound search: a gap `(prev, cur)` is only counted when
+        `cur['priority'] < priority_floor`. Passing the minimum priority among the
+        still-unplaced tests as the floor keeps only the gaps that no remaining test
+        can ever fill — any remaining test has priority `>= priority_floor > cur`, so
+        the hard ordering `cur.end <= remaining.start` pushes it strictly after `cur`,
+        leaving the gap intact in every completion. Same-priority (`== floor`) gaps
+        stay excluded because a same-priority test could still slot in and shrink them.
+
+        Args:
+            assignments (Iterable[dict]): Placed test assignments, each carrying
+                                          `date`, `start`, `end`, and `priority` fields.
+            priority_floor (float, optional): Only count gaps whose right test has a
+                                              strictly smaller priority. Defaults to +inf
+                                              (count every gap → the true objective).
+
+        Returns:
+            float: Total (or priority-locked) idle waiting time in hours.
+        """
+        by_date = defaultdict(list)
+        for a in assignments:
+            by_date[a['date']].append(a)
+        total = 0.0
+        for items in by_date.values():
+            items.sort(key=lambda a: a['start'])
+            for prev, cur in zip(items, items[1:]):
+                if cur['priority'] >= priority_floor:
+                    continue
+                gap = iso_to_hour(cur['start']) - iso_to_hour(prev['end'])
+                if gap > 0:
+                    total += gap
+        return total
+
+
     def _backtrack_schedule(self,
                             tests: dict,
                             ordered: list,
@@ -647,6 +693,10 @@ class SchedulingRule:
 
         - `mode == 'throughput_max'`: `(per_priority_unscheduled, max_result_ready_at)`.
         - `mode == 'visit_min'`: `(per_priority_unscheduled, num_test_visit_dates, max_result_ready_at)`.
+        - `mode == 'stay_min'`: `(per_priority_unscheduled, total_idle_wait_hours, max_result_ready_at)`,
+          where `total_idle_wait_hours` is the summed gap between consecutive same-day tests
+          (see `_idle_wait`); splitting tests across days incurs no waiting. Its branch-and-bound
+          lower bound counts only priority-locked gaps (`_idle_wait` with a `priority_floor`).
 
         `per_priority_unscheduled` is a tuple indexed by priority ascending
         (lower number first), so the search first protects the most important
@@ -661,7 +711,7 @@ class SchedulingRule:
             tests (dict): `{test_code: test_info}`.
             ordered (list[str]): Processing order from `_topological_order`.
             avoid (dict): Symmetric closure of `avoid_same_day`.
-            mode (str): `'throughput_max'` or `'visit_min'`.
+            mode (str): `'throughput_max'`, `'visit_min'`, or `'stay_min'`.
 
         Returns:
             dict: `{'placed': {code: assignment}, 'unscheduled': [codes], 'objective': tuple}`.
@@ -674,6 +724,11 @@ class SchedulingRule:
         distinct_priorities = sorted({tests[c].get('priority', 0) for c in ordered})
         priority_to_idx = {p: i for i, p in enumerate(distinct_priorities)}
         n_priorities = len(distinct_priorities)
+
+        # Because the floor_priority argument looks up the index i+1
+        suffix_min_priority = [float('inf')] * (len(ordered) + 1)
+        for i in range(len(ordered) - 1, -1, -1):
+            suffix_min_priority[i] = min(tests[ordered[i]].get('priority', 0), suffix_min_priority[i + 1])
 
         def pu_tuple(idx, extra_skip_priority=None):
             """Per-priority unscheduled count for ordered[0..idx-1] given the current
@@ -709,6 +764,8 @@ class SchedulingRule:
                 num_dates = 0
             if mode == 'throughput_max':
                 return (pu, max_ready)
+            if mode == 'stay_min':
+                return (pu, self._idle_wait(assigned.values()), max_ready)
             return (pu, num_dates, max_ready)
 
         def _future_max_ready_lb(hypo_end, hypo_ready, hypo_pri, base_max_ready, start_idx):
@@ -746,7 +803,7 @@ class SchedulingRule:
                     max_lb = u_lb_ready
             return max_lb
 
-        def lb_with_placement(idx, ready, end_iso, date):
+        def lb_with_placement(idx, ready, start_iso, end_iso, date):
             # Place `code` here and fold in the minimum-possible result_ready_at of every remaining test via `_future_max_ready_lb`
             pu = pu_tuple(idx)
             base = max([a['result_ready_at'] for a in assigned.values()] + [ready])
@@ -764,6 +821,12 @@ class SchedulingRule:
 
             if mode == 'throughput_max':
                 return (pu, hyp_ready)
+            if mode == 'stay_min':
+                # Lower bound = idle gaps locked in by priority (see `_idle_wait`): among
+                # already-placed tests plus this candidate, only gaps a remaining test can never fill.
+                cur = {'date': date, 'start': start_iso, 'end': end_iso, 'priority': tests[code].get('priority', 0)}
+                locked = self._idle_wait(list(assigned.values()) + [cur], priority_floor=suffix_min_priority[idx + 1])
+                return (pu, locked, hyp_ready)
             hyp_dates = {a['date'] for a in assigned.values()}
             hyp_dates.add(date)
             return (pu, len(hyp_dates), hyp_ready)
@@ -782,6 +845,10 @@ class SchedulingRule:
 
             if mode == 'throughput_max':
                 return (pu, cur_max_ready)
+            if mode == 'stay_min':
+                # Same priority-locked idle-gap bound as lb_with_placement, over the already-placed tests only.
+                locked = self._idle_wait(assigned.values(), priority_floor=suffix_min_priority[idx + 1])
+                return (pu, locked, cur_max_ready)
             cur_dates = {a['date'] for a in assigned.values()}
             return (pu, len(cur_dates), cur_max_ready)
 
@@ -838,7 +905,7 @@ class SchedulingRule:
 
                 # Branch-and-bound prune: LB folds in the minimum-possible `result_ready_at` of every remaining test (priority + depends_on chain)
                 if best['objective'] is not None:
-                    lb = lb_with_placement(idx, ready, end_iso, date)
+                    lb = lb_with_placement(idx, ready, start_iso, end_iso, date)
                     if lb >= best['objective']:
                         continue
 
