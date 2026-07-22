@@ -43,6 +43,7 @@ STATUS_CODES = {
         'preference': {
             'throughput_max': 'test_schedule: not earliest result-ready time',
             'visit_min': 'test_schedule: not minimum visit-date count',
+            'stay_min': 'test_schedule: not minimum idle waiting time',
         },
         'fu_schedule': 'test_schedule: not earliest follow-up appointment',
     },
