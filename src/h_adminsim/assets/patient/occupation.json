@@ -1175,9 +1175,9 @@
     "Truck Driver": {
         "test_schedule_preference": {
             "preference": {
-                "type": "visit_min",
+                "type": "throughput_max",
                 "prob": 0.6,
-                "explanation": "On multi-day hauls, so a single visit while home is preferred."
+                "explanation": "Home only briefly before the next long haul, so wants every exam finished as fast as possible regardless of visits or waits."
             },
             "unavailable": {
                 "type": "day",
@@ -1247,9 +1247,9 @@
     "Flight Attendant": {
         "test_schedule_preference": {
             "preference": {
-                "type": "visit_min",
-                "prob": 0.6,
-                "explanation": "Away on multi-day trips, so one visit while home is preferred."
+                "type": "throughput_max",
+                "prob": 0.7,
+                "explanation": "Home for only a short window before the next rotation, so wants every exam finished as soon as possible regardless of visits or waits."
             },
             "unavailable": {
                 "type": "day",
@@ -1265,9 +1265,9 @@
     "Pilot": {
         "test_schedule_preference": {
             "preference": {
-                "type": "visit_min",
-                "prob": 0.6,
-                "explanation": "Multi-day rotations make a single visit while home preferable."
+                "type": "throughput_max",
+                "prob": 0.7,
+                "explanation": "Home for only a short window before the next rotation, so wants every exam finished as soon as possible regardless of visits or waits."
             },
             "unavailable": {
                 "type": "day",
@@ -1283,9 +1283,9 @@
     "Sailor": {
         "test_schedule_preference": {
             "preference": {
-                "type": "visit_min",
-                "prob": 0.55,
-                "explanation": "At sea for long stretches; strongly prefers one visit ashore."
+                "type": "throughput_max",
+                "prob": 0.7,
+                "explanation": "Ashore only briefly before the next voyage, so wants all exams completed as fast as possible regardless of visits or waits."
             },
             "unavailable": {
                 "type": "day",
@@ -1301,9 +1301,9 @@
     "Fisherman": {
         "test_schedule_preference": {
             "preference": {
-                "type": "stay_min",
-                "prob": 0.6,
-                "explanation": "Out at sea early; prefers short visits on shore days."
+                "type": "throughput_max",
+                "prob": 0.5,
+                "explanation": "Ashore only briefly before the next trip, so tends to want all exams done quickly regardless of visits or waits."
             },
             "unavailable": {
                 "type": "day",
@@ -1319,9 +1319,9 @@
     "Miner": {
         "test_schedule_preference": {
             "preference": {
-                "type": "stay_min",
-                "prob": 0.65,
-                "explanation": "Remote-site rosters; prefers short visits on off days."
+                "type": "throughput_max",
+                "prob": 0.5,
+                "explanation": "On a short break before returning to the remote site, so tends to want everything finished quickly regardless of visits or waits."
             },
             "unavailable": {
                 "type": "day",
@@ -1337,9 +1337,9 @@
     "Oil Rig Worker": {
         "test_schedule_preference": {
             "preference": {
-                "type": "visit_min",
-                "prob": 0.55,
-                "explanation": "Offshore rotations make one visit while home strongly preferred."
+                "type": "throughput_max",
+                "prob": 0.7,
+                "explanation": "Onshore only briefly between offshore rotations, so wants everything done as fast as possible regardless of visits or waits."
             },
             "unavailable": {
                 "type": "day",
@@ -1391,9 +1391,9 @@
     "Tour Guide": {
         "test_schedule_preference": {
             "preference": {
-                "type": "stay_min",
-                "prob": 0.6,
-                "explanation": "Leads tours on set days; prefers short visits otherwise."
+                "type": "throughput_max",
+                "prob": 0.45,
+                "explanation": "Free only before the season or next tour departs, so tends to want all exams finished quickly regardless of visits or waits."
             },
             "unavailable": {
                 "type": "day",
@@ -1497,9 +1497,9 @@
     "Soldier": {
         "test_schedule_preference": {
             "preference": {
-                "type": "visit_min",
+                "type": "throughput_max",
                 "prob": 0.6,
-                "explanation": "Duty rosters limit free days, so one visit is preferred."
+                "explanation": "Limited leave before returning to duty, so wants all exams finished as soon as possible regardless of visits or waits."
             },
             "unavailable": {
                 "type": "day",

@@ -31,3 +31,4 @@ DEPARTMENT_NORMALIZATION = {
     'rheumatory': 'rheumatology',
     'pulmonology': 'pulmonary',
 }
+OCCUPATION = None

@@ -15,7 +15,9 @@ from h_adminsim.utils.common_utils import *
 from h_adminsim.utils.filesys_utils import *
 from h_adminsim.utils.random_utils import (
     generate_random_prob,
-    generate_random_code_with_prob,    
+    generate_random_code_with_prob,
+    generate_random_occupation_preference,
+    generate_random_occupation_unavailable,
 )
 
 
@@ -412,6 +414,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         fixed_test_schedule = hospital_data['test']
         code_to_test = {t['code']: t['name'] for test_list in fixed_test_schedule.values() for t in test_list}
         hospital_time_segments = convert_time_to_segment(start_hour, end_hour, interval_hour)
+        dates = generate_date_range(metadata['start_date'], metadata['days'])
 
         # Extract hospital data
         doctor_info = hospital_data['doctor']
@@ -422,6 +425,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         fu_config = config.hospital_data.follow_up_visit
         cross_dept_prob = fu_config.cross_department_test_prob
         include_consultation = fu_config.get('include_consultation', True)
+        preference_candidates = fu_config.preference.type
 
         # Collect vacant test schedules
         vacant_test_schedules = {}
@@ -475,15 +479,15 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         # Generate follow-up patient profiles based on the generated test combinations and merge them into patient_info
         for patient, infos in patient_info.items():
             # Initialize necessary info variables
-            gender, telecom, birth_date, identifier, address, symptom_level, department, doctor, prev_end_iso = \
-                None, None, None, None, None, None, None, None, None
+            gender, telecom, birth_date, identifier, address, occupation, symptom_level, department, doctor, prev_end_iso = \
+                None, None, None, None, None, None, None, None, None, None
             
             # Find the first-visit info
             for info in infos:
                 if info['visit_type'] == 'first_visit':
                     # Basic demographic info
-                    gender, telecom, birth_date, identifier, address = \
-                        info['gender'], info['telecom'], info['birthDate'], info['identifier'], info['address']
+                    gender, telecom, birth_date, identifier, address, occupation = \
+                        info['gender'], info['telecom'], info['birthDate'], info['identifier'], info['address'], info['occupation']
 
                     # Basic first-visit info
                     symptom_level, department, doctor = info['symptom_level'], info['department'], info['attending_physician']
@@ -492,7 +496,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                     prev_end_iso = get_iso_time(info['schedule'][1], info['date'])
                     break
 
-            assert all(v is not None for v in [gender, telecom, birth_date, identifier, address, symptom_level, department, doctor, prev_end_iso]), \
+            assert all(v is not None for v in [gender, telecom, birth_date, identifier, address, occupation, symptom_level, department, doctor, prev_end_iso]), \
                 colorstr("red", f"Missing required first-visit info for patient {patient}: ")
             
             # Make random test combination
@@ -503,11 +507,10 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                 log(f"Skipping follow-up for patient {patient}: no valid test combination could be built", level='warning')
                 continue
             duration = int(Decimal(str(1)) / Decimal(str(doctor_info[doctor]['capacity_per_hour'])) / Decimal(str(interval_hour)))
-            preference = generate_random_code_with_prob(
-                fu_config.preference.type,
-                fu_config.preference.probs
-            )
+        
+            preference = generate_random_occupation_preference(occupation, preference_candidates)
             preference_rank = DataSynthesizer.second_preference_generator(preference, visit_type)
+            unavailable = generate_random_occupation_unavailable(occupation, dates)
 
             if include_consultation:
                 last_time = max(
@@ -566,6 +569,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                     'date': date,
                     'schedule': appointment,
                     'preference': preference_rank,
+                    'unavailable': unavailable,
                     'symptom_level': symptom_level,
                     'required_tests': combination,
                     'gender': gender,
@@ -573,6 +577,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                     'birthDate': birth_date,
                     'identifier': identifier,
                     'address': address,
+                    'occupation': occupation,
                 }
             )
 

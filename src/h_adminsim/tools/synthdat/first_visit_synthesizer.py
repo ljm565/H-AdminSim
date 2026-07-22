@@ -14,6 +14,7 @@ from h_adminsim.utils.random_utils import (
     generate_random_address,
     generate_random_telecom,
     generate_random_id_number,
+    generate_random_occupation,
     generate_random_code_with_prob,
 )
 
@@ -148,7 +149,8 @@ class FirstVisitDataSynthesizer(DataSynthesizer):
                             'type': 'postal',
                             'text': generate_random_address(),
                             'use': 'home'
-                        }]
+                        }],
+                        'occupation': generate_random_occupation(),
                     }]
 
         data.patient = patient_info

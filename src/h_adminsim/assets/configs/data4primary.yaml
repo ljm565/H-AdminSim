@@ -68,4 +68,3 @@ hospital_data:
         include_consultation: True                 # Whether to include post-test doctor consultation
         preference:
             type: ['throughput_max', 'visit_min', 'stay_min']    # Types of patient preferences.
-            probs: [0.8, 0.1, 0.1]           # Types probability distribution.
