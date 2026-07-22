@@ -726,7 +726,7 @@ class SchedulingRule:
         priority_to_idx = {p: i for i, p in enumerate(distinct_priorities)}
         n_priorities = len(distinct_priorities)
 
-        # Because the floor_priority argument looks up the index i+1
+        # suffix min so lb can pass min priority of remaining tests (ordered[idx+1:]) as the floor
         suffix_min_priority = [float('inf')] * (len(ordered) + 1)
         for i in range(len(ordered) - 1, -1, -1):
             suffix_min_priority[i] = min(tests[ordered[i]].get('priority', 0), suffix_min_priority[i + 1])
