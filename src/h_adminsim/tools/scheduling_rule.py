@@ -896,7 +896,7 @@ class SchedulingRule:
                 after_iso=after_iso,
                 forbidden_dates=forbidden,
                 extra_busy=just_booked,
-                patient_busy=patient_busy, 
+                patient_busy=patient_busy,
                 is_last_test=is_last_test,
                 is_last_in_priority_cluster=is_last_in_priority_cluster,
                 placed_dates=placed_dates_set,
