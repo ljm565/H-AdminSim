@@ -67,6 +67,7 @@ class SchedulingRule:
         schedule_candidates = schedule_info['schedule']
         min_time_slot_n = int(Decimal(str(schedule_info['outpatient_duration'])) / Decimal(str(self._TIME_UNIT)))
         dates = sorted(list(schedule_candidates.keys()))
+        
         for date in dates:
             schedule = schedule_candidates[date]
             fixed_schedule_segments = sum([convert_time_to_segment(self._START_HOUR, 
