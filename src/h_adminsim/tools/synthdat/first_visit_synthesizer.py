@@ -13,8 +13,8 @@ from h_adminsim.utils.random_utils import (
     generate_random_code,
     generate_random_address,
     generate_random_telecom,
-    generate_random_occupation,
     generate_random_id_number,
+    generate_random_occupation,
     generate_random_code_with_prob,
 )
 

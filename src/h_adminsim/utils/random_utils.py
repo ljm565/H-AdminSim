@@ -384,8 +384,8 @@ def generate_random_occupation(occupation_file_path: Optional[str] = None) -> st
 
 
 def generate_random_occupation_preference(occupation: str,
-                                      preference_candidates: list[str],
-                                      occupation_file_path: Optional[str] = None) -> str:
+                                          preference_candidates: list[str],
+                                          occupation_file_path: Optional[str] = None) -> str:
     """
     Generate a first-priority test scheduling preference based on occupation data.
 
@@ -463,15 +463,15 @@ def generate_random_occupation_unavailable(occupation: str,
     if unavailable_type is None or random.random() > unavailable_prob:
         return unavailable
 
+    unavailable['type'] = unavailable_type
+
     if unavailable_type == 'day':
         scale = len(dates) / 7
         min_day = unavailable_detail[0] * scale
         max_day = unavailable_detail[1] * scale
         unavailable_day_n = int(random.uniform(min_day, max_day))
-        unavailable['type'] = 'day'
-        unavailable['day'] = sorted(random.sample(dates, min(unavailable_day_n, len(dates))))
+        unavailable[unavailable_type] = sorted(random.sample(dates, min(unavailable_day_n, len(dates))))
     elif unavailable_type == 'half_day':
-        unavailable['type'] = 'half_day'
-        unavailable['half_day'] = random.choice(unavailable_detail)
+        unavailable[unavailable_type] = random.choice(unavailable_detail)
 
     return unavailable
