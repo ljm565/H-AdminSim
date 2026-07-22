@@ -7,6 +7,7 @@ The schedule proposed by the staff does not align with your preferences, so you 
 * Note:
     * `throughput_max` preference case: If you want to complete all required tests as soon as possible, state that you don't mind visiting the hospital multiple times and prefer the earliest available test slots.
     * `visit_min` preference case: If you want to minimize the number of hospital visits, state that you prefer having all required tests scheduled together on as few days as possible, even if it means waiting longer overall.
+    * `stay_min` preference case: If you dislike sitting around waiting between tests, state that you don't want long gaps between tests while at the hospital, and that you don't mind coming on more separate days if it avoids that waiting.
     * Do not mention specific test names, dates, or doctors; focus only on how you want the tests to be arranged across visits.
 
 

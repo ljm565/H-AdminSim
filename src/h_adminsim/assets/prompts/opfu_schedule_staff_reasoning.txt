@@ -16,6 +16,7 @@ Respond in JSON format only, as shown in the examples below.
 * Tips:
     * `throughput_max` case: All required tests must finish (including the time required for results to be ready) as early as possible, even if the patient must visit the hospital on multiple distinct days.
     * `visit_min` case: Minimize the number of distinct visit dates by clustering tests on as few days as possible. Among feasible groupings, prefer the one whose final test result becomes available the earliest.
+    * `stay_min` case: Minimize the patient's total idle waiting time between consecutive tests taken on the same date (the gaps during which the patient just sits and waits at the hospital). A test taken alone on its own date adds no waiting, so separating tests across more dates is preferred whenever it removes a same-day gap. Neither completion speed nor visit-date count is optimized.
 
 
 ## Required tests (each entry includes duration_hour, result_hours, priority, depends_on, avoid_same_day):
@@ -62,6 +63,7 @@ Schedule as many of the required tests as you can while satisfying every constra
 ## Optimization based on the patient's preference:
 * **`throughput_max`**: minimize the latest ``end + result_hours`` across the placed tests (i.e., make the slowest result-ready time as early as possible). Multiple visit dates are acceptable.
 * **`visit_min`**: minimize the number of distinct visit dates first; among feasible groupings, prefer the one whose final ``end + result_hours`` is earliest.
+* **`stay_min`**: minimize the total idle waiting time between consecutive same-day tests — i.e., the sum, over each visit date, of every gap between one test's ``end`` and the next test's ``start`` on that date. Tests on different dates contribute no waiting, so prefer separating tests across dates over leaving long same-day gaps. Visit-date count and overall completion speed are not optimized.
 
 
 ## Step-by-step procedure (follow this when reasoning):
@@ -73,6 +75,7 @@ Schedule as many of the required tests as you can while satisfying every constra
    d. Among the remaining candidates, pick:
       * For **`throughput_max`**: the earliest start ISO timestamp overall.
       * For **`visit_min`**: a slot on a date already used by another placed test if such a slot exists and is valid; otherwise the earliest start ISO timestamp.
+      * For **`stay_min`**: a slot that abuts an already-placed test on the same date — starting exactly when that test ends, or ending exactly when it starts, so no idle gap is created. If no such back-to-back slot exists on any already-used date, prefer a slot on a date not yet used (a visit of its own, which adds no waiting) over a same-date slot that would open an idle gap.
    e. If no candidate exists for T after scanning all devices and dates, OMIT T (do not place it).
 3. **Sort the final list** by ISO start timestamp ascending. Because step 1 ordered by priority and step 2c forbids out-of-priority placements, this will automatically satisfy both ordering rules (#9, #10).
 
@@ -94,7 +97,12 @@ Example 2 (`visit_min`, multiple tests on the same date):
 {{"test_schedule": [{{"IMGAS-T01-2": {{"date": "2025-06-14", "start": 13.0, "end": 14.0}}}}, {{"IMALL-T01-1": {{"date": "2025-06-14", "start": 14.5, "end": 15.0}}}}]}}
 ```
 
-Example 3 (partial — one test could not be placed within the horizon and is omitted):
+Example 3 (`stay_min`, same-day tests placed back-to-back so there is no idle waiting between them):
+```json
+{{"test_schedule": [{{"IMGAS-T01-2": {{"date": "2025-06-14", "start": 13.0, "end": 14.0}}}}, {{"IMALL-T01-1": {{"date": "2025-06-14", "start": 14.0, "end": 14.5}}}}]}}
+```
+
+Example 4 (partial — one test could not be placed within the horizon and is omitted):
 ```json
 {{"test_schedule": [{{"IMPUL-T04-0": {{"date": "2025-06-20", "start": 16.0, "end": 17.0}}}}]}}
 ```
