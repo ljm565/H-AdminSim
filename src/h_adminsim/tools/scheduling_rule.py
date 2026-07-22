@@ -7,6 +7,7 @@ from typing import Union, Optional, TYPE_CHECKING
 
 from .data_converter import DataConverter
 from h_adminsim.registry import SCHEDULE_STATUS
+from h_adminsim.registry.errors import SchedulingError
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.fhir_utils import *
 from h_adminsim.utils.common_utils import (
@@ -1013,17 +1014,19 @@ class SchedulingRule:
 
         # Sanity check
         ordered, unresolved = self._topological_order(tests)
-        assert not len(unresolved + missing), colorstr(
-            'red',
-            f'[SchedulingRule] infeasible test graph — unresolvable depends_on: {unresolved}, '
-            f'unknown test codes: {missing}'
-        )
+        if unresolved or missing:
+            raise SchedulingError(colorstr(
+                'red',
+                f'[SchedulingRule] infeasible test graph — unresolvable depends_on: {unresolved}, '
+                f'unknown test codes: {missing}'
+            ))
 
         offenders = self._check_priority_depends_consistency(tests)
-        assert not len(offenders), colorstr(
-            'red',
-            f'[SchedulingRule] priority/depends_on contradiction on tests: {offenders}'
-        )
+        if offenders:
+            raise SchedulingError(colorstr(
+                'red',
+                f'[SchedulingRule] priority/depends_on contradiction on tests: {offenders}'
+            ))
 
         avoid = self._build_avoid_pairs(tests)
         result = self._backtrack_schedule(tests, ordered, avoid, mode=mode)
@@ -1330,8 +1333,8 @@ def create_tools(rule: SchedulingRule,
                 This argument is mandatory and must be explicitly provided.
 
         Returns:
-            dict: Mapping of test schedules with fields `tests`, `test_visit_dates`,
-                `all_results_ready_at`, `unscheduled`, `fu_schedule`, and `status`.
+            dict: Mapping of test schedules with fields `test_schedule`, `test_visit_dates`,
+                `all_results_ready_at`, `unscheduled`, `fu_schedule`, `status`, and `action`.
         """
         log(f'[TOOL CALL] follow_up_throughput_max_test_schedule | attending_physician={attending_physician}', color=True)
         prefix = 'Dr.'
@@ -1376,8 +1379,8 @@ def create_tools(rule: SchedulingRule,
                 This argument is mandatory and must be explicitly provided.
 
         Returns:
-            dict: Mapping of test schedules with fields `tests`, `test_visit_dates`,
-                `all_results_ready_at`, `unscheduled` and `status`.
+            dict: Mapping of test schedules with fields `test_schedule`, `test_visit_dates`,
+                `all_results_ready_at`, `unscheduled`, `fu_schedule`, `status`, and `action`.
         """
         log(f'[TOOL CALL] follow_up_visit_min_test_schedule | attending_physician={attending_physician}', color=True)
         prefix = 'Dr.'
@@ -1425,8 +1428,8 @@ def create_tools(rule: SchedulingRule,
                 This argument is mandatory and must be explicitly provided.
 
         Returns:
-            dict: Mapping of test schedules with fields `tests`, `test_visit_dates`,
-                `all_results_ready_at`, `unscheduled`, `fu_schedule`, and `status`.
+            dict: Mapping of test schedules with fields `test_schedule`, `test_visit_dates`,
+                `all_results_ready_at`, `unscheduled`, `fu_schedule`, `status`, and `action`.
         """
         log(f'[TOOL CALL] follow_up_stay_min_test_schedule | attending_physician={attending_physician}', color=True)
         prefix = 'Dr.'
