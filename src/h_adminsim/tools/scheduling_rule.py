@@ -1291,19 +1291,25 @@ def create_tools(rule: SchedulingRule,
     @tool
     def follow_up_throughput_max_test_schedule(attending_physician: str) -> dict:
         """
-        Schedule each required test at its earliest available slot to MINIMIZE the
-        overall time until all results are ready. Visit-date count is NOT minimized;
-        the schedule may span multiple separate visits when that yields the earliest
-        completion.
-        After scheduling the tests, this tool also schedules a follow-up consultation
-        appointment with the specified attending physician.
+        Schedule the required tests so every RESULT is ready as EARLY as possible
+        (minimize the latest result-ready time). Visit-day count and on-site waiting
+        are NOT optimized — the schedule may use several separate days and may leave
+        gaps between same-day tests if that finishes soonest. Afterwards this tool
+        also books a follow-up consultation with the attending physician.
 
-        Use this tool whenever the patient prioritizes SPEED of test completion
-        — e.g. "as soon as possible", "ASAP", "quickly", "earliest", "right away",
-        "fastest", "want to finish quickly", or any equivalent urgency expression.
-        Explicit acceptance of multiple visits is NOT required to use this tool;
-        a plain speed preference is sufficient. This is the default choice when the
-        patient expresses urgency and says nothing about visit count.
+        Choose exactly ONE of the three follow-up test-scheduling tools by what the
+        patient optimizes for (each ignores the others' goals):
+          - THIS tool (throughput_max) -> results ready as EARLY as possible (cares about the FINISH time).
+          - follow_up_visit_min_test_schedule -> as FEW separate visit days as possible (trip COUNT).
+          - follow_up_stay_min_test_schedule -> least DEAD TIME sitting at the hospital between
+            same-day tests, regardless of finish time or day count.
+
+        Use THIS tool when the patient wants the tests/results DONE SOON — e.g. "as soon
+        as possible", "ASAP", "quickly", "earliest", "fastest", "get it over with", "want
+        the results early". It is also the default when the patient expresses general
+        urgency but says nothing about visit count or about waiting between tests. Do NOT
+        use it when the concern is specifically fewer visits (visit_min) or not sitting
+        around between tests during a visit (stay_min).
 
         IMPORTANT:
             DO NOT call this tool if `attending_physician` is unknown, omitted,
@@ -1339,17 +1345,23 @@ def create_tools(rule: SchedulingRule,
     @tool
     def follow_up_visit_min_test_schedule(attending_physician: str) -> dict:
         """
-        Group the required tests into the SMALLEST possible number of visit days,
-        accepting that some tests may finish later than they could individually.
-        After scheduling the tests, this tool also schedules a follow-up consultation
-        appointment with the specified attending physician.
+        Group the required tests into the SMALLEST number of separate visit days, even
+        if some results come back later and even if that leaves idle gaps within a day.
+        Afterwards this tool also books a follow-up consultation with the attending physician.
 
-        Use this tool ONLY when the patient EXPLICITLY asks to minimize the number
-        of hospital visits — e.g. "minimize visits", "fewer days", "on the same
-        day", "together", "in one trip", "all at once", "one visit", or any
-        equivalent phrasing that targets visit-count rather than speed. Do NOT use
-        this tool when the patient only expresses a speed/urgency preference; use
-        `follow_up_throughput_max_test_schedule` for that case.
+        Choose exactly ONE of the three follow-up test-scheduling tools by what the
+        patient optimizes for (each ignores the others' goals):
+          - follow_up_throughput_max_test_schedule -> results ready as EARLY as possible (FINISH time).
+          - THIS tool (visit_min) -> as FEW separate visit days as possible (cares about the trip COUNT).
+          - follow_up_stay_min_test_schedule -> least DEAD TIME sitting at the hospital between
+            same-day tests, regardless of finish time or day count.
+
+        Use THIS tool ONLY when the patient EXPLICITLY wants to come on as few days as
+        possible — e.g. "minimize visits", "fewer days", "in one trip", "all in one day",
+        "one visit", "do them all together". Here "same day / together" means FEWEST DAYS.
+        If the patient instead wants the tests packed back-to-back with no waiting in
+        between, that is stay_min. Do NOT use this tool for a speed/urgency preference
+        (throughput_max).
 
         IMPORTANT:
             DO NOT call this tool if `attending_physician` is unknown, omitted,
@@ -1385,20 +1397,27 @@ def create_tools(rule: SchedulingRule,
     @tool
     def follow_up_stay_min_test_schedule(attending_physician: str) -> dict:
         """
-        Schedule the required tests so as to MINIMIZE the patient's total idle waiting
-        time spent at the hospital between consecutive tests on the same day. Two tests
-        that could be taken on one day but with a long gap in between are instead split
-        across days when that removes the on-site waiting (a test taken on its own day
-        adds no waiting). Neither overall completion speed nor visit-day count is
-        minimized. After scheduling the tests, this tool also schedules a follow-up
-        consultation appointment with the specified attending physician.
+        Schedule the required tests to MINIMIZE the patient's idle time at the hospital —
+        the dead time spent sitting and waiting between one test and the next ON THE SAME
+        DAY. If two same-day tests would leave a long gap between them, the tests are split
+        across different days instead (a test alone on a day has no in-between waiting).
+        This does NOT make the results come sooner and may even INCREASE the number of
+        visit days. Afterwards this tool also books a follow-up consultation with the
+        attending physician.
 
-        Use this tool ONLY when the patient EXPLICITLY prioritizes not waiting around at
-        the hospital between tests — e.g. "I don't want to wait between tests", "minimize
-        waiting time", "no long gaps", "don't want to sit around", or any equivalent
-        phrasing targeting on-site idle time. Do NOT use this tool for a plain
-        speed/urgency preference (use `follow_up_throughput_max_test_schedule`) or a
-        fewer-visits preference (use `follow_up_visit_min_test_schedule`).
+        Choose exactly ONE of the three follow-up test-scheduling tools by what the
+        patient optimizes for (each ignores the others' goals):
+          - follow_up_throughput_max_test_schedule -> results ready as EARLY as possible (FINISH time).
+          - follow_up_visit_min_test_schedule -> as FEW separate visit days as possible (trip COUNT).
+          - THIS tool (stay_min) -> least DEAD TIME sitting at the hospital between same-day tests.
+
+        Here "waiting" means ONLY sitting idle at the hospital BETWEEN two tests during a
+        visit — NOT waiting for results and NOT waiting for an earlier appointment date.
+        Use THIS tool ONLY when the patient explicitly objects to that on-site dead time —
+        e.g. "I don't want to sit around between tests", "no long gaps between tests", "no
+        dead time waiting in between", "hate waiting around at the hospital between tests".
+        Do NOT use it for wanting to finish soon ("quickly"/"ASAP" is throughput_max, NOT
+        this tool) or for wanting fewer visit days (visit_min).
 
         IMPORTANT:
             DO NOT call this tool if `attending_physician` is unknown, omitted,
