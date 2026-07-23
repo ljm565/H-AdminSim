@@ -629,7 +629,7 @@ class SchedulingRule:
                             ordered: list,
                             avoid: dict,
                             mode: str,
-                            time_budget_s: Optional[float] = 5.0) -> dict:
+                            time_budget_s: Optional[float] = None) -> dict:
         """
         Branch-and-bound backtracking search across slot/device choices.
 
@@ -658,6 +658,8 @@ class SchedulingRule:
             ordered (list[str]): Processing order from `_topological_order`.
             avoid (dict): Symmetric closure of `avoid_same_day`.
             mode (str): `'throughput_max'`, `'visit_min'`, or `'stay_min'`.
+            time_budget_s (Optional[float], optional): Wall-clock cap on the backtracking search. `stay_min` can
+                                                       blow up combinatorially when tests share a priority. `None` disables the cap. Defaluts to None.
 
         Returns:
             dict: `{'placed': {code: assignment}, 'unscheduled': [codes], 'objective': tuple}`.
@@ -977,12 +979,8 @@ class SchedulingRule:
             mode (str): `'throughput_max'`, `'visit_min'`, or `'stay_min'`.
             filtered_test_device_information (dict): Output of `HospitalEnvironment.get_test_device_schedule`.
             test_codes (list[str]): Codes of the tests the patient must take.
-            time_budget_s (Optional[float]): Wall-clock cap on the backtracking search. `stay_min` can
-                                             blow up combinatorially when tests share a priority (its idle-wait
-                                             lower bound is 0, so branch-and-bound cannot prune); on hitting the
-                                             budget the best schedule found so far is returned instead of hanging.
-                                             The exact optimum is still returned whenever the search finishes (or
-                                             reaches the provable zero-wait optimum) first. `None` disables the cap.
+            time_budget_s (Optional[float], optional): Wall-clock cap on the backtracking search. `stay_min` can
+                                                       blow up combinatorially when tests share a priority. `None` disables the cap. Defaluts to None.
 
         Returns:
             dict: `{'test_schedule', 'test_visit_dates', 'idle_waiting_time', 'all_results_ready_at', 'unscheduled', 'status'}`

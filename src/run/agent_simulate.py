@@ -96,7 +96,6 @@ def simulate(config, args, single_file=None):
             fhir_integration=config.integration_with_fhir,
             scheduling_strategy=config.schedule_task.scheduling_strategy,
             patient_vllm_endpoint=config.vllm_url if use_vllm else None,
-            admin_staff_vllm_endpoint=config.vllm_url if use_vllm else None
         )
         task[_task.name] = _task
 

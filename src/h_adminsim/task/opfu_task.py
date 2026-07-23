@@ -39,8 +39,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                  scheduling_max_inference: int = 5,
                  scheduling_strategy: str = 'tool_calling',
                  max_retries: int = 8,
-                 patient_vllm_endpoint: Optional[str] = None,
-                 admin_staff_vllm_endpoint: Optional[str] = None):
+                 patient_vllm_endpoint: Optional[str] = None):
         super().__init__()
 
         # Initialize variables
