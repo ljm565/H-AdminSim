@@ -836,13 +836,15 @@ def calculate_idle_wait(assignments, priority_floor: float = float('inf')) -> fl
     by_date = defaultdict(list)
     for a in assignments:
         by_date[a['date']].append(a)
-    total = 0.0
+    
+    total = Decimal('0')
     for items in by_date.values():
         items.sort(key=lambda a: _hour(a['start']))
         for prev, cur in zip(items, items[1:]):
             if cur['priority'] >= priority_floor:
                 continue
-            gap = _hour(cur['start']) - _hour(prev['end'])
+            gap = Decimal(str(_hour(cur['start']))) - Decimal(str(_hour(prev['end'])))
             if gap > 0:
                 total += gap
-    return total
+    
+    return float(total)
