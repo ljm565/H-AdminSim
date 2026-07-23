@@ -986,7 +986,7 @@ class SchedulingRule:
             unscheduled_search (list): Codes the backtracker could not place.
 
         Returns:
-            dict: `{'test_schedule', 'test_visit_dates', 'all_results_ready_at', 'unscheduled', 'status'}`.
+            dict: `{'test_schedule', 'test_visit_dates', 'idle_waiting_time', 'all_results_ready_at', 'unscheduled', 'status'}`.
         """
         unscheduled = sorted(set(unscheduled_input) | set(unscheduled_search))
         test_visit_dates = sorted({a['date'] for a in placed.values()})
@@ -998,6 +998,7 @@ class SchedulingRule:
         return {
             'test_schedule': placed,
             'test_visit_dates': test_visit_dates,
+            'idle_waiting_time': self._idle_wait(placed.values()),  # total same-day idle gap hours (stay_min objective)
             'all_results_ready_at': all_ready,
             'unscheduled': unscheduled,
             'status': status,
@@ -1039,12 +1040,12 @@ class SchedulingRule:
                                              reaches the provable zero-wait optimum) first. `None` disables the cap.
 
         Returns:
-            dict: `{'test_schedule', 'test_visit_dates', 'all_results_ready_at', 'unscheduled', 'status'}`
+            dict: `{'test_schedule', 'test_visit_dates', 'idle_waiting_time', 'all_results_ready_at', 'unscheduled', 'status'}`
                   (see `_assemble_schedule_result`); the empty-input fast path returns the same
                   keys with empty values.
         """
         empty_result = {
-            'test_schedule': {}, 'test_visit_dates': [], 'all_results_ready_at': None,
+            'test_schedule': {}, 'test_visit_dates': [], 'idle_waiting_time': None, 'all_results_ready_at': None,
             'unscheduled': [], 'status': 'ok',
         }
         if not test_codes:
