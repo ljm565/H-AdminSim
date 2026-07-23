@@ -1,3 +1,4 @@
+import time
 from copy import deepcopy
 from decimal import Decimal
 from collections import defaultdict
@@ -682,7 +683,8 @@ class SchedulingRule:
                             tests: dict,
                             ordered: list,
                             avoid: dict,
-                            mode: str) -> dict:
+                            mode: str,
+                            time_budget_s: Optional[float] = 5.0) -> dict:
         """
         Branch-and-bound backtracking search across slot/device choices.
 
@@ -695,10 +697,7 @@ class SchedulingRule:
 
         - `mode == 'throughput_max'`: `(per_priority_unscheduled, max_result_ready_at)`.
         - `mode == 'visit_min'`: `(per_priority_unscheduled, num_test_visit_dates, max_result_ready_at)`.
-        - `mode == 'stay_min'`: `(per_priority_unscheduled, total_idle_wait_hours, max_result_ready_at)`,
-          where `total_idle_wait_hours` is the summed gap between consecutive same-day tests
-          (see `_idle_wait`); splitting tests across days incurs no waiting. Its branch-and-bound
-          lower bound counts only priority-locked gaps (`_idle_wait` with a `priority_floor`).
+        - `mode == 'stay_min'`: `(per_priority_unscheduled, total_idle_wait_hours)`
 
         `per_priority_unscheduled` is a tuple indexed by priority ascending
         (lower number first), so the search first protects the most important
@@ -758,6 +757,9 @@ class SchedulingRule:
 
         def leaf_objective():
             pu = pu_tuple(len(ordered))
+            # Minimize same-day idle waiting only; result-ready time is intentionally ignored because of time limits
+            if mode == 'stay_min':
+                return (pu, self._idle_wait(assigned.values()))
             if assigned:
                 max_ready = max(a['result_ready_at'] for a in assigned.values())
                 num_dates = len({a['date'] for a in assigned.values()})
@@ -766,8 +768,6 @@ class SchedulingRule:
                 num_dates = 0
             if mode == 'throughput_max':
                 return (pu, max_ready)
-            if mode == 'stay_min':
-                return (pu, self._idle_wait(assigned.values()), max_ready)
             return (pu, num_dates, max_ready)
 
         def _future_max_ready_lb(hypo_end, hypo_ready, hypo_pri, base_max_ready, start_idx):
@@ -808,13 +808,22 @@ class SchedulingRule:
         def lb_with_placement(idx, ready, start_iso, end_iso, date):
             # Place `code` here and fold in the minimum-possible result_ready_at of every remaining test via `_future_max_ready_lb`
             pu = pu_tuple(idx)
+            code = ordered[idx]
+
+            # stay_min objective is (pu, idle_wait) — no result-ready term, so skip `_future_max_ready_lb`.
+            # Lower bound = idle gaps locked in by priority (see `_idle_wait`): among already-placed tests
+            # plus this candidate, only gaps a remaining test can never fill.
+            if mode == 'stay_min':
+                cur = {'date': date, 'start': start_iso, 'end': end_iso, 'priority': tests[code].get('priority', 0)}
+                locked = self._idle_wait(list(assigned.values()) + [cur], priority_floor=suffix_min_priority[idx + 1])
+                return (pu, locked)
+
             base = max([a['result_ready_at'] for a in assigned.values()] + [ready])
 
             # Get hypothetical schedule states
             hypo_end = {c: a['end'] for c, a in assigned.items()}
             hypo_ready = {c: a['result_ready_at'] for c, a in assigned.items()}
             hypo_pri = {c: a['priority'] for c, a in assigned.items()}
-            code = ordered[idx]
             hypo_end[code] = end_iso
             hypo_ready[code] = ready
             hypo_pri[code] = tests[code].get('priority', 0)
@@ -823,12 +832,6 @@ class SchedulingRule:
 
             if mode == 'throughput_max':
                 return (pu, hyp_ready)
-            if mode == 'stay_min':
-                # Lower bound = idle gaps locked in by priority (see `_idle_wait`): among
-                # already-placed tests plus this candidate, only gaps a remaining test can never fill.
-                cur = {'date': date, 'start': start_iso, 'end': end_iso, 'priority': tests[code].get('priority', 0)}
-                locked = self._idle_wait(list(assigned.values()) + [cur], priority_floor=suffix_min_priority[idx + 1])
-                return (pu, locked, hyp_ready)
             hyp_dates = {a['date'] for a in assigned.values()}
             hyp_dates.add(date)
             return (pu, len(hyp_dates), hyp_ready)
@@ -837,6 +840,12 @@ class SchedulingRule:
             # Skip `code` (do not seed it into the hypothetical placement) but still fold in the minimum-possible result_ready_at of every remaining test
             cur_priority = tests[ordered[idx]].get('priority', 0)
             pu = pu_tuple(idx, extra_skip_priority=cur_priority)
+
+            # stay_min: same priority-locked idle-gap bound as lb_with_placement, over already-placed tests only.
+            if mode == 'stay_min':
+                locked = self._idle_wait(assigned.values(), priority_floor=suffix_min_priority[idx + 1])
+                return (pu, locked)
+
             base = max([a['result_ready_at'] for a in assigned.values()] + [self.current_time])
 
             hypo_end = {c: a['end'] for c, a in assigned.items()}
@@ -847,20 +856,35 @@ class SchedulingRule:
 
             if mode == 'throughput_max':
                 return (pu, cur_max_ready)
-            if mode == 'stay_min':
-                # Same priority-locked idle-gap bound as lb_with_placement, over the already-placed tests only.
-                locked = self._idle_wait(assigned.values(), priority_floor=suffix_min_priority[idx + 1])
-                return (pu, locked, cur_max_ready)
             cur_dates = {a['date'] for a in assigned.values()}
             return (pu, len(cur_dates), cur_max_ready)
 
+        # Search-control state. stay_min can blow up when tests share a priority (its idle-wait lower
+        # bound is 0, so branch-and-bound cannot prune): two safeguards keep it bounded —
+        #   1. Early exit at the provable optimum: everything scheduled with zero idle waiting — nothing
+        #      can beat `((0,...), 0.0)`, so once found the search stops immediately (exact).
+        #   2. Wall-clock budget: a pathological instance returns the best found so far instead of hanging
+        #      (heuristic only in that rare case; the fresh-date-first ordering keeps that best good).
+        search = {'nodes': 0, 'stop': False}
+        deadline = (time.monotonic() + time_budget_s) if time_budget_s else None
+        stay_min_optimum = (tuple([0] * n_priorities), 0.0)
+
         def recurse(idx):
+            if search['stop']:
+                return
+            search['nodes'] += 1
+            if deadline is not None and (search['nodes'] & 0x3FF) == 0 and time.monotonic() > deadline:
+                search['stop'] = True
+                return
+
             if idx == len(ordered):
                 obj = leaf_objective()
                 if best['objective'] is None or obj < best['objective']:
                     best['placed'] = {c: dict(assigned[c]) for c in assigned}
                     best['unscheduled'] = [c for c in ordered if c not in assigned]
                     best['objective'] = obj
+                if mode == 'stay_min' and best['objective'] == stay_min_optimum:
+                    search['stop'] = True  # provable optimum reached — no need to search further
                 return
 
             is_last_test = idx == len(ordered) - 1
@@ -902,6 +926,14 @@ class SchedulingRule:
                 placed_dates=placed_dates_set,
             )
 
+            # stay_min: try candidates on a not-yet-used date first. Spreading tests across days yields
+            # zero idle waiting, so this makes DFS reach an optimal (0-wait) leaf early — the resulting
+            # tight `best` then lets branch-and-bound prune the rest (crucial when all tests share a
+            # priority, where the idle-wait lower bound is 0 and cannot prune on its own).
+            if mode == 'stay_min':
+                busy_dates = {a['date'] for a in assigned.values()}
+                candidates.sort(key=lambda c: (c[1] in busy_dates, c[2], c[0]))
+
             for device, date, start_iso, end_iso in candidates:
                 ready = add_hours_to_iso(end_iso, info.get('result_hours', 0))
 
@@ -925,6 +957,8 @@ class SchedulingRule:
                 recurse(idx + 1)
                 just_booked[device][date].pop()
                 del assigned[code]
+                if search['stop']:
+                    return
 
             # Try skipping this test (partial fallback). Prune only if strictly worse.
             if best['objective'] is None:
@@ -973,7 +1007,8 @@ class SchedulingRule:
     def schedule_tests(self,
                        mode: str,
                        filtered_test_device_information: dict,
-                       test_codes: list) -> dict:
+                       test_codes: list,
+                       time_budget_s: Optional[float] = None) -> dict:
         """
         Unified backtracking test scheduler. Searches every (device, date, start)
         combination via `_backtrack_schedule` and returns the lex-minimal assignment
@@ -988,14 +1023,20 @@ class SchedulingRule:
           result ready as early as possible, regardless of visit count or on-site waiting.
         - `'visit_min'`: `(per_priority_unscheduled, num_test_visit_dates, max_result_ready_at)`
           — pack tests into the fewest distinct visit days.
-        - `'stay_min'`: `(per_priority_unscheduled, total_idle_wait_hours, max_result_ready_at)`
-          — minimize the patient's idle waiting between consecutive same-day tests, so tests
-          are split across days rather than left with long same-day gaps.
+        - `'stay_min'`: `(per_priority_unscheduled, total_idle_wait_hours)` — minimize the patient's
+          idle waiting between consecutive same-day tests, so tests are split across days rather than
+          left with long same-day gaps. Completion (result-ready) time is not optimized.
 
         Args:
             mode (str): `'throughput_max'`, `'visit_min'`, or `'stay_min'`.
             filtered_test_device_information (dict): Output of `HospitalEnvironment.get_test_device_schedule`.
             test_codes (list[str]): Codes of the tests the patient must take.
+            time_budget_s (Optional[float]): Wall-clock cap on the backtracking search. `stay_min` can
+                                             blow up combinatorially when tests share a priority (its idle-wait
+                                             lower bound is 0, so branch-and-bound cannot prune); on hitting the
+                                             budget the best schedule found so far is returned instead of hanging.
+                                             The exact optimum is still returned whenever the search finishes (or
+                                             reaches the provable zero-wait optimum) first. `None` disables the cap.
 
         Returns:
             dict: `{'test_schedule', 'test_visit_dates', 'all_results_ready_at', 'unscheduled', 'status'}`
@@ -1030,7 +1071,7 @@ class SchedulingRule:
             ))
 
         avoid = self._build_avoid_pairs(tests)
-        result = self._backtrack_schedule(tests, ordered, avoid, mode=mode)
+        result = self._backtrack_schedule(tests, ordered, avoid, mode=mode, time_budget_s=time_budget_s)
         return self._assemble_schedule_result(result['placed'], missing, result['unscheduled'])
 
 
@@ -1342,7 +1383,7 @@ def create_tools(rule: SchedulingRule,
         if prefix not in attending_physician:
             attending_physician = f'{prefix} {attending_physician}'
         result = rule.schedule_tests(
-            'throughput_max', test_device_information, required_test_codes
+            'throughput_max', test_device_information, required_test_codes, 10
         )
         fu_appn = rule.physician_filter(doctor_info, attending_physician, result['all_results_ready_at'])
         fu_appn = rule.find_earliest_time(fu_appn)
@@ -1388,7 +1429,7 @@ def create_tools(rule: SchedulingRule,
         if prefix not in attending_physician:
             attending_physician = f'{prefix} {attending_physician}'
         result = rule.schedule_tests(
-            'visit_min', test_device_information, required_test_codes
+            'visit_min', test_device_information, required_test_codes, 10
         )
         fu_appn = rule.physician_filter(doctor_info, attending_physician, result['all_results_ready_at'])
         fu_appn = rule.find_earliest_time(fu_appn)
@@ -1437,7 +1478,7 @@ def create_tools(rule: SchedulingRule,
         if prefix not in attending_physician:
             attending_physician = f'{prefix} {attending_physician}'
         result = rule.schedule_tests(
-            'stay_min', test_device_information, required_test_codes
+            'stay_min', test_device_information, required_test_codes, 10
         )
         fu_appn = rule.physician_filter(doctor_info, attending_physician, result['all_results_ready_at'])
         fu_appn = rule.find_earliest_time(fu_appn)
