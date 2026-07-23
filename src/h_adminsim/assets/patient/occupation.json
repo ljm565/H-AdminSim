@@ -9,7 +9,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -24,7 +27,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -39,9 +45,15 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.55,
-                "detail": [
-                    "am"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am"
+                    ],
+                    "day": [
+                        1,
+                        2
+                    ]
+                },
                 "explanation": "Court sessions typically run in the morning."
             }
         }
@@ -56,7 +68,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -71,7 +86,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -86,7 +104,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -101,7 +122,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -116,7 +140,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -131,7 +158,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -146,9 +176,15 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.4,
-                "detail": [
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "pm"
+                    ],
+                    "day": [
+                        1,
+                        2
+                    ]
+                },
                 "explanation": "Site visits are often scheduled in the afternoon."
             }
         }
@@ -163,10 +199,13 @@
             "unavailable": {
                 "type": "day",
                 "prob": 0.4,
-                "detail": [
-                    1,
-                    2
-                ],
+                "detail": {
+                    "half_day": null,
+                    "day": [
+                        1,
+                        2
+                    ]
+                },
                 "explanation": "Travels to project sites a couple of days most weeks."
             }
         }
@@ -181,7 +220,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -196,7 +238,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -211,7 +256,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -226,7 +274,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -241,7 +292,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -256,7 +310,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -271,7 +328,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -286,7 +346,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -301,10 +364,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.4,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        1,
+                        2
+                    ]
+                },
                 "explanation": "Maintenance windows can block either half of certain days."
             }
         }
@@ -319,7 +388,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -334,10 +406,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.6,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Bound to a fixed shift covering one half of the day."
             }
         }
@@ -352,10 +430,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.7,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Locked to a fixed call-center shift covering one half of the day."
             }
         }
@@ -370,7 +454,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -385,7 +472,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -400,7 +490,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -415,10 +508,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.5,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Covers a fixed pharmacy shift on one half of the day."
             }
         }
@@ -433,10 +532,13 @@
             "unavailable": {
                 "type": "day",
                 "prob": 0.4,
-                "detail": [
-                    1,
-                    2
-                ],
+                "detail": {
+                    "half_day": null,
+                    "day": [
+                        1,
+                        2
+                    ]
+                },
                 "explanation": "On-call duty blocks a day or two most weeks."
             }
         }
@@ -451,10 +553,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.45,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        1,
+                        2
+                    ]
+                },
                 "explanation": "Lectures occupy one half of certain teaching days."
             }
         }
@@ -469,9 +577,15 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.7,
-                "detail": [
-                    "am"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Classes run through the morning school session."
             }
         }
@@ -486,9 +600,15 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.7,
-                "detail": [
-                    "am"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Responsible for children through the morning session."
             }
         }
@@ -503,7 +623,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -518,7 +641,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -533,7 +659,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -548,7 +677,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -563,7 +695,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -578,10 +713,13 @@
             "unavailable": {
                 "type": "day",
                 "prob": 0.5,
-                "detail": [
-                    1,
-                    2
-                ],
+                "detail": {
+                    "half_day": null,
+                    "day": [
+                        1,
+                        2
+                    ]
+                },
                 "explanation": "Books shoots on a couple of days most weeks."
             }
         }
@@ -596,10 +734,13 @@
             "unavailable": {
                 "type": "day",
                 "prob": 0.5,
-                "detail": [
-                    1,
-                    2
-                ],
+                "detail": {
+                    "half_day": null,
+                    "day": [
+                        1,
+                        2
+                    ]
+                },
                 "explanation": "Rehearsal and shooting days block a day or two most weeks."
             }
         }
@@ -614,9 +755,15 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.6,
-                "detail": [
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "pm"
+                    ],
+                    "day": [
+                        1,
+                        2
+                    ]
+                },
                 "explanation": "Performs and rehearses in the afternoon and evening."
             }
         }
@@ -631,9 +778,15 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.6,
-                "detail": [
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Lessons are concentrated in the afternoon and evening."
             }
         }
@@ -648,10 +801,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.7,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Rotating shifts block either the morning or afternoon."
             }
         }
@@ -666,10 +825,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.7,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Long rotating shifts block one half of the day."
             }
         }
@@ -684,9 +849,15 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.6,
-                "detail": [
-                    "am"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Morning client care blocks the earlier half of the day."
             }
         }
@@ -701,9 +872,15 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.6,
-                "detail": [
-                    "am"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Morning caregiving duties block the earlier half of the day."
             }
         }
@@ -718,10 +895,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.6,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "On the sales floor for one half of the day."
             }
         }
@@ -736,10 +919,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.6,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Covers a register shift for one half of the day."
             }
         }
@@ -754,10 +943,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.5,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Has to keep the store open during one half of the day."
             }
         }
@@ -772,9 +967,15 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.7,
-                "detail": [
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Lunch and dinner service occupy the afternoon and evening."
             }
         }
@@ -789,9 +990,15 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.7,
-                "detail": [
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Kitchen service runs through the afternoon and evening."
             }
         }
@@ -806,9 +1013,15 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.6,
-                "detail": [
-                    "am"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "The morning coffee rush requires being on shift."
             }
         }
@@ -823,9 +1036,15 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.7,
-                "detail": [
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Night bar shifts block the afternoon and evening."
             }
         }
@@ -840,10 +1059,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.7,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Front-desk shifts cover one half of the day."
             }
         }
@@ -858,7 +1083,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -873,7 +1101,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -888,7 +1119,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -903,7 +1137,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -918,7 +1155,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -933,10 +1173,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.7,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "On-site work occupies one half of the working day."
             }
         }
@@ -951,10 +1197,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.6,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        1,
+                        2
+                    ]
+                },
                 "explanation": "Service calls block one half of the day."
             }
         }
@@ -969,10 +1221,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.6,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        1,
+                        2
+                    ]
+                },
                 "explanation": "Service calls block one half of the day."
             }
         }
@@ -987,10 +1245,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.6,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "On-site work covers one half of the day."
             }
         }
@@ -1005,10 +1269,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.6,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Workshop shift covers one half of the day."
             }
         }
@@ -1023,9 +1293,15 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.6,
-                "detail": [
-                    "am"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Painting work fills the morning while the light is best."
             }
         }
@@ -1040,10 +1316,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.6,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Garage shift covers one half of the day."
             }
         }
@@ -1058,10 +1340,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.7,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Machine shift covers one half of the day."
             }
         }
@@ -1076,10 +1364,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.8,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        3,
+                        3
+                    ]
+                },
                 "explanation": "Fixed production shift covers one half of the day."
             }
         }
@@ -1094,10 +1388,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.8,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        3,
+                        3
+                    ]
+                },
                 "explanation": "Assembly-line shift covers one half of the day."
             }
         }
@@ -1112,10 +1412,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.7,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Warehouse shift covers one half of the day."
             }
         }
@@ -1130,10 +1436,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.7,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Warehouse shift covers one half of the day."
             }
         }
@@ -1148,9 +1460,15 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.6,
-                "detail": [
-                    "am"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Groundskeeping is done in the cooler morning hours."
             }
         }
@@ -1165,9 +1483,15 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.6,
-                "detail": [
-                    "am"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Outdoor crew work fills the morning."
             }
         }
@@ -1182,10 +1506,13 @@
             "unavailable": {
                 "type": "day",
                 "prob": 0.8,
-                "detail": [
-                    2,
-                    3
-                ],
+                "detail": {
+                    "half_day": null,
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Long-haul routes keep the driver away two to three days most weeks."
             }
         }
@@ -1200,10 +1527,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.6,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Delivery route covers one half of the day."
             }
         }
@@ -1218,10 +1551,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.7,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Driving shift covers one half of the day."
             }
         }
@@ -1236,10 +1575,13 @@
             "unavailable": {
                 "type": "day",
                 "prob": 0.6,
-                "detail": [
-                    1,
-                    2
-                ],
+                "detail": {
+                    "half_day": null,
+                    "day": [
+                        1,
+                        2
+                    ]
+                },
                 "explanation": "Route rosters keep the conductor away a day or two most weeks."
             }
         }
@@ -1254,10 +1596,13 @@
             "unavailable": {
                 "type": "day",
                 "prob": 0.8,
-                "detail": [
-                    2,
-                    3
-                ],
+                "detail": {
+                    "half_day": null,
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Flight rotations keep the crew away two to three days most weeks."
             }
         }
@@ -1272,10 +1617,13 @@
             "unavailable": {
                 "type": "day",
                 "prob": 0.8,
-                "detail": [
-                    2,
-                    3
-                ],
+                "detail": {
+                    "half_day": null,
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Flight rotations keep the pilot away two to three days most weeks."
             }
         }
@@ -1290,10 +1638,13 @@
             "unavailable": {
                 "type": "day",
                 "prob": 0.85,
-                "detail": [
-                    2,
-                    3
-                ],
+                "detail": {
+                    "half_day": null,
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Voyages keep the sailor away up to three days most weeks."
             }
         }
@@ -1308,10 +1659,13 @@
             "unavailable": {
                 "type": "day",
                 "prob": 0.7,
-                "detail": [
-                    2,
-                    3
-                ],
+                "detail": {
+                    "half_day": null,
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Fishing trips keep the crew at sea two to three days most weeks."
             }
         }
@@ -1326,10 +1680,13 @@
             "unavailable": {
                 "type": "day",
                 "prob": 0.7,
-                "detail": [
-                    2,
-                    3
-                ],
+                "detail": {
+                    "half_day": null,
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Remote rosters keep the miner on site two to three days most weeks."
             }
         }
@@ -1344,10 +1701,13 @@
             "unavailable": {
                 "type": "day",
                 "prob": 0.85,
-                "detail": [
-                    2,
-                    3
-                ],
+                "detail": {
+                    "half_day": null,
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Offshore rotations keep the worker away up to three days most weeks."
             }
         }
@@ -1362,10 +1722,13 @@
             "unavailable": {
                 "type": "day",
                 "prob": 0.6,
-                "detail": [
-                    2,
-                    3
-                ],
+                "detail": {
+                    "half_day": null,
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Client travel keeps the rep on the road two to three days most weeks."
             }
         }
@@ -1380,10 +1743,13 @@
             "unavailable": {
                 "type": "day",
                 "prob": 0.5,
-                "detail": [
-                    1,
-                    2
-                ],
+                "detail": {
+                    "half_day": null,
+                    "day": [
+                        1,
+                        2
+                    ]
+                },
                 "explanation": "Client engagements require travel a day or two most weeks."
             }
         }
@@ -1398,10 +1764,13 @@
             "unavailable": {
                 "type": "day",
                 "prob": 0.6,
-                "detail": [
-                    1,
-                    2
-                ],
+                "detail": {
+                    "half_day": null,
+                    "day": [
+                        1,
+                        2
+                    ]
+                },
                 "explanation": "Guided tours block a day or two most weeks."
             }
         }
@@ -1416,10 +1785,13 @@
             "unavailable": {
                 "type": "day",
                 "prob": 0.5,
-                "detail": [
-                    1,
-                    2
-                ],
+                "detail": {
+                    "half_day": null,
+                    "day": [
+                        1,
+                        2
+                    ]
+                },
                 "explanation": "Field reporting blocks a day or two most weeks."
             }
         }
@@ -1434,9 +1806,15 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.7,
-                "detail": [
-                    "am"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am"
+                    ],
+                    "day": [
+                        3,
+                        3
+                    ]
+                },
                 "explanation": "Farm chores fill the early morning."
             }
         }
@@ -1451,10 +1829,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.7,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Rotating patrol shifts block one half of the day."
             }
         }
@@ -1469,10 +1853,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.7,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Long on-duty shifts block one half of the day."
             }
         }
@@ -1487,9 +1877,15 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.7,
-                "detail": [
-                    "am"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Night shifts mean sleeping through the morning."
             }
         }
@@ -1504,10 +1900,13 @@
             "unavailable": {
                 "type": "day",
                 "prob": 0.7,
-                "detail": [
-                    2,
-                    3
-                ],
+                "detail": {
+                    "half_day": null,
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Duty and training keep the soldier away two to three days most weeks."
             }
         }
@@ -1522,9 +1921,15 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.7,
-                "detail": [
-                    "am"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am"
+                    ],
+                    "day": [
+                        3,
+                        3
+                    ]
+                },
                 "explanation": "Mail delivery fills the morning route."
             }
         }
@@ -1539,10 +1944,13 @@
             "unavailable": {
                 "type": "day",
                 "prob": 0.4,
-                "detail": [
-                    1,
-                    2
-                ],
+                "detail": {
+                    "half_day": null,
+                    "day": [
+                        1,
+                        2
+                    ]
+                },
                 "explanation": "Home visits take the worker into the field a day or two most weeks."
             }
         }
@@ -1557,9 +1965,15 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.7,
-                "detail": [
-                    "am"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Children are in care through the morning."
             }
         }
@@ -1574,9 +1988,15 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.6,
-                "detail": [
-                    "am"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "On duty with the family through the morning."
             }
         }
@@ -1591,9 +2011,15 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.6,
-                "detail": [
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Team practice runs in the afternoon."
             }
         }
@@ -1608,7 +2034,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -1623,7 +2052,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -1638,7 +2070,10 @@
             "unavailable": {
                 "type": null,
                 "prob": null,
-                "detail": [],
+                "detail": {
+                    "half_day": null,
+                    "day": null
+                },
                 "explanation": "No fixed weekly constraint; can generally attend at any time."
             }
         }
@@ -1653,10 +2088,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.5,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Class timetable blocks one half of certain days."
             }
         }
@@ -1671,10 +2112,16 @@
             "unavailable": {
                 "type": "half_day",
                 "prob": 0.5,
-                "detail": [
-                    "am",
-                    "pm"
-                ],
+                "detail": {
+                    "half_day": [
+                        "am",
+                        "pm"
+                    ],
+                    "day": [
+                        2,
+                        3
+                    ]
+                },
                 "explanation": "Lab and class hours block one half of certain days."
             }
         }

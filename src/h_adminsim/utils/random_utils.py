@@ -463,15 +463,14 @@ def generate_random_occupation_unavailable(occupation: str,
     if unavailable_type is None or random.random() > unavailable_prob:
         return unavailable
 
+    # Init detail conditions
     unavailable['type'] = unavailable_type
+    scale = len(dates) / 7
+    unavailable_day_range = [d * scale for d in unavailable_detail['day']]
+    unavailable_day_n = int(random.uniform(*unavailable_day_range))
+    unavailable['day'] = sorted(random.sample(dates, min(unavailable_day_n, len(dates))))
 
-    if unavailable_type == 'day':
-        scale = len(dates) / 7
-        min_day = unavailable_detail[0] * scale
-        max_day = unavailable_detail[1] * scale
-        unavailable_day_n = int(random.uniform(min_day, max_day))
-        unavailable[unavailable_type] = sorted(random.sample(dates, min(unavailable_day_n, len(dates))))
-    elif unavailable_type == 'half_day':
-        unavailable[unavailable_type] = random.choice(unavailable_detail)
+    if unavailable_type == 'half_day':
+        unavailable[unavailable_type] = random.choice(unavailable_detail[unavailable_type])
 
     return unavailable
