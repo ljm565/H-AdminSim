@@ -58,7 +58,7 @@ class AgentDataBuilder:
                 doctor, department, date = appn['attending_physician'], appn['department'], appn['date']
                 gender, telecom, birth_date, identifier, address = \
                     appn['gender'], appn['telecom'], appn['birthDate'], appn['identifier'], appn['address']
-                preference, symptom_level = appn['preference'], appn['symptom_level']
+                preference = appn['preference']
                 
                 # Make disease-symptom pair
                 disease = generate_random_symptom(
@@ -70,10 +70,12 @@ class AgentDataBuilder:
                 # Branch depends on the visit type
                 if isinstance(disease, dict) and visit_type == 'first_visit':
                     gt_department = disease['department'] if isinstance(disease, dict) else [department]
-                    required_tests = None
+                    symptom_level = appn['symptom_level']
+                    unavailable, required_tests = None, None
                 else:
                     gt_department = [department]    # For follow up visit, the patient must have only one department
-                    required_tests = deepcopy(appn['required_tests'])
+                    unavailable, required_tests = appn['unavailable'], deepcopy(appn['required_tests'])
+                    symptom_level = None
                     for _test in required_tests:
                         del _test['schedule']
                         del _test['date']
@@ -91,6 +93,7 @@ class AgentDataBuilder:
                     'attending_physician': doctor,
                     'valid_from': date if 'date' in preference else 'N/A',
                     'preference': preference,
+                    'unavailable': unavailable,
                     'symptom_level': symptom_level,
                     'required_tests': required_tests,
                 }
@@ -104,6 +107,7 @@ class AgentDataBuilder:
                     'address': address,
                     'constraint': {
                         'preference': preference,
+                        'unavailable': unavailable,
                         'attending_physician': doctor,
                         'valid_from': date if 'date' in preference else 'N/A',
                         'symptom_level': symptom_level,
