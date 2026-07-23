@@ -11,16 +11,7 @@ from h_adminsim.registry import SCHEDULE_STATUS
 from h_adminsim.registry.errors import SchedulingError
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.fhir_utils import *
-from h_adminsim.utils.common_utils import (
-    group_consecutive_segments,
-    convert_segment_to_time,
-    convert_time_to_segment,
-    compare_iso_time,
-    add_hours_to_iso,
-    get_iso_time,
-    iso_to_hour,
-    iso_to_date,
-)
+from h_adminsim.utils.common_utils import *
 
 if TYPE_CHECKING:
     from h_adminsim.environment.hospital import HospitalEnvironment
@@ -633,52 +624,6 @@ class SchedulingRule:
         return offenders
 
 
-    @staticmethod
-    def _idle_wait(assignments, priority_floor: float = float('inf')) -> float:
-        """
-        Idle waiting hours the patient spends between consecutive same-day tests.
-
-        For each visit date the placed tests are sorted by start time and the gap
-        between one test's end and the next test's start is summed. Tests on
-        different dates contribute nothing (the patient goes home between visits),
-        so splitting tests across days is always at least as good as bunching them
-        with a gap. With the default `priority_floor` this is exactly the objective
-        `stay_min` minimizes.
-
-        `priority_floor` turns this into an admissible lower bound for the
-        branch-and-bound search: a gap `(prev, cur)` is only counted when
-        `cur['priority'] < priority_floor`. Passing the minimum priority among the
-        still-unplaced tests as the floor keeps only the gaps that no remaining test
-        can ever fill — any remaining test has priority `>= priority_floor > cur`, so
-        the hard ordering `cur.end <= remaining.start` pushes it strictly after `cur`,
-        leaving the gap intact in every completion. Same-priority (`== floor`) gaps
-        stay excluded because a same-priority test could still slot in and shrink them.
-
-        Args:
-            assignments (Iterable[dict]): Placed test assignments, each carrying
-                                          `date`, `start`, `end`, and `priority` fields.
-            priority_floor (float, optional): Only count gaps whose right test has a
-                                              strictly smaller priority. Defaults to +inf
-                                              (count every gap → the true objective).
-
-        Returns:
-            float: Total (or priority-locked) idle waiting time in hours.
-        """
-        by_date = defaultdict(list)
-        for a in assignments:
-            by_date[a['date']].append(a)
-        total = 0.0
-        for items in by_date.values():
-            items.sort(key=lambda a: a['start'])
-            for prev, cur in zip(items, items[1:]):
-                if cur['priority'] >= priority_floor:
-                    continue
-                gap = iso_to_hour(cur['start']) - iso_to_hour(prev['end'])
-                if gap > 0:
-                    total += gap
-        return total
-
-
     def _backtrack_schedule(self,
                             tests: dict,
                             ordered: list,
@@ -759,7 +704,7 @@ class SchedulingRule:
             pu = pu_tuple(len(ordered))
             # Minimize same-day idle waiting only; result-ready time is intentionally ignored because of time limits
             if mode == 'stay_min':
-                return (pu, self._idle_wait(assigned.values()))
+                return (pu, calculate_idle_wait(assigned.values()))
             if assigned:
                 max_ready = max(a['result_ready_at'] for a in assigned.values())
                 num_dates = len({a['date'] for a in assigned.values()})
@@ -811,11 +756,11 @@ class SchedulingRule:
             code = ordered[idx]
 
             # stay_min objective is (pu, idle_wait) — no result-ready term, so skip `_future_max_ready_lb`.
-            # Lower bound = idle gaps locked in by priority (see `_idle_wait`): among already-placed tests
+            # Lower bound = idle gaps locked in by priority (see `calculate_idle_wait`): among already-placed tests
             # plus this candidate, only gaps a remaining test can never fill.
             if mode == 'stay_min':
                 cur = {'date': date, 'start': start_iso, 'end': end_iso, 'priority': tests[code].get('priority', 0)}
-                locked = self._idle_wait(list(assigned.values()) + [cur], priority_floor=suffix_min_priority[idx + 1])
+                locked = calculate_idle_wait(list(assigned.values()) + [cur], priority_floor=suffix_min_priority[idx + 1])
                 return (pu, locked)
 
             base = max([a['result_ready_at'] for a in assigned.values()] + [ready])
@@ -843,7 +788,7 @@ class SchedulingRule:
 
             # stay_min: same priority-locked idle-gap bound as lb_with_placement, over already-placed tests only.
             if mode == 'stay_min':
-                locked = self._idle_wait(assigned.values(), priority_floor=suffix_min_priority[idx + 1])
+                locked = calculate_idle_wait(assigned.values(), priority_floor=suffix_min_priority[idx + 1])
                 return (pu, locked)
 
             base = max([a['result_ready_at'] for a in assigned.values()] + [self.current_time])
@@ -998,7 +943,7 @@ class SchedulingRule:
         return {
             'test_schedule': placed,
             'test_visit_dates': test_visit_dates,
-            'idle_waiting_time': self._idle_wait(placed.values()),  # total same-day idle gap hours (stay_min objective)
+            'idle_waiting_time': calculate_idle_wait(placed.values()),  # total same-day idle gap hours (stay_min objective)
             'all_results_ready_at': all_ready,
             'unscheduled': unscheduled,
             'status': status,

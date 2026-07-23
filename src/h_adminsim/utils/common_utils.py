@@ -1,6 +1,7 @@
 import time
 import pytz
 import random
+from collections import defaultdict
 from decimal import Decimal, getcontext
 from datetime import datetime, timedelta
 from typing import Optional, Union, Tuple
@@ -809,3 +810,39 @@ def staff_role(state: Optional[ConversationState] = None,
     
     label = f'({name})'
     return f"{colorstr('blue', 'Staff')} {colorstr('magenta', f'{label:<10}')}"
+
+
+
+def calculate_idle_wait(assignments, priority_floor: float = float('inf')) -> float:
+    """
+    Idle waiting hours the patient spends between consecutive same-day tests.
+
+    Args:
+        assignments (Iterable[dict]): Placed test assignments, each carrying
+                                        `date`, `start`, `end`, and `priority` fields.
+                                        `start`/`end` may be ISO strings (scheduler output)
+                                        or float hours (reasoning postprocessing) — both are
+                                        interpreted as the hour of day.
+        priority_floor (float, optional): Only count gaps whose right test has a
+                                            strictly smaller priority. Defaults to +inf
+                                            (count every gap → the true objective).
+
+    Returns:
+        float: Total (or priority-locked) idle waiting time in hours.
+    """
+    def _hour(v):
+        return v if isinstance(v, (int, float)) else iso_to_hour(v)
+
+    by_date = defaultdict(list)
+    for a in assignments:
+        by_date[a['date']].append(a)
+    total = 0.0
+    for items in by_date.values():
+        items.sort(key=lambda a: _hour(a['start']))
+        for prev, cur in zip(items, items[1:]):
+            if cur['priority'] >= priority_floor:
+                continue
+            gap = _hour(cur['start']) - _hour(prev['end'])
+            if gap > 0:
+                total += gap
+    return total

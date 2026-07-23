@@ -453,6 +453,7 @@ class OPFUSchedulingSimulation:
                         latest = result_ready_at
                 text_dict['test_schedule'] = test_schedule
                 text_dict['test_visit_dates'] = list(test_visit_dates)
+                text_dict['idle_waiting_time'] = calculate_idle_wait(test_schedule)
                 text_dict['all_results_ready_at'] = latest
 
                 # Follow-up consultation slot — computed deterministically here, NOT taken from the LLM.
@@ -485,13 +486,16 @@ class OPFUSchedulingSimulation:
                 text_dict['test_schedule'].sort(key=lambda x: (x['date'], x['start']))
                 return text_dict
 
-            except:
+            except Exception as e:
+                log(colorstr('red', f'[postprocessing:reasoning] failed to parse/enrich schedule '
+                                    f'({type(e).__name__}: {e}); returning raw output'), level='warning')
                 return str(data)
         
         elif strategy == 'tool_calling':
             schedule = {
                 'test_schedule': [], 
                 'test_visit_dates': data['test_visit_dates'], 
+                'idle_waiting_time': data['idle_waiting_time'],
                 'fu_schedule': None, 
                 'all_results_ready_at': data['all_results_ready_at']
             }
