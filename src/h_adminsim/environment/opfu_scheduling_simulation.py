@@ -562,7 +562,7 @@ class OPFUSchedulingSimulation:
                                      test_device_information: Optional[dict] = None,
                                      **kwargs) -> dict:
         """
-        Re-run the whole-test-set scheduling (`throughput_max`/`visit_min` by the booking's preference) to find an earlier schedule.
+        Re-run the whole-test-set scheduling (`throughput_max`/`visit_min`/`stay_min` by the booking's preference) to find an improved schedule.
 
         Args:
             known_condition (dict): The original follow-up booking being rescheduled.
@@ -588,7 +588,7 @@ class OPFUSchedulingSimulation:
             fhir_integration=self.fhir_integration and test_device_information is None,
         )
 
-        # The agent picks the follow-up test-scheduling tool (`throughput_max`/`visit_min`) by the booking's original preference
+        # The agent picks the follow-up test-scheduling tool (`throughput_max`/`visit_min`/`stay_min`) by the booking's original preference
         _schedule_client = self.scheduling_agent.build_agent(
             rule=self.rules,
             doctor_info=filtered_doctor_information,
@@ -649,10 +649,16 @@ class OPFUSchedulingSimulation:
         def _strictly_earlier(new_t, old_t):
             return new_t is not None and old_t is not None and compare_iso_time(old_t, new_t) and new_t != old_t
 
-        # Preference-based improvement: `visit_min` minimizes visit dates first, `throughput_max` minimizes result-ready time
-        if original_schedule.get('preference') == 'visit_min':
+        # Preference-based improvement: `visit_min` fewer visit dates (then earlier results), `stay_min` less idle
+        # waiting between same-day tests, `throughput_max` (default) earlier result-ready time.
+        preference = original_schedule.get('preference')
+        if preference == 'visit_min':
             improved = len(new_dates) < len(original_dates) or \
                 (len(new_dates) == len(original_dates) and _strictly_earlier(new_ready, original_ready))
+        elif preference == 'stay_min':
+            new_idle = new_schedule['idle_waiting_time']
+            original_idle = original_schedule['idle_waiting_time']
+            improved = new_idle < original_idle
         else:
             improved = _strictly_earlier(new_ready, original_ready)
 
@@ -678,6 +684,7 @@ class OPFUSchedulingSimulation:
             'preferred_doctor': original_schedule.get('preferred_doctor'),
             'valid_from': original_schedule.get('valid_from'),
             'test': new_schedule['test_schedule'],
+            'idle_waiting_time': new_schedule['idle_waiting_time'],
             'last_updated_time': self.environment.current_time,
         }
         return final_schedule
@@ -1387,7 +1394,7 @@ class OPFUSchedulingSimulation:
                 if not status:
                     break
 
-                # Preference rejection logic (OPFU: throughput_max vs visit_min)
+                # Preference rejection logic
                 next_pref_differs = (i != len(gt_data) - 1) and \
                     (gt_data[i + 1]['preference'] != gt_data[i]['preference'])
                 if random.random() < preference_reject_prob and next_pref_differs and len(pred_schedule['test_visit_dates']) > 1:
@@ -1511,6 +1518,7 @@ class OPFUSchedulingSimulation:
                     'preferred_doctor': gt_data[i].get('preferred_doctor'),
                     'valid_from': gt_data[i].get('valid_from'),
                     'test': pred_schedule['test_schedule'],
+                    'idle_waiting_time': pred_schedule['idle_waiting_time'],
                     'last_updated_time': self.environment.current_time
                 }
                 result_dict['pred'] = [prediction]
