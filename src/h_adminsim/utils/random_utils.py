@@ -409,16 +409,21 @@ def generate_random_occupation_preference(occupation: str,
     preferred_type = occupation_pref['type']
     preferred_prob = occupation_pref['prob']
 
+    # If the preferred type is not specified, randomly select from the preference candidates
     if preferred_type is None:
         return generate_random_code_with_prob(
             preference_candidates,
             [1 / len(preference_candidates)] * len(preference_candidates)
         )
 
-    if random.random() <= preferred_prob:
+    # If the probability is specified, return it with the given probability
+    if preferred_prob is None or random.random() <= preferred_prob:
         return preferred_type
 
     other_candidates = [p for p in preference_candidates if p != preferred_type]
+    if not other_candidates:
+        return preferred_type
+    
     return generate_random_code_with_prob(
         other_candidates,
         [1 / len(other_candidates)] * len(other_candidates)

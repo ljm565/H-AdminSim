@@ -252,39 +252,22 @@ class DataSynthesizer:
 
 
     @staticmethod
-    def second_preference_generator(preference: str, visit_type: str) -> list[str]:
+    def second_preference_generator(primary_preference: str, preference_candidates: list[str]) -> list[str]:
         """
-        Generate a list of preferences based on the initial preference.
+        Generate a list of preferences based on the initial primary_preference.
 
         Args:
-            preference (str): First priority of preference.
-            visit_type (str): Hospital visit type. Currently support [`first_visit`, `follow_up_visit`]
+            primary_preference (str): First priority of preference.
+            preference_candidates (list[str]): List of available preference options.
 
         Returns:
             list[str]: List of preferences including first and second priority.
         """
-        preference_list = [preference]
-        
-        if visit_type == 'first_visit':
-            if preference == 'doctor':
-                second_preference = random.choice(['asap', 'date'])
-                preference_list.append(second_preference)
-            elif preference == 'date':
-                second_preference = random.choice(['asap', 'doctor'])
-                preference_list.append(second_preference)
-            elif preference == 'asap':
-                second_preference = random.choice(['date', 'doctor'])
-                preference_list.append(second_preference)
-        
-        elif visit_type == 'follow_up_visit':
-            if preference == 'throughput_max':
-                second_preference = random.choice(['visit_min', 'stay_min'])
-                preference_list.append(second_preference)
-            elif preference == 'visit_min':
-                second_preference = random.choice(['throughput_max', 'stay_min'])
-                preference_list.append(second_preference)
-            elif preference == 'stay_min':
-                second_preference = random.choice(['throughput_max', 'visit_min'])
-                preference_list.append(second_preference)
+        preference_list = [primary_preference]
+        other_candidates = [p for p in preference_candidates if p != primary_preference]
 
+        if other_candidates:
+            second_preference = random.choice(other_candidates)
+            preference_list.append(second_preference)
+        
         return preference_list

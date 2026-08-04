@@ -83,6 +83,12 @@ class FirstVisitDataSynthesizer(DataSynthesizer):
         # Build scheduler
         scheduler = ScheduleAssigner(start_hour, end_hour, interval_hour)
 
+        # Config values
+        preference_candidates = config.hospital_data.first_visit.preference.type
+        preference_probs = config.hospital_data.first_visit.preference.probs
+        symptom_candidates = config.hospital_data.first_visit.symptom.type
+        symptom_probs = config.hospital_data.first_visit.symptom.probs
+
         patient_info = {}
         for doctor, doc_data in data.doctor.items():
             department = doc_data['department']
@@ -116,14 +122,14 @@ class FirstVisitDataSynthesizer(DataSynthesizer):
                 # Generate patient profiles
                 patients = DataSynthesizer.name_list_generator(len(appointments))
                 for patient, appointment in zip(patients, appointments):
-                    preference = generate_random_code_with_prob(
-                        config.hospital_data.first_visit.preference.type,
-                        config.hospital_data.first_visit.preference.probs
+                    primary_preference = generate_random_code_with_prob(
+                        preference_candidates,
+                        preference_probs,
                     )
-                    preference_rank = DataSynthesizer.second_preference_generator(preference, visit_type)
+                    preference_rank = DataSynthesizer.second_preference_generator(primary_preference, preference_candidates)
                     symptom_level = generate_random_code_with_prob(
-                        config.hospital_data.first_visit.symptom.type,
-                        config.hospital_data.first_visit.symptom.probs
+                        symptom_candidates,
+                        symptom_probs,
                     )
                     birth_date = generate_random_date()
                     patient_info[patient] = [{

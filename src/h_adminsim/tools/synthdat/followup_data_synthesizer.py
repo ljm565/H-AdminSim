@@ -140,7 +140,6 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         interval_hour = float(metadata['time']['interval_hour'])
         start_date = metadata['start_date']
         days = metadata['days']
-        hospital_time_segments = convert_time_to_segment(start_hour, end_hour, interval_hour)
         fu_config = config.hospital_data.follow_up_visit
         
         # Initialize eligible tests
@@ -508,8 +507,8 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                 continue
             duration = int(Decimal(str(1)) / Decimal(str(doctor_info[doctor]['capacity_per_hour'])) / Decimal(str(interval_hour)))
         
-            preference = generate_random_occupation_preference(occupation, preference_candidates)
-            preference_rank = DataSynthesizer.second_preference_generator(preference, visit_type)
+            primary_preference = generate_random_occupation_preference(occupation, preference_candidates)
+            preference_rank = DataSynthesizer.second_preference_generator(primary_preference, preference_candidates)
             unavailable = generate_random_occupation_unavailable(occupation, dates)
 
             if include_consultation:
