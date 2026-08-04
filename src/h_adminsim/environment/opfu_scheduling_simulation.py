@@ -562,7 +562,8 @@ class OPFUSchedulingSimulation:
                                      test_device_information: Optional[dict] = None,
                                      **kwargs) -> dict:
         """
-        Re-run the whole-test-set scheduling (`throughput_max`/`visit_min`/`stay_min` by the booking's preference) to find an improved schedule.
+        Re-run the whole-test-set scheduling (`throughput_max`/`visit_min`/`stay_min` by the booking's preference,
+        with `indifferent` treated as `throughput_max`) to find an improved schedule.
 
         Args:
             known_condition (dict): The original follow-up booking being rescheduled.
@@ -588,7 +589,8 @@ class OPFUSchedulingSimulation:
             fhir_integration=self.fhir_integration and test_device_information is None,
         )
 
-        # The agent picks the follow-up test-scheduling tool (`throughput_max`/`visit_min`/`stay_min`) by the booking's original preference
+        # The agent picks the follow-up test-scheduling tool (`throughput_max`/`visit_min`/`stay_min`) by the booking's
+        # original preference (`indifferent` is routed to `follow_up_throughput_max_test_schedule` as the hospital default)
         _schedule_client = self.scheduling_agent.build_agent(
             rule=self.rules,
             doctor_info=filtered_doctor_information,
@@ -651,7 +653,11 @@ class OPFUSchedulingSimulation:
 
         # Preference-based improvement: `visit_min` fewer visit dates (then earlier results), `stay_min` less idle
         # waiting between same-day tests, `throughput_max` (default) earlier result-ready time.
+        # `indifferent` follows the hospital-friendly default policy, so it uses the same criterion as `throughput_max`.
         preference = original_schedule.get('preference')
+        if preference == 'indifferent':
+            preference = 'throughput_max'
+        
         if preference == 'visit_min':
             improved = len(new_dates) < len(original_dates) or \
                 (len(new_dates) == len(original_dates) and _strictly_earlier(new_ready, original_ready))
