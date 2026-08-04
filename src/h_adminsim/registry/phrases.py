@@ -11,12 +11,14 @@ OPFV_PREFERENCE_PHRASE_STAFF = {
 OPFU_PREFERENCE_PHRASE_PATIENT = {
     'throughput_max': 'You want to complete all required tests as soon as possible, regardless of the number of hospital visits.',
     'visit_min': 'You want to minimize the number of hospital visits by scheduling all required tests together on as few days as possible.',
-    'stay_min': 'You want to minimize the time spent waiting at the hospital between tests, regardless of the number of hospital visits.'
+    'stay_min': 'You want to minimize the time spent waiting at the hospital between tests, regardless of the number of hospital visits.',
+    'indifferent': 'You have no specific preference regarding the scheduling of your follow-up tests, so you are willing to go along with whatever schedule the staff proposes.'
 }
 OPFU_PREFERENCE_PHRASE_STAFF = {
     'throughput_max': 'The patient wants to complete all required tests as soon as possible, regardless of the number of hospital visits.',
     'visit_min': 'The patient wants to minimize the number of hospital visits by scheduling all required tests together on as few days as possible.',
-    'stay_min': 'The patient wants to minimize the time spent waiting at the hospital between tests, regardless of the number of hospital visits.'
+    'stay_min': 'The patient wants to minimize the time spent waiting at the hospital between tests, regardless of the number of hospital visits.',
+    'indifferent': 'The patient has no specific scheduling preference for the follow-up tests, so the staff arranges all required tests as soon as possible, following the hospital\'s default policy.'
 }
 
 AGENT_DESCRIPTION = {

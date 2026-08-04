@@ -267,7 +267,7 @@ class SanityChecker:
                                            `{'test_schedule': [{<device_code>: {'date', 'start', 'end'}}, ...],
                                            'fu_schedule': {<doctor_name>: {'date', 'start', 'end'}} | None,
                                            'all_results_ready_at': iso_str}`.
-            gt_patient_condition (dict): GT containing at least `required_tests` (list with `test_code`), `preference` ('throughput_max' | 'visit_min' | 'stay_min') and `attending_physician`.
+            gt_patient_condition (dict): GT containing at least `required_tests` (list with `test_code`), `preference` ('throughput_max' | 'visit_min' | 'stay_min' | 'indifferent') and `attending_physician`.
             test_device_information (dict): Filtered output of `HospitalEnvironment.get_test_device_schedule` covering all required tests.
             environment (HospitalEnvironment): Provides `current_time` and `_utc_offset`.
             doctor_information (Optional[dict], optional): Dictionary of doctor data including their existing schedules.
@@ -381,9 +381,11 @@ class SanityChecker:
 
         ############################ Schedule optimality ############################
         # Compute the rule-based optimum only after the predicted schedule has passed all validity checks.
-        optimal = None
+        preference, optimal = gt_patient_condition.get('preference'), None
+        if preference == 'indifferent':
+            preference = 'throughput_max'
+
         if rule is not None:
-            preference = gt_patient_condition.get('preference')
             test_codes_list = list(gt_test_codes)
             if preference == 'throughput_max':
                 optimal = rule.schedule_tests('throughput_max', test_device_information, test_codes_list, 10)
@@ -392,13 +394,12 @@ class SanityChecker:
             elif preference == 'stay_min':
                 optimal = rule.schedule_tests('stay_min', test_device_information, test_codes_list, 10)
 
+        if optimal is not None:
             # Simple post-processing
             for _test in optimal['test_schedule'].values():
                 _test['start'] = iso_to_hour(_test['start'])
                 _test['end'] = iso_to_hour(_test['end'])
-
-        if optimal:
-            preference = gt_patient_condition.get('preference')
+                
             if preference == 'visit_min':
                 pred_distinct_dates = prediction['test_visit_dates']
                 opt_distinct_dates  = optimal['test_visit_dates']
