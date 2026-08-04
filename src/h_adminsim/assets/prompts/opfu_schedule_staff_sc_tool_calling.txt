@@ -11,13 +11,14 @@ Rules:
 - If the patient wants the tests/results DONE SOON, regardless of the number of visits, call `follow_up_throughput_max_test_schedule`.
 - If the patient wants to come on as FEW days as possible, call `follow_up_visit_min_test_schedule`.
 - If the patient objects to SITTING AROUND between tests during a visit (dead time between one test and the next), regardless of the number of visits, call `follow_up_stay_min_test_schedule`.
+- If the patient EXPLICITLY states they have no preference or defers the decision to you (e.g., says they don't mind, any schedule is fine, or they will go with whatever you recommend), apply the hospital's default policy and call `follow_up_throughput_max_test_schedule`.
 - "waiting" means idle time BETWEEN tests during a visit (→ stay_min). If the patient really means finishing or getting RESULTS sooner, that is throughput_max (NOT stay_min); if they mean fewer trips, that is visit_min.
 - When BOTH speed and visit-count are mentioned, the explicit acceptance of multiple visits MUST take precedence and you MUST call `follow_up_throughput_max_test_schedule`.
 - If ONLY finishing-soon is mentioned and visit-count is not addressed, you MUST call `follow_up_throughput_max_test_schedule`.
 - If ONLY visit-count is mentioned and speed is not addressed, you MUST call `follow_up_visit_min_test_schedule`.
 - If ONLY the between-test idle time is mentioned (sitting around between tests) and neither finishing-soon nor visit-count is addressed, you MUST call `follow_up_stay_min_test_schedule`.
 - All three tools require the attending physician's name, which is already known from the conversation; pass it as the argument.
-- If the patient's request does not clearly and explicitly fall into exactly one of the above cases (or corresponding tools), you must immediately output the text "NO TOOL".
+- If the patient's request does not clearly and explicitly fall into exactly one of the above cases (or corresponding tools), you must immediately output the text "NO TOOL". "NO TOOL" is for when the patient expresses a specific preference that none of the tools can satisfy (e.g., wanting the tests only on a particular weekday or within a specific date range). Note: having NO preference is NOT a "NO TOOL" case — that is the no-preference rule above and maps to `follow_up_throughput_max_test_schedule`.
 
 
 Always call a tool or output the text "NO TOOL".

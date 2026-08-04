@@ -67,6 +67,8 @@ The three scheduling tools optimize DIFFERENT things — pick exactly one by the
 
 - **`throughput_max` case**: the patient wants the tests/results DONE SOON, regardless of the number of visits → call `follow_up_throughput_max_test_schedule`.
   - Trigger keywords: "as soon as possible", "ASAP", "quickly", "earliest", "fastest", "get it over with", "want the results soon".
+- **`indifferent` case**: the patient EXPLICITLY states they have no preference or defers the decision to you, so apply the hospital's default policy → call `follow_up_throughput_max_test_schedule`.
+  - Trigger keywords: "I don't mind", "whatever is fine", "anything works", "up to you", "you decide", "whatever you recommend", "no preference either way".
 - **`visit_min` case**: the patient wants to come on as FEW days as possible → call `follow_up_visit_min_test_schedule`.
   - Trigger keywords: "minimize visits", "fewer days", "in one trip", "all in one day", "one visit", "do them all together".
 - **`stay_min` case**: the patient objects to SITTING AROUND between tests during a visit (dead time between one test and the next on the same day), regardless of the number of visits → call `follow_up_stay_min_test_schedule`.
@@ -74,11 +76,13 @@ The three scheduling tools optimize DIFFERENT things — pick exactly one by the
 
 **Disambiguating "wait":** "waiting" means idle time BETWEEN tests during a visit (→ stay_min). If the patient really means finishing or getting RESULTS sooner, that is throughput_max (NOT stay_min); if they mean fewer trips, that is visit_min.
 
+**Disambiguating "no preference":** an EXPLICIT statement that the patient does not mind or leaves the decision to you is the `indifferent` case → call `follow_up_throughput_max_test_schedule`. This is NOT the same as the patient simply not having stated a preference yet; if none has been stated, ask about it (Step 2). Never treat "no preference" as a reason to output "NO TOOL".
+
 - When BOTH speed and visit-count are mentioned, the explicit acceptance of multiple visits (e.g. "even with multiple visits") MUST take precedence and you MUST call `follow_up_throughput_max_test_schedule`.
 - If ONLY speed/finishing-soon is mentioned and visit-count is not addressed, you MUST call `follow_up_throughput_max_test_schedule`. Explicit acceptance of multiple visits is NOT required for this default.
 - If ONLY visit-count is mentioned and speed is not addressed, you MUST call `follow_up_visit_min_test_schedule`.
 - If ONLY the between-test idle time is mentioned (sitting around between tests) and neither finishing-soon nor visit-count is addressed, you MUST call `follow_up_stay_min_test_schedule`.
-- If the patient's request does NOT clearly and explicitly fall into EXACTLY ONE of the above cases, even if the patient expresses some form of preference, you MUST immediately output the text "NO TOOL".
+- If the patient's request does NOT clearly and explicitly fall into EXACTLY ONE of the above cases, you MUST immediately output the text "NO TOOL". This applies when the patient expresses a specific preference that none of the tools can satisfy (e.g., wanting the tests only on a particular weekday or within a specific date range). Note: having NO preference is NOT a "NO TOOL" case — that is the `indifferent` case and maps to `follow_up_throughput_max_test_schedule`.
 
 ---
 

@@ -15,6 +15,7 @@ Respond in JSON format only, as shown in the examples below.
 * Patient utterance expressing scheduling preference: {PREFERENCE}
 * Tips:
     * `throughput_max` case: All required tests must finish (including the time required for results to be ready) as early as possible, even if the patient must visit the hospital on multiple distinct days.
+    * `indifferent` case: The patient has no preference, so apply the hospital's default policy and schedule exactly as in the `throughput_max` case (all required tests finish, including result-ready time, as early as possible, even across multiple visit days).
     * `visit_min` case: Minimize the number of distinct visit dates by clustering tests on as few days as possible. Among feasible groupings, prefer the one whose final test result becomes available the earliest.
     * `stay_min` case: Minimize the patient's total idle waiting time between consecutive tests taken on the same date (the gaps during which the patient just sits and waits at the hospital). A test taken alone on its own date adds no waiting, so separating tests across more dates is preferred whenever it removes a same-day gap. Neither completion speed nor visit-date count is optimized.
 
@@ -62,6 +63,7 @@ Schedule as many of the required tests as you can while satisfying every constra
 
 ## Optimization based on the patient's preference:
 * **`throughput_max`**: minimize the latest ``end + result_hours`` across the placed tests (i.e., make the slowest result-ready time as early as possible). Multiple visit dates are acceptable.
+* **`indifferent`**: apply the hospital's default policy — optimize identically to **`throughput_max`** (minimize the latest ``end + result_hours`` across the placed tests; multiple visit dates are acceptable).
 * **`visit_min`**: minimize the number of distinct visit dates first; among feasible groupings, prefer the one whose final ``end + result_hours`` is earliest.
 * **`stay_min`**: minimize the total idle waiting time between consecutive same-day tests — i.e., the sum, over each visit date, of every gap between one test's ``end`` and the next test's ``start`` on that date. Tests on different dates contribute no waiting, so prefer separating tests across dates over leaving long same-day gaps. Visit-date count and overall completion speed are not optimized.
 
@@ -74,6 +76,7 @@ Schedule as many of the required tests as you can while satisfying every constra
    c. Reject any candidate slot that (i) starts at or before ``Current time``, (ii) overlaps an occupied interval, (iii) starts before any already-placed test of strictly lower priority ends, (iv) starts before ``predecessor.end + predecessor.result_hours`` for any predecessor in ``depends_on``, (v) lands on a date that conflicts with ``avoid_same_day``, (vi) overlaps in time with any already-placed test of this patient on another device on the same date (single patient, single location at a time), or (vii) has ``start`` or ``end`` that is not an exact integer multiple of ``Time unit``.
    d. Among the remaining candidates, pick:
       * For **`throughput_max`**: the earliest start ISO timestamp overall.
+      * For **`indifferent`**: the earliest start ISO timestamp overall (same as **`throughput_max`**).
       * For **`visit_min`**: a slot on a date already used by another placed test if such a slot exists and is valid; otherwise the earliest start ISO timestamp.
       * For **`stay_min`**: a slot that abuts an already-placed test on the same date — starting exactly when that test ends, or ending exactly when it starts, so no idle gap is created. If no such back-to-back slot exists on any already-used date, prefer a slot on a date not yet used (a visit of its own, which adds no waiting) over a same-date slot that would open an idle gap.
    e. If no candidate exists for T after scanning all devices and dates, OMIT T (do not place it).
@@ -87,7 +90,7 @@ Do NOT include ``fu_schedule``, ``test_visit_dates``, ``all_results_ready_at``, 
 
 
 ## Answer format examples:
-Example 1 (`throughput_max`, all tests placed):
+Example 1 (`throughput_max` / `indifferent`, all tests scheduled as early as possible):
 ```json
 {{"test_schedule": [{{"IMCAR-T02-1": {{"date": "2025-06-13", "start": 9.0, "end": 9.5}}}}, {{"IMCAR-T03-0": {{"date": "2025-06-13", "start": 10.0, "end": 10.5}}}}]}}
 ```

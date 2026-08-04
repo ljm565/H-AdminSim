@@ -16,6 +16,7 @@ Test scheduling responsibilities:
 
 Optimization based on patient preference:
 - `throughput_max`: minimize the latest test result-ready time across all placed tests; multiple visit dates are acceptable.
+- `indifferent`: the patient has no preference, so apply the hospital's default policy and optimize identically to `throughput_max` (minimize the latest test result-ready time across all placed tests; multiple visit dates are acceptable).
 - `visit_min`: minimize the number of distinct visit dates first; among feasible groupings, prefer the one whose final result-ready time is earliest.
 - `stay_min`: minimize the patient's total idle waiting time between consecutive same-day tests (the gaps between one test's end and the next test's start on the same date); prefer separating tests across dates over leaving long same-day gaps. Visit-date count and completion speed are not optimized.
 
