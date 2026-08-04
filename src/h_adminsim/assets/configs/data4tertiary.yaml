@@ -67,4 +67,4 @@ hospital_data:
         cross_department_test_prob: 0.2             # Probability of tests from other departments
         include_consultation: True                 # Whether to include post-test doctor consultation
         preference:
-            type: ['throughput_max', 'visit_min', 'stay_min']    # Types of patient preferences.
+            type: ['throughput_max', 'visit_min', 'stay_min', 'indifferent']    # Types of patient preferences.

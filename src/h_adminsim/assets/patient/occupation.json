@@ -616,9 +616,9 @@
     "Graphic Designer": {
         "test_schedule_preference": {
             "preference": {
-                "type": null,
-                "prob": null,
-                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+                "type": "indifferent",
+                "prob": 0.8,
+                "explanation": "Flexible or unstructured schedule; indifferent to when, how often, or how long the wait is."
             },
             "unavailable": {
                 "type": null,
@@ -634,9 +634,9 @@
     "Web Developer": {
         "test_schedule_preference": {
             "preference": {
-                "type": null,
-                "prob": null,
-                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+                "type": "indifferent",
+                "prob": 0.8,
+                "explanation": "Flexible or unstructured schedule; indifferent to when, how often, or how long the wait is."
             },
             "unavailable": {
                 "type": null,
@@ -652,9 +652,9 @@
     "Translator": {
         "test_schedule_preference": {
             "preference": {
-                "type": null,
-                "prob": null,
-                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+                "type": "indifferent",
+                "prob": 0.8,
+                "explanation": "Flexible or unstructured schedule; indifferent to when, how often, or how long the wait is."
             },
             "unavailable": {
                 "type": null,
@@ -670,9 +670,9 @@
     "Writer": {
         "test_schedule_preference": {
             "preference": {
-                "type": null,
-                "prob": null,
-                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+                "type": "indifferent",
+                "prob": 0.8,
+                "explanation": "Flexible or unstructured schedule; indifferent to when, how often, or how long the wait is."
             },
             "unavailable": {
                 "type": null,
@@ -688,9 +688,9 @@
     "Painter (Artist)": {
         "test_schedule_preference": {
             "preference": {
-                "type": null,
-                "prob": null,
-                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+                "type": "indifferent",
+                "prob": 0.8,
+                "explanation": "Flexible or unstructured schedule; indifferent to when, how often, or how long the wait is."
             },
             "unavailable": {
                 "type": null,
@@ -706,9 +706,9 @@
     "Photographer": {
         "test_schedule_preference": {
             "preference": {
-                "type": null,
-                "prob": null,
-                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+                "type": "indifferent",
+                "prob": 0.8,
+                "explanation": "Flexible or unstructured schedule; indifferent to when, how often, or how long the wait is."
             },
             "unavailable": {
                 "type": "day",
@@ -727,9 +727,9 @@
     "Actor": {
         "test_schedule_preference": {
             "preference": {
-                "type": null,
-                "prob": null,
-                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+                "type": "indifferent",
+                "prob": 0.8,
+                "explanation": "Flexible or unstructured schedule; indifferent to when, how often, or how long the wait is."
             },
             "unavailable": {
                 "type": "day",
@@ -771,9 +771,9 @@
     "Tutor": {
         "test_schedule_preference": {
             "preference": {
-                "type": null,
-                "prob": null,
-                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+                "type": "indifferent",
+                "prob": 0.8,
+                "explanation": "Flexible or unstructured schedule; indifferent to when, how often, or how long the wait is."
             },
             "unavailable": {
                 "type": "half_day",
@@ -2027,9 +2027,9 @@
     "Homemaker": {
         "test_schedule_preference": {
             "preference": {
-                "type": null,
-                "prob": null,
-                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+                "type": "indifferent",
+                "prob": 0.8,
+                "explanation": "Flexible or unstructured schedule; indifferent to when, how often, or how long the wait is."
             },
             "unavailable": {
                 "type": null,
@@ -2045,9 +2045,9 @@
     "Retiree": {
         "test_schedule_preference": {
             "preference": {
-                "type": null,
-                "prob": null,
-                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+                "type": "indifferent",
+                "prob": 0.8,
+                "explanation": "Flexible or unstructured schedule; indifferent to when, how often, or how long the wait is."
             },
             "unavailable": {
                 "type": null,
@@ -2063,9 +2063,9 @@
     "Unemployed": {
         "test_schedule_preference": {
             "preference": {
-                "type": null,
-                "prob": null,
-                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+                "type": "indifferent",
+                "prob": 0.8,
+                "explanation": "Flexible or unstructured schedule; indifferent to when, how often, or how long the wait is."
             },
             "unavailable": {
                 "type": null,
@@ -2081,9 +2081,9 @@
     "University Student": {
         "test_schedule_preference": {
             "preference": {
-                "type": null,
-                "prob": null,
-                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+                "type": "indifferent",
+                "prob": 0.8,
+                "explanation": "Flexible or unstructured schedule; indifferent to when, how often, or how long the wait is."
             },
             "unavailable": {
                 "type": "half_day",
@@ -2105,9 +2105,9 @@
     "Graduate Student": {
         "test_schedule_preference": {
             "preference": {
-                "type": null,
-                "prob": null,
-                "explanation": "Flexible or unstructured schedule; indifferent to visit count, so the preference is assigned randomly during synthesis."
+                "type": "indifferent",
+                "prob": 0.8,
+                "explanation": "Flexible or unstructured schedule; indifferent to when, how often, or how long the wait is."
             },
             "unavailable": {
                 "type": "half_day",
