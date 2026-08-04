@@ -13,6 +13,7 @@ Respond in JSON format only, as shown in the examples below.
 ## Patient information:
 * Department: {DEPARTMENT}
 * Patient utterance expressing scheduling preference: {PREFERENCE}
+    * This is the patient's natural utterance, not a preference label. Infer which of the cases below it matches, and optimize accordingly. An utterance that expresses no particular preference (e.g., "I don't mind", "whatever works", "up to you") is the `indifferent` case.
 * Tips:
     * `throughput_max` case: All required tests must finish (including the time required for results to be ready) as early as possible, even if the patient must visit the hospital on multiple distinct days.
     * `indifferent` case: The patient has no preference, so apply the hospital's default policy and schedule exactly as in the `throughput_max` case (all required tests finish, including result-ready time, as early as possible, even across multiple visit days).
