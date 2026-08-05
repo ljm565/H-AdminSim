@@ -1402,7 +1402,8 @@ class OPFUSchedulingSimulation:
 
                 # Preference rejection logic
                 next_pref_differs = (i != len(gt_data) - 1) and \
-                    (gt_data[i + 1]['preference'] != gt_data[i]['preference'])
+                    (gt_data[i + 1]['preference'] != gt_data[i]['preference']) and \
+                        (gt_data[i + 1]['preference'] != 'indifferent')     # `indifferent` preference conflicts with rejection logic semantically
                 if random.random() < preference_reject_prob and next_pref_differs and len(pred_schedule['test_visit_dates']) > 1:
                     preference_reject_prob *= self.preference_rejection_prob_decay
                 ## Non-rejection case
