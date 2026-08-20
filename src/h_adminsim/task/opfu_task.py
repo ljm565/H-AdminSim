@@ -39,7 +39,8 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                  scheduling_max_inference: int = 5,
                  scheduling_strategy: str = 'tool_calling',
                  max_retries: int = 8,
-                 patient_vllm_endpoint: Optional[str] = None):
+                 patient_vllm_endpoint: Optional[str] = None,
+                 negotiation_params: dict = {}):
         super().__init__()
 
         # Initialize variables
@@ -56,6 +57,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
         self.request_early_schedule_prob = request_early_schedule_prob
         self.preference_rejection_prob = preference_rejection_prob
         self.preference_rejection_prob_decay = preference_rejection_prob_decay
+        self.negotiation_params = negotiation_params
 
         # Others
         self.fhir_integration = fhir_integration
@@ -74,7 +76,8 @@ class OutpatientFollowUpScheduling(OutpatientTask):
     def _init_simulation(self,
                          system_prompt_path: str,
                          environment: "HospitalEnvironment",
-                         additional_patient_conditions: dict = {}) -> OPFUSchedulingSimulation:
+                         additional_patient_conditions: dict = {},
+                         negotiation_params: dict = {}) -> OPFUSchedulingSimulation:
         """
         Initialize an outpatient first-visit intake and scheduling simulation.
 
@@ -82,6 +85,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
             system_prompt_path (str): Path to the system prompt used to initialize the patient agent.
             environment (HospitalEnvironment): Hospital environment configuration for the simulation.
             additional_patient_conditions (dict, optional): Additional patient-specific conditions for simulation control.
+            negotiation_params (dict, optional): Negotiation policy parameters of staff and hospital.
 
         Returns:
             OPFVIntakeSimulation: Configured outpatient intake and scheduling simulation instance.
@@ -106,7 +110,8 @@ class OutpatientFollowUpScheduling(OutpatientTask):
             preference_rejection_prob=self.preference_rejection_prob,
             preference_rejection_prob_decay=self.preference_rejection_prob_decay,
             fhir_integration=self.fhir_integration,
-            sanity_checker=self.sanity_checker, 
+            sanity_checker=self.sanity_checker,
+            negotiation_params=negotiation_params,
         )
         return sim_environment
 
@@ -171,11 +176,11 @@ class OutpatientFollowUpScheduling(OutpatientTask):
 
 
     def cancellation_request(self,
-                        doctor_information: dict,
-                        test_information: dict,
-                        environment: "HospitalEnvironment",
-                        idx: Optional[int] = None,
-                        verbose: bool = False) -> Tuple[dict, dict, Optional[dict]]:
+                             doctor_information: dict,
+                             test_information: dict,
+                             environment: "HospitalEnvironment",
+                             idx: Optional[int] = None,
+                             verbose: bool = False) -> Tuple[dict, dict, Optional[dict]]:
         """
         Cancel all of a patient's scheduled tests.
 
@@ -564,7 +569,8 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                 'telecom': gt['telecom'][0]['value'],
                 'personal_id': gt['identifier'][0]['value'],
                 'address': gt['address'][0]['text'],
-            }
+            },
+            negotiation_params=self.negotiation_params,
         )
     
         # Simulate the main scheduling task

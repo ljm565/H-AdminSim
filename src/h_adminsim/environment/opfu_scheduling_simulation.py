@@ -24,7 +24,7 @@ from h_adminsim.registry import (
 )
 from h_adminsim.tools.callback import TokenUsageCallback
 from h_adminsim.tools.sanity_checker import SanityChecker
-from h_adminsim.tools import SchedulingRule, scheduling_tool_calling
+from h_adminsim.tools import SchedulingRule, scheduling_tool_calling, NegotiationMetrics
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.common_utils import *
 
@@ -48,7 +48,8 @@ class OPFUSchedulingSimulation:
                  preference_rejection_prob_decay: float = 0.5,
                  fhir_integration: bool = False,
                  schedule_rejection_prompt_path: Optional[str] = None,
-                 sanity_checker: Optional[SanityChecker] = None):
+                 sanity_checker: Optional[SanityChecker] = None,
+                 negotiation_params: dict = {}):
         
         # Initialize simulation parameters
         getcontext().prec = 10
@@ -67,6 +68,7 @@ class OPFUSchedulingSimulation:
         self._init_prompt(schedule_rejection_prompt_path)
         self.sanity_checker = sanity_checker
         self.rules = SchedulingRule(metadata, department_data, self.environment, self.fhir_integration)
+        self.negotiation_params = negotiation_params
         
     
     @property
@@ -1505,14 +1507,31 @@ class OPFUSchedulingSimulation:
             'dialog': [preprocess_dialog(self.dialog_history['test_scheduling'])]
         }
         if status:
+            # Per-patient negotiation metrics (PCI/TCL/G/R/F/U) — computed before the format
+            # conversion below so P's test slots still carry `start`/`end`. Never breaks the sim.
+            negotiation_metrics = None
+            try:
+                negotiation_metrics = NegotiationMetrics(
+                    preference=gt_data[i].get('preference'),
+                    achieved_schedule=pred_schedule,
+                    filtered_test_device_information=filtered_test_device_information,
+                    rule=self.rules,
+                    environment=self.environment,
+                    dialog_history=self.dialog_history['test_scheduling'],
+                    **self.negotiation_params
+                ).to_dict()
+                log(colorstr('cyan', f'[negotiation_metrics] {negotiation_metrics}'))
+            except Exception as _metric_err:
+                log(colorstr('yellow', f'[negotiation_metrics] skipped ({type(_metric_err).__name__}: {_metric_err})'), level='warning')
+
             try:
                 fu_slot = pred_schedule['fu_schedule']
                 fu_schedule = fu_slot[next(iter(fu_slot))] if fu_slot else None
-                
+
                 # Post-process the schedule format
                 for item in pred_schedule['test_schedule']:
                     item['schedule'] = [item.pop('start'), item.pop('end')]
-                
+
                 prediction = {
                     'visit_type': 'follow_up_visit',
                     'patient': staff_known_data['patient_fv']['patient'],
@@ -1526,6 +1545,7 @@ class OPFUSchedulingSimulation:
                     'valid_from': gt_data[i].get('valid_from'),
                     'test': pred_schedule['test_schedule'],
                     'idle_waiting_time': pred_schedule['idle_waiting_time'],
+                    'negotiation_metrics': negotiation_metrics,
                     'last_updated_time': self.environment.current_time
                 }
                 result_dict['pred'] = [prediction]
