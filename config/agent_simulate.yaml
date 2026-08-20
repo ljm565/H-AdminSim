@@ -26,4 +26,8 @@ schedule_task:
     opfv_schedule_cancellation_prob: 0.1    # First-visit scheduling cancellation prob.
     opfv_request_early_schedule_prob: 0.15  # First-visit scheduling rescheduling prob.
     opfu_schedule_cancellation_prob: 0.05   # Follow-up-visit scheduling cancellation prob.
-    opfu_request_early_schedule_prob: 0.08  # Follow-up-visit scheduling rescheduling prob.
+    opfu_request_early_schedule_prob: 0.075  # Follow-up-visit scheduling rescheduling prob.
+    negotiation:
+        tcl_temperature: 1.0
+        trigger_temperature: 1.0
+        negotiation_trigger_threshold: 1.0
