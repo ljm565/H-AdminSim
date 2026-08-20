@@ -1,4 +1,5 @@
 import math
+from bisect import bisect_right
 from collections import defaultdict
 from functools import cached_property
 from decimal import Decimal, getcontext
@@ -32,7 +33,7 @@ class NegotiationMetrics:
     - ``G``    Preference concession to switch P -> T, in preference-native units.
     - ``R``    Result-time gain (hours) from switching P -> T.
     - ``friction`` Dialogue turns spent with this patient (friction proxy).
-    - ``U``    Per-patient availability proxy (fragmentation reduction P -> T).
+    - ``U``    Per-patient availability proxy (front-loading gain P -> T).
 
     Slot-level quantities (``tcl``, ``U``) are read off the same ``filtered_test_device_information``
     the scheduler used, so they reflect the device state just before this booking commits.
@@ -364,57 +365,77 @@ class NegotiationMetrics:
         return out
 
 
-    def _frontload_waste(self, patient_slots: dict) -> float:
+    def _frontload_score(self, patient_slots: dict) -> float:
         """
-        Pooled front-loading waste over the window on the patient's devices. For each device-date,
-        the reach spans the WINDOW START (not the first booking) to the last booking, and the waste is
-        the empty slots inside it -- i.e. front gaps (a late start) plus internal gaps (scattering).
-        Trailing free after the last booking is excluded (the contiguous tail left for later patients),
-        so a lower value means bookings hug the front tightly. Other patients' device busy (from
-        `filtered_test_device_information`) is merged with this patient's `patient_slots`.
+        Pooled front-loading score (Mann-Whitney compactness) on the patient's devices, over a
+        per-device timeline flattened across all window dates. Among the slots available to the patient
+        (window slots minus other patients' bookings), it is the fraction of (booking-before-free)
+        pairs: 1.0 = every booking precedes every free slot (packed at the earliest days/hours, leaving
+        a clean tail), 0.0 = fully back-loaded, 0.5 = interleaved. Higher is better. Since the booking
+        count and free count are identical for P and T (same test set), the two share a denominator, so
+        score(T) - score(P) is a clean comparison.
         """
         devices = set(patient_slots)
+
+        # Per device: window operating dates (a schedule entry with schedulable slots) + other
+        # patients' busy per date. Empty operating dates are kept so they can count toward the axis.
+        op_dates = defaultdict(set)
         base = defaultdict(lambda: defaultdict(set))
         for test_info in self._tdi.get('test', {}).values():
             for dname, dinfo in test_info.get('devices', {}).items():
                 if dname not in devices:
                     continue
                 for date, intervals in (dinfo.get('schedule') or {}).items():
-                    # Window filtering: keep only busy slots inside the schedulable window (drop past / beyond-t_1)
-                    segs = self._busy_segments(intervals) & self._available_segments(date)
-                    if segs:
-                        base[dname][date] |= segs
+                    if not self._available_segments(date):
+                        continue
+                    op_dates[dname].add(date)
+                    busy = self._busy_segments(intervals) & self._available_segments(date)
+                    if busy:
+                        base[dname][date] |= busy
 
-        tot_waste, tot_reach = 0, 0
+        tot_good, tot_max = 0, 0
         for dname in devices:
-            for date in set(base[dname]) | set(patient_slots[dname]):
-                busy = base[dname].get(date, set()) | patient_slots[dname].get(date, set())
-                if not busy:
-                    continue
-                w0 = min(self._available_segments(date))  # window start on that date (anchors front-loading)
-                reach = max(busy) - w0 + 1                 # window start -> last booking
-                tot_waste += reach - len(busy)             # free slots wasted before completion (front + internal)
-                tot_reach += reach
+            dates = sorted(op_dates[dname] | set(patient_slots[dname]))
 
-        return (tot_waste / tot_reach) if tot_reach else 0.0
+            # Flatten: assign every schedulable slot a global index, dates concatenated in order.
+            offset, rank, acc = {}, {}, 0
+            for d in dates:
+                av = sorted(self._available_segments(d))
+                rank[d] = {seg: i for i, seg in enumerate(av)}
+                offset[d] = acc
+                acc += len(av)
+
+            gi = lambda d, s: offset[d] + rank[d][s]
+            booked = {gi(d, s) for d in dates for s in patient_slots[dname].get(d, set()) if s in rank[d]}
+            others = {gi(d, s) for d in dates for s in base[dname].get(d, set()) if s in rank[d]}
+            free = set(range(acc)) - others - booked   # slots the patient could have taken but didn't
+            if not booked or not free:
+                continue
+
+            # Mann-Whitney: for each booking, count free slots that come AFTER it.
+            free_sorted = sorted(free)
+            tot_good += sum(len(free_sorted) - bisect_right(free_sorted, b) for b in booked)
+            tot_max += len(booked) * len(free)
+
+        return (tot_good / tot_max) if tot_max else 0.0
 
 
     @cached_property
     def U(self) -> float:
         """
         Per-patient availability proxy: front-loading gain from switching P -> T, in isolation.
-        Each schedule's front-loading waste (empty slots from the window start to its last booking =
-        late start + scattering) is measured, and U = waste(P) - waste(T). Positive = T books earlier
-        and tighter, leaving a larger contiguous tail for later patients.
+        Each schedule's front-loading score (Mann-Whitney compactness over the date-flattened slot
+        axis; 1.0 = fully front, 0.0 = fully back) is measured, and U = score(T) - score(P). Positive =
+        T books earlier and tighter, leaving a larger contiguous tail for later patients.
 
         NOTE: this is an isolated per-patient proxy. The true cohort availability gain is non-additive
         (patients share the slot pool) and must be measured by an ON/OFF full-simulation A/B; do not
         sum this across patients.
         """
         try:
-            waste_p = self._frontload_waste(self._patient_slots(self._P))
-            waste_t = self._frontload_waste(self._patient_slots(self._T))
-            return waste_p - waste_t
+            score_p = self._frontload_score(self._patient_slots(self._P))
+            score_t = self._frontload_score(self._patient_slots(self._T))
+            return score_t - score_p
         except Exception:
             return 0.0
 
