@@ -421,23 +421,40 @@ class NegotiationMetrics:
 
 
     @cached_property
+    def u_pref(self) -> float:
+        """
+        Front-loading score of the preference schedule P (Mann-Whitney compactness over the
+        date-flattened slot axis; 1.0 = fully front, 0.0 = fully back). 0.0 on computation failure.
+        """
+        try:
+            return self._frontload_score(self._patient_slots(self._P))
+        except Exception:
+            return 0.0
+
+
+    @cached_property
+    def u_thr(self) -> float:
+        """
+        Front-loading score of the throughput_max counterfactual T (see `u_pref`).
+        """
+        try:
+            return self._frontload_score(self._patient_slots(self._T))
+        except Exception:
+            return 0.0
+
+
+    @cached_property
     def U(self) -> float:
         """
         Per-patient availability proxy: front-loading gain from switching P -> T, in isolation.
-        Each schedule's front-loading score (Mann-Whitney compactness over the date-flattened slot
-        axis; 1.0 = fully front, 0.0 = fully back) is measured, and U = score(T) - score(P). Positive =
-        T books earlier and tighter, leaving a larger contiguous tail for later patients.
+        U = u_thr - u_pref. Positive = T books earlier and tighter, leaving a larger contiguous tail
+        for later patients.
 
         NOTE: this is an isolated per-patient proxy. The true cohort availability gain is non-additive
         (patients share the slot pool) and must be measured by an ON/OFF full-simulation A/B; do not
         sum this across patients.
         """
-        try:
-            score_p = self._frontload_score(self._patient_slots(self._P))
-            score_t = self._frontload_score(self._patient_slots(self._T))
-            return score_t - score_p
-        except Exception:
-            return 0.0
+        return self.u_thr - self.u_pref
 
 
     # ---- Dialogue Friction (F) -----------------------------------------------
@@ -464,4 +481,6 @@ class NegotiationMetrics:
             'R': self.R,
             'F': self.friction,
             'U': self.U,
+            'U_pref': self.u_pref,
+            'U_thr': self.u_thr,
         }
