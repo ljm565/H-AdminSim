@@ -159,6 +159,22 @@ class OPFUSchedulingSimulation:
         }
 
     
+    def _init_negotiation_metrics(self, preference: Optional[str] = None) -> dict:
+        """
+        Initialize negotiation metrics with default values.
+
+        Args:
+            preference (str, optional): The scheduling preference to initialize metrics for. Defaults to None.
+        """
+        return {
+            'preference': preference,
+            'pci': None,
+            'tcl': None,
+            'ti': None,
+            'do_negotiate': False,
+        }
+
+    
     def _to_lc_history(self, key: str) -> list:
         """
         Convert the dialog history for the given key into LangChain message objects.
@@ -1308,13 +1324,9 @@ class OPFUSchedulingSimulation:
         try:
             # Preference iteration
             for i, gt_patient_condition in enumerate(gt_data):
-                negotiation_metrics = {
-                    'preference': gt_patient_condition.get('preference'),
-                    'pci': None,
-                    'tcl': None,
-                    'ti': None,
-                    'do_negotiate': False,
-                }
+                negotiation_metrics = self._init_negotiation_metrics(
+                    gt_patient_condition.get('preference')
+                )
                 negotiation_metrics_computed = False
 
                 # For the rejection scenario
@@ -1360,13 +1372,10 @@ class OPFUSchedulingSimulation:
                                 dialog_history=self.dialog_history['test_scheduling'],
                                 **self.negotiation_params,
                             ).to_dict()
-                            negotiation_metrics = {
-                                'preference': metrics.get('preference'),
-                                'pci': metrics.get('pci'),
-                                'tcl': metrics.get('tcl'),
-                                'ti': metrics.get('ti'),
-                                'do_negotiate': metrics.get('do_negotiate'),
-                            }
+                            negotiation_metrics.update({
+                                key: metrics.get(key)
+                                for key in negotiation_metrics
+                            })
                             negotiation_metrics_computed = True
                             log(colorstr('cyan', f'[negotiation_metrics] {negotiation_metrics}'))
                         except Exception as _metric_err:
