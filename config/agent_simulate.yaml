@@ -29,5 +29,6 @@ schedule_task:
     opfu_request_early_schedule_prob: 0.075  # Follow-up-visit scheduling rescheduling prob.
     negotiation:
         tcl_temperature: 1.0
-        trigger_temperature: 1.0
+        trigger_temperature_visit: 1.0
+        trigger_temperature_stay: 1.0
         negotiation_trigger_threshold: 1.0

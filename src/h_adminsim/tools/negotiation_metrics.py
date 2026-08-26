@@ -12,7 +12,7 @@ from h_adminsim.utils.common_utils import (
     str_to_datetime,
     convert_time_to_segment,
 )
-from h_adminsim.utils import colorstr
+from h_adminsim.utils import colorstr, log
 
 if TYPE_CHECKING:
     from h_adminsim.tools.scheduling_rule import SchedulingRule
@@ -48,7 +48,8 @@ class NegotiationMetrics:
                  dialog_history: Optional[list] = None,
                  time_budget_s: float = 10.0,
                  tcl_temperature: float = 1.0,
-                 trigger_temperature: float = 1.0,
+                 trigger_temperature_visit: float = 1.0,
+                 trigger_temperature_stay: float = 1.0,
                  negotiation_trigger_threshold: float = 1.0):
         """
         Args:
@@ -64,7 +65,10 @@ class NegotiationMetrics:
             dialog_history (Optional[list], optional): Turn list `[{'role', 'content'}, ...]` for the friction proxy. Defaults to None.
             time_budget_s (float, optional): Wall-clock cap on the throughput_max backtracking search. Defaults to 10.0.
             tcl_temperature (float, optional): Softmax temperature for TCL (lower emphasizes the bottleneck test). Defaults to 1.0.
-            trigger_temperature (float, optional): Temperature τ dividing the trigger index
+            trigger_temperature_visit (float, optional): Temperature τ dividing the trigger index in the case of visit_min preference:
+                                                   `ti = PCI * TCL / τ`; a smaller τ raises `ti`, triggering
+                                                   negotiation more readily (more aggressive). Must be > 0. Defaults to 1.0.
+            trigger_temperature_stay (float, optional): Temperature τ dividing the trigger index in the case of stay_min preference:
                                                    `ti = PCI * TCL / τ`; a smaller τ raises `ti`, triggering
                                                    negotiation more readily (more aggressive). Must be > 0. Defaults to 1.0.
             negotiation_trigger_threshold (float, optional): Cutoff P* on the trigger index; the patient is
@@ -81,10 +85,13 @@ class NegotiationMetrics:
         self._avail_cache = {}
         
         # Hyperparameters
-        if trigger_temperature <= 0:
-            raise ValueError(colorstr('red', f'trigger_temperature must be > 0 (it divides the trigger index PCI*TCL), got {trigger_temperature}.'))
+        if trigger_temperature_visit <= 0:
+            raise ValueError(colorstr('red', f'trigger_temperature_visit must be > 0 (it divides the trigger index PCI*TCL), got {trigger_temperature_visit}.'))
+        if trigger_temperature_stay <= 0:
+            raise ValueError(colorstr('red', f'trigger_temperature_stay must be > 0 (it divides the trigger index PCI*TCL), got {trigger_temperature_stay}.'))
         self.tcl_temperature = tcl_temperature
-        self.trigger_temperature = trigger_temperature
+        self.trigger_temperature_visit = trigger_temperature_visit
+        self.trigger_temperature_stay = trigger_temperature_stay
         self.negotiation_trigger_threshold = max(0.0, negotiation_trigger_threshold)
 
         # Same time discretization the scheduler used.
@@ -338,7 +345,13 @@ class NegotiationMetrics:
         negotiation when `ti >= negotiation_trigger_threshold` (see `do_negotiate` in `to_dict`).
         Inherits PCI's `inf` for a free dominant win (G == 0, R > 0), which always triggers.
         """
-        return self.pci * self.tcl / self.trigger_temperature
+        if self.preference == 'visit_min':
+            return self.pci * self.tcl / self.trigger_temperature_visit
+        elif self.preference == 'stay_min':
+            return self.pci * self.tcl / self.trigger_temperature_stay
+        else:
+            log(f"NegotiationMetrics.ti used fallback for preference `{self.preference}`; returning PCI*TCL without trigger temperature.", level='warning')
+            return self.pci * self.tcl
 
 
     # ---- Device Utility (U) --------------------------------------------------
