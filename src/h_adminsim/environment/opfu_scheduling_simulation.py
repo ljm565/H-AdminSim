@@ -371,53 +371,6 @@ class OPFUSchedulingSimulation:
         )
 
 
-    def _compute_negotiation_trigger(self,
-                                     preference: Optional[str],
-                                     achieved_schedule: dict,
-                                     filtered_test_device_information: dict,
-                                     dialog_history: Optional[list] = None) -> dict:
-        """
-        Compute the negotiation trigger only when the patient's test-scheduling preference
-        conflicts with the hospital's throughput_max policy.
-
-        Args:
-            preference (Optional[str]): The patient's scheduling preference.
-            achieved_schedule (dict): The schedule that was achieved after the initial negotiation.
-            filtered_test_device_information (dict): Filtered test device information for the patient.
-            dialog_history (Optional[list], optional): The dialog history of the negotiation. Defaults to None.
-
-        Returns:
-            dict: A dictionary containing the negotiation trigger information, including preference, PCI, TCL, TI, and whether to negotiate.
-        """
-        trigger = {
-            'preference': preference,
-            'pci': None,
-            'tcl': None,
-            'ti': None,
-            'do_negotiate': False,
-        }
-        if preference not in {'visit_min', 'stay_min'}:
-            return trigger
-
-        achieved_schedule = self._normalize_test_schedule_for_metrics(achieved_schedule)
-        metrics = NegotiationMetrics(
-            preference=preference,
-            achieved_schedule=achieved_schedule,
-            filtered_test_device_information=filtered_test_device_information,
-            rule=self.rules,
-            environment=self.environment,
-            dialog_history=dialog_history,
-            **self.negotiation_params
-        ).to_dict()
-        return {
-            'preference': metrics.get('preference'),
-            'pci': metrics.get('pci'),
-            'tcl': metrics.get('tcl'),
-            'ti': metrics.get('ti'),
-            'do_negotiate': metrics.get('do_negotiate'),
-        }
-
-
     @staticmethod
     def _normalize_test_schedule_for_metrics(schedule: dict) -> dict:
         """
@@ -1398,12 +1351,22 @@ class OPFUSchedulingSimulation:
                                 required_test_codes,
                                 10,
                             )
-                            negotiation_metrics = self._compute_negotiation_trigger(
+                            metrics = NegotiationMetrics(
                                 preference=gt_patient_condition.get('preference'),
-                                achieved_schedule=preference_schedule,
+                                achieved_schedule=self._normalize_test_schedule_for_metrics(preference_schedule),
                                 filtered_test_device_information=filtered_test_device_information,
+                                rule=self.rules,
+                                environment=self.environment,
                                 dialog_history=self.dialog_history['test_scheduling'],
-                            )
+                                **self.negotiation_params,
+                            ).to_dict()
+                            negotiation_metrics = {
+                                'preference': metrics.get('preference'),
+                                'pci': metrics.get('pci'),
+                                'tcl': metrics.get('tcl'),
+                                'ti': metrics.get('ti'),
+                                'do_negotiate': metrics.get('do_negotiate'),
+                            }
                             negotiation_metrics_computed = True
                             log(colorstr('cyan', f'[negotiation_metrics] {negotiation_metrics}'))
                         except Exception as _metric_err:
