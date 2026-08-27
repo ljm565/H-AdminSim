@@ -38,6 +38,7 @@ if TYPE_CHECKING:
 class OPFVSchedulingSimulation(OPSchedulingSimulation):
     HISTORY_KEYS = ('scheduling', 'cancel', 'reschedule')
     REJECTION_PROMPT = 'opfv_schedule_patient_rejected_system.txt'
+    NOT_FOUND_MESSAGE = "Sorry, we couldn't find a matching appointment. Could you please check your appointment details again?"
 
     def __init__(self,
                  patient_agent: PatientAgent,
@@ -587,126 +588,6 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
             self.scheduling_agent.reset_history(verbose=False)
 
         return prediction
-    
-
-    def canceling(self, 
-                  client: AgentExecutor,
-                  patient_intention: str,
-                  chat_history: list = []) -> dict:
-        """
-        Handle a multi-turn appointment cancellation request using a tool-calling agent.
-
-        Args:
-            client (AgentExecutor): The agent executor to handle tool calls or conversation.
-            patient_intention (str): The patient's utterance expressing a rescheduling request.
-            chat_history (list, optional): Chat history. Defaults to [].
-        
-        Raises:
-            TypeError: If the prediction or inputs are of an unsupported type.
-
-        Returns:
-            dict: Cancelling processed result. Recording the outcome is left to
-                  `canceling_simulate`, which owns the result dictionary.
-        """
-        # Invoke
-        prediction = scheduling_tool_calling(
-            client=client,
-            user_prompt=patient_intention,
-            history=chat_history,
-        )
-
-        # Canceling result
-        if prediction['type'] == 'tool':
-            # Schedule not found case -> ask the patient to check again
-            if prediction['result']['status'] is None and prediction['result']['index']['pred'] == -1:
-                prediction['type'] = 'text'
-                prediction['result'] = "Sorry, we couldn't find a matching appointment. Could you please check your appointment details again?"
-            return prediction
-
-        # Clarification message case -> return: str
-        elif prediction['type'] == 'text':
-            return prediction
-
-        # Error
-        else:
-            raise TypeError(colorstr("red", "Error: Unexpected return type from canceling method."))
-    
-
-    def rescheduling(self,
-                     client: AgentExecutor,
-                     patient_intention: str,
-                     doctor_information: Optional[dict] = None,
-                     chat_history: list = [],
-                     **kwargs) -> dict:
-        """
-        Handle a multi-turn appointment rescheduling request using a tool-calling agent.
-
-        Args:
-            client (AgentExecutor): The agent executor to handle tool calls or conversation.
-            patient_intention (str): The patient's utterance expressing a rescheduling request.
-            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s) involved,
-                                                           including availability and other relevant details. Defaults to None.
-            chat_history (list, optional): Chat history. Defaults to [].
-
-        Raises:
-            TypeError: If the returned type is not supported.
-
-        Returns:
-            dict: Rescheduling processed result.
-        """
-        # Sanity check
-        if not self.fhir_integration:
-            assert doctor_information is not None, colorstr("red", f"Doctor information must be provided if you don't use FHIR.")
-
-        # Invoke
-        prediction = scheduling_tool_calling(
-            client=client,
-            user_prompt=patient_intention,
-            history=chat_history,
-        )
-
-        if prediction['type'] == 'tool':
-            res = prediction['result']
-
-            # Schedule not found case: -> text
-            if res['status'] is None and res['index']['pred'] == -1:
-                prediction['type'] = 'text'
-                prediction['result'] = "Sorry, we couldn't find a matching appointment. Could you please check your appointment details again?"
-                return prediction
-
-            # Retrieval outcome; the pipeline action below may override it
-            result_dict = self._retrieval_result(
-                prediction, 'reschedule', STATUS_CODES['reschedule']['identify']
-            )
-            if res['status'] is False:  # Identification failed -> nothing left to reschedule
-                prediction['result_dict'] = result_dict
-                prediction['tmp_flag'] = 'retrieve'
-                return prediction
-
-            # Translate pipeline action into tmp_flag + result_dict updates
-            action = res.get('action')
-            if action == 'reschedule':
-                result_dict['pred'] = [res['new_schedule']]
-                prediction['tmp_flag'] = 'reschedule'
-            elif action == 'waiting_list':
-                prediction['tmp_flag'] = 'waiting_list'
-            elif action == 'schedule_fail':
-                result_dict['pred'] = [res['new_schedule']]
-                result_dict['status'] = [False]
-                result_dict['status_code'] = [STATUS_CODES['reschedule']['schedule'].format(
-                    status_code=res.get('schedule_status_code') or STATUS_CODES['format'])]
-                prediction['tmp_flag'] = 'schedule'
-
-            prediction['result_dict'] = result_dict
-            return prediction
-
-        # Clarification message case -> return: str
-        elif prediction['type'] == 'text':
-            return prediction
-
-        # Error
-        else:
-            raise TypeError(colorstr("red", "Error: Unexpected return type from rescheduling method."))
     
 
     def scheduling_simulate(self,

@@ -39,6 +39,7 @@ if TYPE_CHECKING:
 class OPFUSchedulingSimulation(OPSchedulingSimulation):
     HISTORY_KEYS = ('test_scheduling', 'test_cancel', 'test_reschedule')
     REJECTION_PROMPT = 'opfu_schedule_patient_rejected_system.txt'
+    NOT_FOUND_MESSAGE = "Sorry, we couldn't find your scheduled tests. Could you please check your details again (patient and doctor names)?"
 
     def __init__(self,
                  patient_agent: PatientAgent,
@@ -783,7 +784,6 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             assert test_device_information is not None, colorstr("red", f"Test device information must be provided if you don't use FHIR.")
 
         # Initialization based on the known condition from the staff
-        result_dict = init_result_dict()
         callback = kwargs.pop('callback', None)
         department = known_condition['department']
         attending_physician = known_condition['attending_physician']
@@ -919,42 +919,17 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                        patient_intention: str,
                        chat_history: list = []) -> dict:
         """
-        Handle a multi-turn test cancellation request using a tool-calling agent.
+        Follow-up naming for `canceling`, which cancels the patient's scheduled tests.
 
         Args:
             client (AgentExecutor): The agent executor to handle tool calls or conversation.
             patient_intention (str): The patient's utterance expressing a cancellation request.
             chat_history (list, optional): Chat history. Defaults to [].
 
-        Raises:
-            TypeError: If the prediction or inputs are of an unsupported type.
-
         Returns:
-            dict: Cancelling processed result. Recording the outcome is left to
-                  `test_canceling_simulate`, which owns the result dictionary.
+            dict: Cancelling processed result.
         """
-        # Invoke
-        prediction = scheduling_tool_calling(
-            client=client,
-            user_prompt=patient_intention,
-            history=chat_history,
-        )
-
-        # Canceling result
-        if prediction['type'] == 'tool':
-            # Tests not found case -> ask the patient to check again
-            if prediction['result']['status'] is None and prediction['result']['index']['pred'] == -1:
-                prediction['type'] = 'text'
-                prediction['result'] = "Sorry, we couldn't find your scheduled tests. Could you please check your details again (patient and doctor names)?"
-            return prediction
-
-        # Clarification message case -> return: str
-        elif prediction['type'] == 'text':
-            return prediction
-
-        # Error
-        else:
-            raise TypeError(colorstr("red", "Error: Unexpected return type from canceling method."))
+        return self.canceling(client, patient_intention, chat_history)
 
 
     def test_rescheduling(self,
@@ -962,69 +937,18 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                           patient_intention: str,
                           chat_history: list = []) -> dict:
         """
-        Handle a multi-turn test rescheduling request using a tool-calling agent.
+        Follow-up naming for `rescheduling`, which moves the patient's whole test set earlier.
 
         Args:
             client (AgentExecutor): The agent executor to handle tool calls or conversation.
             patient_intention (str): The patient's utterance expressing a rescheduling request.
             chat_history (list, optional): Chat history. Defaults to [].
 
-        Raises:
-            TypeError: If the returned type is not supported.
-
         Returns:
             dict: Rescheduling processed result.
         """
-        # Invoke
-        prediction = scheduling_tool_calling(
-            client=client,
-            user_prompt=patient_intention,
-            history=chat_history,
-        )
+        return self.rescheduling(client, patient_intention, chat_history=chat_history)
 
-        if prediction['type'] == 'tool':
-            res = prediction['result']
-
-            # Booking not found case: -> text
-            if res['status'] is None and res['index']['pred'] == -1:
-                prediction['type'] = 'text'
-                prediction['result'] = "Sorry, we couldn't find your scheduled tests. Could you please check your details again (patient and doctor names)?"
-                return prediction
-
-            # Retrieval outcome; the pipeline action below may override it
-            result_dict = self._retrieval_result(
-                prediction, 'reschedule', STATUS_CODES['reschedule']['identify']
-            )
-            if res['status'] is False:  # Identification failed -> nothing left to reschedule
-                prediction['result_dict'] = result_dict
-                prediction['tmp_flag'] = 'retrieve'
-                return prediction
-
-            # Translate pipeline action into tmp_flag + result_dict updates
-            action = res.get('action')
-            if action == 'reschedule':
-                result_dict['pred'] = [res['new_schedule']]
-                prediction['tmp_flag'] = 'reschedule'
-            elif action == 'waiting_list':
-                prediction['tmp_flag'] = 'waiting_list'
-            elif action == 'schedule_fail':
-                result_dict['pred'] = [res['new_schedule']]
-                result_dict['status'] = [False]
-                result_dict['status_code'] = [STATUS_CODES['reschedule']['schedule'].format(
-                    status_code=res.get('schedule_status_code') or STATUS_CODES['format'])]
-                prediction['tmp_flag'] = 'schedule'
-
-            prediction['result_dict'] = result_dict
-            return prediction
-
-        # Clarification message case -> return: str
-        elif prediction['type'] == 'text':
-            return prediction
-
-        # Error
-        else:
-            raise TypeError(colorstr("red", "Error: Unexpected return type from rescheduling method."))
-        
 
     def test_scheduling_simulate(self,
                                  gt_data: dict,
