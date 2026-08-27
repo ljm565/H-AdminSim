@@ -156,7 +156,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
 
     
     def _render_staff_reply(self,
-                            staff_response: dict,
+                            prediction: dict,
                             reply_type: str,
                             gt_patient_condition: Optional[dict] = None,
                             staff_known_data: Optional[dict] = None,
@@ -165,7 +165,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         Turn a structured staff scheduling result into a natural-language utterance.
 
         Args:
-            staff_response (dict): The result of `scheduling`, either a clarification (``type == 'text'``) or a schedule proposal (``type == 'tool'``).
+            prediction (dict): The result of `scheduling`, either a clarification (``type == 'text'``) or a schedule proposal (``type == 'tool'``).
             reply_type (str): Reply types of the scheduling agent.
             gt_patient_condition (dict): Ground-truth condition for this turn; supplies the GT required-test codes used to flag tests that could not be scheduled.
             staff_known_data (dict): Patient information known to the staff agent; supplies the follow-up doctor.
@@ -175,13 +175,13 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             str: The staff utterance to show the patient.
         """
         # Clarification message
-        if staff_response['type'] == 'text':
-            return staff_response['result']
+        if prediction['type'] == 'text':
+            return prediction['result']
         
-        elif staff_response['type'] == 'tool':
+        elif prediction['type'] == 'tool':
             # Test cancellation confirmation
             if reply_type == 'test_cancel':
-                result = staff_response['result']
+                result = prediction['result']
 
                 # A wrong identification cancels nothing; the loop surfaces it as a failure.
                 if result['cancelled_schedule'] is None:
@@ -194,8 +194,8 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
 
             # Test rescheduling confirmation
             if reply_type == 'test_reschedule':
-                tmp_flag = staff_response.get('tmp_flag')
-                result = staff_response['result']
+                tmp_flag = prediction.get('tmp_flag')
+                result = prediction['result']
 
                 # Failure cases have nothing to confirm; the loop surfaces them as raises.
                 if tmp_flag not in ('waiting_list', 'reschedule'):
@@ -213,8 +213,8 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                        if k in ['patient', 'attending_physician', 'department', 'date', 'test']}
                 return f"I've moved your tests earlier: {new}"
 
-            if 'test_list' in staff_response['result']:
-                test_list = staff_response['result']['test_list']
+            if 'test_list' in prediction['result']:
+                test_list = prediction['result']['test_list']
                 test_list_desc = ', '.join([t['name'] for t in test_list])
 
                 # Response formatting for test guidance
@@ -241,8 +241,8 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                     except:
                         return 'Your tests: ' + str(test_list_desc) + ' ' + self.scheduling_agent.test_greet
             
-            elif 'test_schedule' in staff_response['result']:
-                pred_schedule  = staff_response['result']
+            elif 'test_schedule' in prediction['result']:
+                pred_schedule  = prediction['result']
                 pred_test_schedules = pred_schedule['test_schedule']
 
                 # Build a humanized summary of every test slot
@@ -858,35 +858,19 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             if prediction['type'] == 'tool':
                 res = prediction['result']
                 if res['action'] == 'retrieval':
-                    st = res['status']
-                    idx = res['index']
-
                     # Patient information not found case: -> text
-                    if st is None and idx['pred'] == -1:
+                    if res['status'] is None and res['index']['pred'] == -1:
                         prediction['type'] = 'text'
                         prediction['result'] = "Sorry, we couldn't find a matching information. Could you please check your details again (patient and doctor names)?"
                         return prediction
 
-                    if st is None:  # No GT, retrieved
-                        result_dict['gt'].append({'test_retrieve': None})
-                        result_dict['pred'].append({'test_retrieve': idx['pred']})
-                        result_dict['status'].append(None)
-                        result_dict['status_code'].append(None)
-                    elif st is False:  # GT exists, identification failed
-                        result_dict['gt'].append({'test_retrieve': idx['gt']})
-                        result_dict['pred'].append({'test_retrieve': idx['pred']})
-                        result_dict['status'].append(False)
-                        result_dict['status_code'].append(STATUS_CODES['test_retrieve']['identify'])
+                    # Identification failure ends the run; the loop surfaces it as a raise.
+                    # Recording the outcome is left to `test_scheduling_simulate`.
+                    if res['status'] is False:
                         prediction['tmp_flag'] = 'retrieve'
-                    else:  # True
-                        result_dict['gt'].append({'test_retrieve': idx['gt']})
-                        result_dict['pred'].append({'test_retrieve': idx['pred']})
-                        result_dict['status'].append(True)
-                        result_dict['status_code'].append(STATUS_CODES['correct'])
-
-                    prediction['result_dict'] = result_dict
                     return prediction
-                
+
+
                 elif res['action'] == 'scheduling':
                     filtered_doctor_information = self.environment.get_doctor_schedule(
                         doctor_information=doctor_information,
@@ -999,11 +983,9 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             TypeError: If the prediction or inputs are of an unsupported type.
 
         Returns:
-            dict: Cancelling processed result.
+            dict: Cancelling processed result. Recording the outcome is left to
+                  `test_canceling_simulate`, which owns the result dictionary.
         """
-        # Initialize
-        result_dict = init_result_dict()
-
         # Invoke
         prediction = scheduling_tool_calling(
             client=client,
@@ -1013,39 +995,11 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
 
         # Canceling result
         if prediction['type'] == 'tool':
-            if prediction['result']['status'] is None:
-                # Tests not found case: -> return: str
-                if prediction['result']['index']['pred'] == -1:
-                    prediction['type'] = 'text'
-                    prediction['result'] = "Sorry, we couldn't find your scheduled tests. Could you please check your details again (patient and doctor names)?"
-
-                # No GT case
-                else:
-                    result_dict['gt'].append({'cancel': None})
-                    result_dict['pred'].append({'cancel': prediction['result']['index']['pred']})
-                    result_dict['status'].append(None)
-                    result_dict['status_code'].append(None)
-                    prediction['result_dict'] = result_dict
-
-                return prediction
-
-            # Retrieval fail case
-            elif prediction['result']['status'] is False:
-                result_dict['gt'].append({'cancel': prediction['result']['index']['gt']})
-                result_dict['pred'].append({'cancel': prediction['result']['index']['pred']})
-                result_dict['status'].append(prediction['result']['status'])
-                result_dict['status_code'].append(STATUS_CODES['cancel']['identify'])
-                prediction['result_dict'] = result_dict
-                return prediction
-
-            # Successful cancellation case -> return: dict
-            else:
-                result_dict['gt'].append({'cancel': prediction['result']['index']['gt']})
-                result_dict['pred'].append({'cancel': prediction['result']['index']['pred']})
-                result_dict['status'].append(prediction['result']['status'])
-                result_dict['status_code'].append(STATUS_CODES['correct'])
-                prediction['result_dict'] = result_dict
-                return prediction
+            # Tests not found case -> ask the patient to check again
+            if prediction['result']['status'] is None and prediction['result']['index']['pred'] == -1:
+                prediction['type'] = 'text'
+                prediction['result'] = "Sorry, we couldn't find your scheduled tests. Could you please check your details again (patient and doctor names)?"
+            return prediction
 
         # Clarification message case -> return: str
         elif prediction['type'] == 'text':
@@ -1074,9 +1028,6 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         Returns:
             dict: Rescheduling processed result.
         """
-        # Initialize
-        result_dict = init_result_dict()
-
         # Invoke
         prediction = scheduling_tool_calling(
             client=client,
@@ -1086,34 +1037,21 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
 
         if prediction['type'] == 'tool':
             res = prediction['result']
-            st = res['status']
-            idx = res['index']
 
             # Booking not found case: -> text
-            if st is None and idx['pred'] == -1:
+            if res['status'] is None and res['index']['pred'] == -1:
                 prediction['type'] = 'text'
                 prediction['result'] = "Sorry, we couldn't find your scheduled tests. Could you please check your details again (patient and doctor names)?"
                 return prediction
 
-            # Build retrieval result_dict
-            if st is None:  # No GT, retrieved
-                result_dict['gt'].append({'reschedule': None})
-                result_dict['pred'].append({'reschedule': idx['pred']})
-                result_dict['status'].append(None)
-                result_dict['status_code'].append(None)
-            elif st is False:  # GT exists, identification failed
-                result_dict['gt'].append({'reschedule': idx['gt']})
-                result_dict['pred'].append({'reschedule': idx['pred']})
-                result_dict['status'].append(False)
-                result_dict['status_code'].append(STATUS_CODES['reschedule']['identify'])
+            # Retrieval outcome; the pipeline action below may override it
+            result_dict = self._retrieval_result(
+                prediction, 'reschedule', STATUS_CODES['reschedule']['identify']
+            )
+            if res['status'] is False:  # Identification failed -> nothing left to reschedule
                 prediction['result_dict'] = result_dict
                 prediction['tmp_flag'] = 'retrieve'
                 return prediction
-            else:  # True
-                result_dict['gt'].append({'reschedule': idx['gt']})
-                result_dict['pred'].append({'reschedule': idx['pred']})
-                result_dict['status'].append(True)
-                result_dict['status_code'].append(STATUS_CODES['correct'])
 
             # Translate pipeline action into tmp_flag + result_dict updates
             action = res.get('action')
@@ -1201,10 +1139,9 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         merged_staff_kwargs = {**staff_kwargs, **kwargs}
 
         # Staff turn closure: captures all of `scheduling`'s simulation-side arguments
-        holder = {}
-        def staff_turn(user_prompt: str) -> Tuple[str, bool]:
+        def staff_turn(user_prompt: str) -> Tuple[str, dict]:
             staff_known_data.update({'patient_intention': user_prompt})
-            staff_response = self.test_scheduling(
+            prediction = self.test_scheduling(
                 tool_calling_agent,
                 staff_known_data,
                 doctor_information,
@@ -1214,11 +1151,9 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                 callback=staff_token_callback,
                 **merged_staff_kwargs
             )
-            holder['response'] = staff_response
-            return self._render_staff_reply(
-                staff_response, 'test_scheduling', gt_patient_condition, staff_known_data, natural_express
-            ), False
-        
+            reply = self._render_staff_reply(prediction, 'test_scheduling', gt_patient_condition, staff_known_data, natural_express)
+            return reply, prediction
+
         # Start conversation
         staff_greet = self.admin_staff_mas.root.agent.staff_greet
         self.dialog_history['test_scheduling'].append({"role": "Staff", "content": staff_greet})
@@ -1289,39 +1224,30 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                             log(colorstr('yellow', f'[negotiation_metrics] skipped ({type(_metric_err).__name__}: {_metric_err})'), level='warning')
                     
                     # Scheduling from staff
-                    output = self.admin_staff_mas.chat(
-                        user_prompt=patient_response,
-                        callback=staff_turn,
-                        using_multi_turn=False,
-                        verbose=False,
-                    )
-
-                    # If wrong agent activated
-                    if output.agent != self._chief_agent_name:
-                        raise AgentSelectionError(colorstr('red', f'Wrong agent activated, expected {self._chief_agent_name} but got {output.agent}'))
-
-                    staff_response = holder.pop('response')
+                    output, prediction = self._staff_turn(patient_response, staff_turn)
 
                     # Token accounting
                     staff_token_stats = self._accumulate_staff_tokens(
-                        staff_response, staff_token_stats, staff_token_callback
+                        prediction, staff_token_stats, staff_token_callback
                     )
 
                     # Fail to identify the schedule -> surface before recording a staff turn
-                    if staff_response['type'] == 'tool' and staff_response.get('tmp_flag') == 'retrieve':
-                        result_dict = staff_response['result_dict']
+                    if prediction['type'] == 'tool' and prediction.get('tmp_flag') == 'retrieve':
+                        result_dict = self._retrieval_result(
+                            prediction, 'test_retrieve', STATUS_CODES['test_retrieve']['identify']
+                        )
                         raise DataNotFoundError(colorstr("red", "Error: Patient information not found error."))
 
                     # Record the staff utterance (clarification 'text' or test/schedule proposal alike)
-                    rendered_response, _role = output.response, output.agent
-                    self.dialog_history['test_scheduling'].append({"role": "Staff", "content": rendered_response})
-                    log(f"{staff_role(role=_role):<25}: {rendered_response}")
+                    staff_response, _role = output.response, output.agent
+                    self.dialog_history['test_scheduling'].append({"role": "Staff", "content": staff_response})
+                    log(f"{staff_role(role=_role):<25}: {staff_response}")
 
                     # Advance simulation state based on the structured result
-                    if staff_response['type'] == 'tool':
+                    if prediction['type'] == 'tool':
                         # Test retrieval case -> update known data + rebuild agent with test tools
-                        if 'test_list' in staff_response['result']:
-                            result = staff_response['result']
+                        if 'test_list' in prediction['result']:
+                            result = prediction['result']
                             _patient_info = result['patient_fv']
                             test_list = result['test_list']
                             staff_known_data.update({'patient_fv': _patient_info})
@@ -1351,8 +1277,8 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                             )
 
                         # A successful test schedule ends the inner dialog loop.
-                        elif 'test_schedule' in staff_response['result']:
-                            pred_schedule = staff_response['result']
+                        elif 'test_schedule' in prediction['result']:
+                            pred_schedule = prediction['result']
                             break
 
                     tries += 1
@@ -1441,7 +1367,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                 for item in pred_schedule['test_schedule']:
                     item['schedule'] = [item.pop('start'), item.pop('end')]
 
-                prediction = {
+                final_schedule = {
                     'visit_type': 'follow_up_visit',
                     'patient': staff_known_data['patient_fv']['patient'],
                     'attending_physician': staff_known_data['attending_physician'],
@@ -1457,7 +1383,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                     'negotiation_metrics': negotiation_metrics,
                     'last_updated_time': self.environment.current_time
                 }
-                result_dict['pred'] = [prediction]
+                result_dict['pred'] = [final_schedule]
                 result_dict['status'] = [True]
             except Exception:
                 result_dict['status_code'] = [STATUS_CODES['format']]
@@ -1519,15 +1445,14 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         merged_patient_kwargs = {**patient_kwargs, **kwargs}
 
         # Staff turn closure: routes the structured cancellation turn through the MAS.
-        holder = {}
-        def staff_turn(user_prompt: str) -> Tuple[str, bool]:
-            staff_response = self.test_canceling(
+        def staff_turn(user_prompt: str) -> Tuple[str, dict]:
+            prediction = self.test_canceling(
                 client=tool_calling_agent,
                 patient_intention=user_prompt,
                 chat_history=self._to_lc_history('test_cancel')
             )
-            holder['response'] = staff_response
-            return self._render_staff_reply(staff_response, 'test_cancel'), False
+            reply = self._render_staff_reply(prediction, 'test_cancel')
+            return reply, prediction
 
         # Start conversation
         staff_greet = self.admin_staff_mas.root.agent.staff_greet
@@ -1549,32 +1474,24 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                 log(f"{role:<25}: {patient_response}")
 
                 # Canceling from staff
-                output = self.admin_staff_mas.chat(
-                    user_prompt=patient_response,
-                    callback=staff_turn,
-                    using_multi_turn=False,
-                    verbose=False,
-                )
+                output, prediction = self._staff_turn(patient_response, staff_turn)
 
-                # If wrong agent activated
-                if output.agent != self._chief_agent_name:
-                    raise AgentSelectionError(colorstr('red', f'Wrong agent activated, expected {self._chief_agent_name} but got {output.agent}'))
+                # Record this turn's retrieval outcome
+                if prediction['type'] == 'tool':
+                    result_dict = self._retrieval_result(
+                        prediction, 'cancel', STATUS_CODES['cancel']['identify']
+                    )
 
-                staff_response = holder.pop('response')
+                    # A wrong identification cancels nothing -> surface as a not-found failure
+                    if prediction['result']['status'] is False:
+                        raise DataNotFoundError(colorstr("red", "Error: Schedule not found error."))
 
-                # A wrong identification cancels nothing -> surface as a not-found failure
-                if staff_response['type'] == 'tool' and staff_response['result_dict']['status'][0] is False:
-                    result_dict = staff_response['result_dict']
-                    raise DataNotFoundError(colorstr("red", "Error: Schedule not found error."))
-
-                rendered_response, _role = output.response, output.agent
-                self.dialog_history['test_cancel'].append({"role": "Staff", "content": rendered_response})
-                log(f"{staff_role(role=_role):<25}: {rendered_response}")
+                staff_response, _role = output.response, output.agent
+                self.dialog_history['test_cancel'].append({"role": "Staff", "content": staff_response})
+                log(f"{staff_role(role=_role):<25}: {staff_response}")
 
                 # Tool calling result -> successful cancellation (a clarification 'text' reply just re-iterates)
-                if staff_response['type'] == 'tool':
-                    result_dict = staff_response['result_dict']
-
+                if prediction['type'] == 'tool':
                     # Final response of patient
                     self.dialog_history['test_cancel'].append({"role": "Patient", "content": self.end_phrase})
                     role = f"{colorstr('green', 'Patient')} (cancel)"
@@ -1663,15 +1580,14 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         )
 
         # Staff turn closure: routes the structured rescheduling turn through the MAS.
-        holder = {}
-        def staff_turn(user_prompt: str) -> Tuple[str, bool]:
-            staff_response = self.test_rescheduling(
+        def staff_turn(user_prompt: str) -> Tuple[str, dict]:
+            prediction = self.test_rescheduling(
                 client=tool_calling_agent,
                 patient_intention=user_prompt,
                 chat_history=self._to_lc_history('test_reschedule'),
             )
-            holder['response'] = staff_response
-            return self._render_staff_reply(staff_response, 'test_reschedule'), False
+            reply = self._render_staff_reply(prediction, 'test_reschedule')
+            return reply, prediction
 
         # Start conversation
         staff_greet = self.admin_staff_mas.root.agent.staff_greet
@@ -1693,38 +1609,27 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                 log(f"{role:<25}: {patient_response}")
 
                 # Rescheduling from staff
-                output = self.admin_staff_mas.chat(
-                    user_prompt=patient_response,
-                    callback=staff_turn,
-                    using_multi_turn=False,
-                    verbose=False,
-                )
-
-                # If wrong agent activated
-                if output.agent != self._chief_agent_name:
-                    raise AgentSelectionError(colorstr('red', f'Wrong agent activated, expected {self._chief_agent_name} but got {output.agent}'))
-
-                staff_response = holder.pop('response')
+                output, prediction = self._staff_turn(patient_response, staff_turn)
 
                 # Tool-calling failures resolve nothing -> surface them before recording a staff turn.
-                if staff_response['type'] == 'tool':
-                    tmp_flag = staff_response.get('tmp_flag')
+                if prediction['type'] == 'tool':
+                    tmp_flag = prediction.get('tmp_flag')
                     if tmp_flag == 'retrieve':
-                        result_dict = staff_response['result_dict']
+                        result_dict = prediction['result_dict']
                         raise DataNotFoundError(colorstr("red", "Error: Schedule not found error."))
                     elif tmp_flag == 'schedule':
-                        result_dict = staff_response['result_dict']
+                        result_dict = prediction['result_dict']
                         raise SchedulingError(colorstr("red", "Error: Scheduling error."))
                     elif tmp_flag not in ('waiting_list', 'reschedule'):
                         raise TypeError(colorstr("red", "Error: Unexpected return type from rescheduling method."))
 
-                rendered_response, _role = output.response, output.agent
-                self.dialog_history['test_reschedule'].append({"role": "Staff", "content": rendered_response})
-                log(f"{staff_role(role=_role):<25}: {rendered_response}")
+                staff_response, _role = output.response, output.agent
+                self.dialog_history['test_reschedule'].append({"role": "Staff", "content": staff_response})
+                log(f"{staff_role(role=_role):<25}: {staff_response}")
 
                 # Tool calling result -> successful reschedule / waiting-list
-                if staff_response['type'] == 'tool':
-                    result_dict = staff_response['result_dict']
+                if prediction['type'] == 'tool':
+                    result_dict = prediction['result_dict']
 
                     # Final response of patient
                     self.dialog_history['test_reschedule'].append({"role": "Patient", "content": self.end_phrase})
