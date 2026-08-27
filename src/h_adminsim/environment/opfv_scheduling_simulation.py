@@ -37,6 +37,7 @@ if TYPE_CHECKING:
 
 class OPFVSchedulingSimulation(OPSchedulingSimulation):
     HISTORY_KEYS = ('scheduling', 'cancel', 'reschedule')
+    REJECTION_PROMPT = 'opfv_schedule_patient_rejected_system.txt'
 
     def __init__(self,
                  patient_agent: PatientAgent,
@@ -82,60 +83,6 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
         return self.admin_staff_mas.get_agent('first_visit_scheduling')
 
     
-    def _init_prompt(self, schedule_rejection_prompt_path: Optional[str] = None):
-        """
-        Initialize the schedule rejection system prompt for the administration staff agent.
-
-        Args:
-            schedule_rejection_prompt_path (Optional[str], optional): Path to a custom schedule rejection system prompt file. 
-                                                                      If not provided, the default system prompt will be used. Defaults to None.
-
-        Raises:
-            FileNotFoundError: If the specified system prompt file does not exist.
-        """
-        # Initialilze with the default system prompt
-        if not schedule_rejection_prompt_path:
-            prompt_file_name = "opfv_schedule_patient_rejected_system.txt"
-            file_path = resources.files("h_adminsim.assets.prompts").joinpath(prompt_file_name)
-            self.rejection_system_prompt_template = file_path.read_text()
-        
-        # User can specify a custom system prompt
-        else:
-            if not os.path.exists(schedule_rejection_prompt_path):
-                raise FileNotFoundError(colorstr("red", f"System prompt file not found: {schedule_rejection_prompt_path}"))
-            with open(schedule_rejection_prompt_path, 'r') as f:
-                self.rejection_system_prompt_template = f.read()
-
-        # Additional prompts for streaming scheduling simulation
-        self.patient_satisfaction_system_prompt = (
-            "You are a patient looking to schedule an appointment. "
-            "Assume that the latest schedule proposed by the hospital administrative staff is satisfactory."
-        )
-        self.natural_end_phrase = (
-            "{schedule}\n"
-            "Respond to this suggested schedule, ending with a thank-you nuance.\n"
-            "- If the conversation history shows that the same schedule was previously proposed and you rejected it, "
-            "respond with resigned understanding that this is likely the earliest available "
-            "(e.g., 'Oh, this must be the earliest available. Alright, thank you.'), keeping it under 15 words.\n"
-            "- Otherwise, respond with plain satisfaction in 5 words or fewer, "
-            "conveying only satisfaction and no dissatisfaction."
-        )
-        self.patient_evaluation_system_prompt = (
-            "You are a patient evaluating whether the proposed appointment meets your scheduling preference. "
-            "Your preference is for a specific {preference}: {preferred_condition}."
-        )
-        self.patient_schedule_evaluation_phrase = (
-            "{schedule}\n"
-            "Evaluate whether this appointment meets your {preference} preference ({preferred_condition}).\n"
-            "- If your preference is 'doctor': accept if the appointment is with {preferred_condition}.\n"
-            "- If your preference is 'date': accept if the appointment date is on or after {preferred_condition}.\n"
-            "If acceptable, respond with brief acceptance (5 words or fewer) ending with a thank-you, "
-            "and include '#ACCEPT' at the very end. "
-            "Otherwise, briefly express dissatisfaction and state what you need instead."
-        )
-        self.end_phrase = "Thank you."
-
-
     def _render_staff_reply(self,
                             prediction: dict,
                             reply_type: str,

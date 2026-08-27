@@ -1,3 +1,4 @@
+import os
 from copy import deepcopy
 from typing import Callable, Optional, Tuple
 from langchain_core.messages import HumanMessage, AIMessage
@@ -8,6 +9,7 @@ from h_adminsim.tools.callback import TokenUsageCallback
 from h_adminsim.environment.op_simulation import OPSimulation
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.common_utils import init_result_dict, preprocess_dialog
+from h_adminsim.utils.prompt_utils import load_prompt
 
 
 
@@ -28,6 +30,41 @@ class OPSchedulingSimulation(OPSimulation):
     and supply their own domain logic (staff-reply rendering, post-processing,
     sanity checks). Everything gathered here is identical across the subclasses.
     """
+    # Packaged schedule-rejection system prompt for this visit type; declared by subclasses.
+    REJECTION_PROMPT: str
+
+
+    def _init_prompt(self, schedule_rejection_prompt_path: Optional[str] = None):
+        """
+        Initialize the patient-side prompts used across the scheduling simulations.
+
+        Args:
+            schedule_rejection_prompt_path (Optional[str], optional): Path to a custom schedule
+                                                                      rejection system prompt file.
+                                                                      If not provided, the subclass's
+                                                                      `REJECTION_PROMPT` is used.
+                                                                      Defaults to None.
+
+        Raises:
+            FileNotFoundError: If the specified system prompt file does not exist.
+        """
+        # Rejection scenario system prompt: packaged per visit type, overridable by the caller
+        if not schedule_rejection_prompt_path:
+            self.rejection_system_prompt_template = load_prompt(self.REJECTION_PROMPT)
+        else:
+            if not os.path.exists(schedule_rejection_prompt_path):
+                raise FileNotFoundError(colorstr("red", f"System prompt file not found: {schedule_rejection_prompt_path}"))
+            with open(schedule_rejection_prompt_path, 'r') as f:
+                self.rejection_system_prompt_template = f.read()
+
+        # Shared prompts driving the patient's reaction to a proposed schedule
+        self.patient_satisfaction_system_prompt = load_prompt('opfvfu_schedule_patient_satisfied_system.txt')
+        self.natural_end_phrase = load_prompt('opfvfu_schedule_patient_satisfied_user.txt')
+        self.patient_evaluation_system_prompt = load_prompt('opfvfu_schedule_patient_evaluation_system.txt')
+        self.patient_schedule_evaluation_phrase = load_prompt('opfvfu_schedule_patient_evaluation_user.txt')
+        self.end_phrase = "Thank you."
+
+
     def _staff_turn(self,
                     user_prompt: str,
                     respond: Callable[[str], Tuple[str, dict]],

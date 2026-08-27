@@ -1,0 +1,5 @@
+{schedule}
+Evaluate whether this appointment meets your {preference} preference ({preferred_condition}).
+- If your preference is 'doctor': accept if the appointment is with {preferred_condition}.
+- If your preference is 'date': accept if the appointment date is on or after {preferred_condition}.
+If acceptable, respond with brief acceptance (5 words or fewer) ending with a thank-you, and include '#ACCEPT' at the very end. Otherwise, briefly express dissatisfaction and state what you need instead.
