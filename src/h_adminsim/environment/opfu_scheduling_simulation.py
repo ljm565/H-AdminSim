@@ -24,7 +24,7 @@ from h_adminsim.registry import (
 from h_adminsim.tools.callback import TokenUsageCallback
 from h_adminsim.tools.sanity_checker import SanityChecker
 from h_adminsim.tools import SchedulingRule, scheduling_tool_calling, NegotiationMetrics
-from h_adminsim.environment.op_scheduling_simulation import OPSchedulingSimulation
+from h_adminsim.environment.op_scheduling_simulation import OPSchedulingSimulation, TurnLimitReached
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.common_utils import *
 
@@ -1357,16 +1357,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
 
                     tries += 1
                     if tries > max_inferences:
-                        result_dict = {
-                            'gt': [gt_patient_condition],
-                            'pred': [None],
-                            'status': [False],
-                            'status_code': [STATUS_CODES['simulation']],
-                            'dialog': [preprocess_dialog(self.dialog_history['test_scheduling'])]
-                        }
-                        token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
-                        self._finish_scheduling_turn('test_scheduling', verbose)
-                        return doctor_information, test_device_information, result_dict, token_usage
+                        raise TurnLimitReached
 
                 # Sanity check
                 ## No GT case
@@ -1415,73 +1406,24 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
 
                     break
 
-        except DataNotFoundError:
-            result_dict['dialog'].append(preprocess_dialog(self.dialog_history['test_scheduling']))
-            log("Simulation completed.", color=True)
-            token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
-            self._finish_scheduling_turn('test_scheduling', verbose)
-            return doctor_information, test_device_information, result_dict, token_usage
-        
-        except ToolCallingError:
-            status = False
-            result_dict = {
-                'gt': [gt_patient_condition],
-                'pred': [None],
-                'status': [status],
-                'status_code': [STATUS_CODES['test_retrieve']['identify']],
-                'dialog': [preprocess_dialog(self.dialog_history['test_scheduling'])]
-            }
+        except Exception as e:
+            result_dict = self._resolve_simulation_error(
+                e, 'test_scheduling', gt_patient_condition,
+                error_codes={
+                    TurnLimitReached: STATUS_CODES['simulation'],                  # Ran out of dialogue turns
+                    ToolCallingError: STATUS_CODES['test_retrieve']['identify'],
+                    SchedulingError: STATUS_CODES['format'],
+                    AgentSelectionError: STATUS_CODES['agent'],                    # Wrong agent activated
+                },
+                result_dict=result_dict,
+                dialog_only=(DataNotFoundError,),                                  # Patient information not found
+            )
             log("Simulation completed.", color=True)
             token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
             self._finish_scheduling_turn('test_scheduling', verbose)
             return doctor_information, test_device_information, result_dict, token_usage
 
-        except SchedulingError:
-            status = False
-            result_dict = {
-                'gt': [gt_patient_condition],
-                'pred': [None],
-                'status': [status],
-                'status_code': [STATUS_CODES['format']],
-                'dialog': [preprocess_dialog(self.dialog_history['test_scheduling'])]
-            }
-            log("Simulation completed.", color=True)
-            token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
-            self._finish_scheduling_turn('test_scheduling', verbose)
-            return doctor_information, test_device_information, result_dict, token_usage
-        
-        except AgentSelectionError as e:
-            log(str(e), level='warning')
-            status = False
-            result_dict = {
-                'gt': [gt_patient_condition],
-                'pred': [None],
-                'status': [status],
-                'status_code': [STATUS_CODES['agent']],
-                'dialog': [preprocess_dialog(self.dialog_history['test_scheduling'])]
-            }
-            log("Simulation completed.", color=True)
-            token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
-            self._finish_scheduling_turn('test_scheduling', verbose)
-            return doctor_information, test_device_information, result_dict, token_usage
-        
-        # Otherwise
-        except Exception as e:
-            status = False
-            status_code = STATUS_CODES['unexpected'].format(e=e)
-            log(status_code, level='warning')
-            result_dict = {
-                'gt': [gt_patient_condition],
-                'pred': [None],
-                'status': [status],
-                'status_code': [status_code],
-                'dialog': [preprocess_dialog(self.dialog_history['test_scheduling'])]
-            }
-            log("Simulation completed.", color=True)
-            token_usage = {'patient_token': patient_token_stats, 'admin_staff_token': staff_token_stats}
-            self._finish_scheduling_turn('test_scheduling', verbose)
-            return doctor_information, test_device_information, result_dict, token_usage
-        
+
         # Organize the result for the regular success / failure path
         result_dict = {
             'gt': [gt_patient_condition],
@@ -1622,6 +1564,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
 
                 # A wrong identification cancels nothing -> surface as a not-found failure
                 if staff_response['type'] == 'tool' and staff_response['result_dict']['status'][0] is False:
+                    result_dict = staff_response['result_dict']
                     raise DataNotFoundError(colorstr("red", "Error: Schedule not found error."))
 
                 rendered_response, _role = output.response, output.agent
@@ -1650,42 +1593,16 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                     'dialog': [preprocess_dialog(self.dialog_history['test_cancel'])]
                 }
 
-        # Requested schedule indentification error
-        except DataNotFoundError:
-            result_dict['dialog'].append(preprocess_dialog(self.dialog_history['test_cancel']))
-
-        # Wrong agent activated
-        except AgentSelectionError as e:
-            log(str(e), level='warning')
-            result_dict = {
-                'gt': [{'cancel': gt_idx}],
-                'pred': [None],
-                'status': [False],
-                'status_code': [STATUS_CODES['agent']],
-                'dialog': [preprocess_dialog(self.dialog_history['test_cancel'])]
-            }
-
-        # Tool calling error
-        except TypeError:
-            result_dict = {
-                'gt': [{'cancel': gt_idx}],
-                'pred': [None],
-                'status': [False],
-                'status_code': [STATUS_CODES['cancel']['type']],
-                'dialog': [preprocess_dialog(self.dialog_history['test_cancel'])]
-            }
-
-        # Otherwhise
         except Exception as e:
-            status_code = STATUS_CODES['unexpected'].format(e=e)
-            log(status_code, level='warning')
-            result_dict = {
-                'gt': [{'cancel': gt_idx}],
-                'pred': [None],
-                'status': [False],
-                'status_code': [status_code],
-                'dialog': [preprocess_dialog(self.dialog_history['test_cancel'])]
-            }
+            result_dict = self._resolve_simulation_error(
+                e, 'test_cancel', {'cancel': gt_idx},
+                error_codes={
+                    AgentSelectionError: STATUS_CODES['agent'],       # Wrong agent activated
+                    TypeError: STATUS_CODES['cancel']['type'],        # Tool calling error
+                },
+                result_dict=result_dict,
+                dialog_only=(DataNotFoundError,),                     # Schedule identification error
+            )
 
         log("Simulation completed.", color=True)
         self._finish_scheduling_turn('test_cancel', verbose)
@@ -1827,46 +1744,17 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                     'dialog': [preprocess_dialog(self.dialog_history['test_reschedule'])]
                 }
 
-        # Requested schedule indentification error
-        except DataNotFoundError:
-            result_dict['dialog'].append(preprocess_dialog(self.dialog_history['test_reschedule']))
-
-        # Scheduling Error:
-        except SchedulingError:
-            result_dict['dialog'].append(preprocess_dialog(self.dialog_history['test_reschedule']))
-
-        # Wrong agent activated
-        except AgentSelectionError as e:
-            log(str(e), level='warning')
-            result_dict = {
-                'gt': [{'reschedule': gt_idx}],
-                'pred': [None],
-                'status': [False],
-                'status_code': [STATUS_CODES['agent']],
-                'dialog': [preprocess_dialog(self.dialog_history['test_reschedule'])]
-            }
-
-        # Tool calling error
-        except TypeError:
-            result_dict = {
-                'gt': [{'reschedule': gt_idx}],
-                'pred': [None],
-                'status': [False],
-                'status_code': [STATUS_CODES['reschedule']['type']],
-                'dialog': [preprocess_dialog(self.dialog_history['test_reschedule'])]
-            }
-
-        # Otherwise
         except Exception as e:
-            status_code = STATUS_CODES['unexpected'].format(e=e)
-            log(status_code, level='warning')
-            result_dict = {
-                'gt': [{'reschedule': gt_idx}],
-                'pred': [None],
-                'status': [False],
-                'status_code': [status_code],
-                'dialog': [preprocess_dialog(self.dialog_history['test_reschedule'])]
-            }
+            result_dict = self._resolve_simulation_error(
+                e, 'test_reschedule', {'reschedule': gt_idx},
+                error_codes={
+                    AgentSelectionError: STATUS_CODES['agent'],           # Wrong agent activated
+                    TypeError: STATUS_CODES['reschedule']['type'],        # Tool calling error
+                },
+                result_dict=result_dict,
+                # Identification / scheduling failures already recorded their own result
+                dialog_only=(DataNotFoundError, SchedulingError),
+            )
 
         log("Simulation completed.", color=True)
         self._finish_scheduling_turn('test_reschedule', verbose)
