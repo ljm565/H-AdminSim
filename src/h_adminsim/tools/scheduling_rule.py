@@ -1110,7 +1110,12 @@ def create_tools(rule: SchedulingRule,
             cancelled_schedule = patient_schedule_list[index]
             updated_doctor_info = rule.cancel_schedule(index, doctor_info, cancelled_schedule)
                 
-        return {'cancelled_schedule': cancelled_schedule, 'updated_doctor_info': updated_doctor_info, 'index': {'gt': gt_idx, 'pred': index}, 'status': status}
+        return {
+            'cancelled_schedule': cancelled_schedule, 
+            'updated_doctor_info': updated_doctor_info, 
+            'index': {'gt': gt_idx, 'pred': index}, 
+            'status': status
+        }
 
 
     @tool
@@ -1145,7 +1150,12 @@ def create_tools(rule: SchedulingRule,
             cancelled_schedule = patient_schedule_list[index]
             updated_doctor_info = rule.cancel_test_schedule(index, doctor_info, test_device_information, cancelled_schedule)
 
-        return {'cancelled_schedule': cancelled_schedule, 'updated_doctor_info': updated_doctor_info, 'index': {'gt': gt_idx, 'pred': index}, 'status': status}
+        return {
+            'cancelled_schedule': cancelled_schedule, 
+            'updated_doctor_info': updated_doctor_info, 
+            'index': {'gt': gt_idx, 'pred': index}, 
+            'status': status
+        }
 
 
     @tool
