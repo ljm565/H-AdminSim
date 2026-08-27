@@ -115,6 +115,7 @@ class OPFVIntakeSimulation(OPSimulation):
             )
 
             # If wrong agent activated
+            # TODO: scheduling simulation 오류 처리와 동일하게 수정해야함.
             if output.agent != self._chief_agent_name:
                 raise AgentSelectionError(
                     colorstr('red', f'Wrong agent activated, expected {self._chief_agent_name} but got {output.agent}'),
