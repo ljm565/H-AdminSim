@@ -159,6 +159,22 @@ class OPFUSchedulingSimulation:
         }
 
     
+    def _init_negotiation_metrics(self, preference: Optional[str] = None) -> dict:
+        """
+        Initialize negotiation metrics with default values.
+
+        Args:
+            preference (str, optional): The scheduling preference to initialize metrics for. Defaults to None.
+        """
+        return {
+            'preference': preference,
+            'pci': None,
+            'tcl': None,
+            'ti': None,
+            'do_negotiate': False,
+        }
+
+    
     def _to_lc_history(self, key: str) -> list:
         """
         Convert the dialog history for the given key into LangChain message objects.
@@ -369,6 +385,36 @@ class OPFUSchedulingSimulation:
             verbose=verbose,
             is_done=True,
         )
+
+
+    @staticmethod
+    def _normalize_test_schedule_for_metrics(schedule: dict) -> dict:
+        """
+        Normalize scheduler output so NegotiationMetrics can read test_schedule as a
+        start-sorted list with hour-float `start`/`end`.
+
+        Args:
+            schedule (dict): The original schedule dictionary.
+
+        Returns:
+            dict: The normalized schedule dictionary.
+        """
+        normalized = {**schedule}
+        items = normalized.get('test_schedule') or []
+        if isinstance(items, dict):
+            items = items.values()
+        normalized['test_schedule'] = sorted(
+            (
+                {
+                    **item,
+                    'start': iso_to_hour(item['start']) if isinstance(item.get('start'), str) else item.get('start'),
+                    'end': iso_to_hour(item['end']) if isinstance(item.get('end'), str) else item.get('end'),
+                }
+                for item in items
+            ),
+            key=lambda x: (x['date'], x['start']),
+        )
+        return normalized
     
     
     @staticmethod
@@ -1235,6 +1281,9 @@ class OPFUSchedulingSimulation:
         self._init_history()
         staff_token_stats = {}
         patient_info = self.environment.patient_schedules
+        filtered_doctor_information = None
+        filtered_test_device_information = None
+        required_test_codes = None
         tool_calling_agent = self.scheduling_agent.build_agent(
             rule=self.rules, 
             doctor_info=None,
@@ -1275,6 +1324,11 @@ class OPFUSchedulingSimulation:
         try:
             # Preference iteration
             for i, gt_patient_condition in enumerate(gt_data):
+                negotiation_metrics = self._init_negotiation_metrics(
+                    gt_patient_condition.get('preference')
+                )
+                negotiation_metrics_computed = False
+
                 # For the rejection scenario
                 if i != 0:
                     self.update_patient_system_prompt(
@@ -1294,6 +1348,38 @@ class OPFUSchedulingSimulation:
                     self.dialog_history['test_scheduling'].append({"role": "Patient", "content": patient_response})
                     role = f"{colorstr('green', 'Patient')} ({gt_patient_condition['preference']})"
                     log(f"{role:<25}: {patient_response}")
+
+                    # Decide whether to trigger negotiation after the patient states a hospital-conflicting test-scheduling preference.
+                    if (
+                        not negotiation_metrics_computed
+                        and gt_patient_condition.get('preference') in {'visit_min', 'stay_min'}
+                        and required_test_codes is not None
+                        and filtered_test_device_information is not None
+                    ):
+                        try:
+                            preference_schedule = self.rules.schedule_tests(
+                                gt_patient_condition['preference'],
+                                filtered_test_device_information,
+                                required_test_codes,
+                                10,
+                            )
+                            metrics = NegotiationMetrics(
+                                preference=gt_patient_condition.get('preference'),
+                                achieved_schedule=self._normalize_test_schedule_for_metrics(preference_schedule),
+                                filtered_test_device_information=filtered_test_device_information,
+                                rule=self.rules,
+                                environment=self.environment,
+                                dialog_history=self.dialog_history['test_scheduling'],
+                                **self.negotiation_params,
+                            ).to_dict()
+                            negotiation_metrics.update({
+                                key: metrics.get(key)
+                                for key in negotiation_metrics
+                            })
+                            negotiation_metrics_computed = True
+                            log(colorstr('cyan', f'[negotiation_metrics] {negotiation_metrics}'))
+                        except Exception as _metric_err:
+                            log(colorstr('yellow', f'[negotiation_metrics] skipped ({type(_metric_err).__name__}: {_metric_err})'), level='warning')
                     
                     # Scheduling from staff
                     output = self.admin_staff_mas.chat(
@@ -1389,15 +1475,6 @@ class OPFUSchedulingSimulation:
                         environment=self.environment,
                         rule=self.rules,
                     )
-                    ###################### TMP ######################
-                    if status and gt_patient_condition['preference'] == 'visit_min':
-                        test_codes_list = list({t['code'] for t in gt_patient_condition['test']})
-                        optimal = self.rules.schedule_tests('throughput_max', filtered_test_device_information, test_codes_list, 10)
-                        opt_ready, visit_min_ready = optimal['all_results_ready_at'], pred_schedule['all_results_ready_at']
-                        if opt_ready is not None and compare_iso_time(visit_min_ready, opt_ready):
-                            delta_h = (str_to_datetime(visit_min_ready) - str_to_datetime(opt_ready)).total_seconds() / 3600
-                            log(colorstr('magenta', f'throughput_max: {opt_ready}, visit_min: {visit_min_ready} (+{delta_h:.1f}h)'))
-                    ################################################
 
                 if not status:
                     break
@@ -1507,23 +1584,6 @@ class OPFUSchedulingSimulation:
             'dialog': [preprocess_dialog(self.dialog_history['test_scheduling'])]
         }
         if status:
-            # Per-patient negotiation metrics (PCI/TCL/G/R/F/U) — computed before the format
-            # conversion below so P's test slots still carry `start`/`end`. Never breaks the sim.
-            negotiation_metrics = None
-            try:
-                negotiation_metrics = NegotiationMetrics(
-                    preference=gt_data[i].get('preference'),
-                    achieved_schedule=pred_schedule,
-                    filtered_test_device_information=filtered_test_device_information,
-                    rule=self.rules,
-                    environment=self.environment,
-                    dialog_history=self.dialog_history['test_scheduling'],
-                    **self.negotiation_params
-                ).to_dict()
-                log(colorstr('cyan', f'[negotiation_metrics] {negotiation_metrics}'))
-            except Exception as _metric_err:
-                log(colorstr('yellow', f'[negotiation_metrics] skipped ({type(_metric_err).__name__}: {_metric_err})'), level='warning')
-
             try:
                 fu_slot = pred_schedule['fu_schedule']
                 fu_schedule = fu_slot[next(iter(fu_slot))] if fu_slot else None
