@@ -2,6 +2,7 @@ from typing import Optional, TYPE_CHECKING
 from patientsim import PatientAgent, CheckerAgent
 
 from h_adminsim.registry.errors import AgentSelectionError
+from h_adminsim.environment.op_simulation import OPSimulation
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.common_utils import *
 
@@ -10,17 +11,19 @@ if TYPE_CHECKING:
 
 
 
-class OPFVIntakeSimulation:
-    def __init__(self, 
+class OPFVIntakeSimulation(OPSimulation):
+    HISTORY_KEYS = ('intake',)
+
+    def __init__(self,
                  patient_agent: PatientAgent,
                  admin_staff_mas: "HospitalMAS",
                  checker_agent: Optional[CheckerAgent] = None,
                  max_inferences: int = 5):
 
+        super().__init__(patient_agent, admin_staff_mas)
+
         # Initialize simulation parameters
         self._chief_agent_name = 'first_visit_intake'
-        self.patient_agent = patient_agent
-        self.admin_staff_mas = admin_staff_mas
         self.intake_agent = admin_staff_mas.get_agent(self._chief_agent_name)
         self.checker_agent = checker_agent
         self.max_inferences = max_inferences
@@ -48,18 +51,7 @@ class OPFVIntakeSimulation:
                 colorstr("red", f"The visit type between the Checker agent ({self.checker_agent.visit_type}) and the Patient agent ({self.patient_agent.visit_type}) must be the same.")
 
 
-    def _init_agents(self, verbose: bool = True) -> None:
-        """
-        Reset the conversation histories and token usage records of both the Patient and Doctor agents.
-
-        Args:
-            verbose (bool, optional): Whether to print verbose output. Defaults to True.
-        """
-        self.patient_agent.reset_history(verbose=verbose)
-        self.admin_staff_mas.reset(verbose=verbose)
-
-
-    def simulate(self, 
+    def simulate(self,
                  verbose: bool = True, 
                  patient_kwargs: dict = {},
                  staff_kwargs: dict = {},
@@ -83,6 +75,7 @@ class OPFVIntakeSimulation:
         """
         # Initialize agents
         self._init_agents(verbose=verbose)
+        self._init_history()
         
         if verbose:
             log(f"Patient prompt:\n{self.patient_agent.system_prompt}")
@@ -90,7 +83,7 @@ class OPFVIntakeSimulation:
 
         # Start conversation
         staff_greet = self.admin_staff_mas.root.agent.staff_greet
-        dialog_history = [{"role": "Staff", "content": staff_greet}]
+        self.dialog_history['intake'].append({"role": "Staff", "content": staff_greet})
         self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
         role = f"{staff_role(role=self.admin_staff_mas.path[-1].name)}[0%]"
         log(f"{role:<29}: {staff_greet}")
@@ -103,19 +96,19 @@ class OPFVIntakeSimulation:
 
             # Obtain response from patient
             patient_response = self.patient_agent(
-                user_prompt=dialog_history[-1]["content"],
+                user_prompt=self.dialog_history['intake'][-1]["content"],
                 using_multi_turn=True,
                 verbose=verbose,
                 **merged_patient_kwargs
             )
-            dialog_history.append({"role": "Patient", "content": patient_response})
+            self.dialog_history['intake'].append({"role": "Patient", "content": patient_response})
             role = f"{colorstr('green', 'Patient')}         [{progress}%]"
             log(f"{role:<29}: {patient_response}")
 
             # Obtain response from staff
             output = self.admin_staff_mas.chat(
-                user_prompt=dialog_history[-1]["content"] + "\nThis is the final turn. Now, you must provide your top5 differential diagnosis." \
-                    if inference_idx == self.max_inferences - 1 else dialog_history[-1]["content"],
+                user_prompt=self.dialog_history['intake'][-1]["content"] + "\nThis is the final turn. Now, you must provide your top5 differential diagnosis." \
+                    if inference_idx == self.max_inferences - 1 else self.dialog_history['intake'][-1]["content"],
                 using_multi_turn=True,
                 verbose=verbose,
                 **merged_staff_kwargs
@@ -125,11 +118,11 @@ class OPFVIntakeSimulation:
             if output.agent != self._chief_agent_name:
                 raise AgentSelectionError(
                     colorstr('red', f'Wrong agent activated, expected {self._chief_agent_name} but got {output.agent}'),
-                    dialog_history=dialog_history,
+                    dialog_history=self.dialog_history['intake'],
                 )
 
             staff_response, is_done, _role = output.response, output.is_done, output.agent
-            dialog_history.append({"role": "Staff", "content": staff_response})
+            self.dialog_history['intake'].append({"role": "Staff", "content": staff_response})
             role = f"{staff_role(role=_role)}[{progress}%]"
             log(f"{role:<29}: {staff_response}")
 
@@ -149,7 +142,7 @@ class OPFVIntakeSimulation:
         log("Simulation completed.", color=True)
 
         output = {
-            "dialog_history": dialog_history,
+            "dialog_history": self.dialog_history['intake'],
             "patient_token_usage": self.patient_agent.client.token_usages,
             "admin_staff_token_usage": self.admin_staff_mas.aggregate_token_usages(),
         }
@@ -180,6 +173,7 @@ class OPFVIntakeSimulation:
         """
         # Initialize agents
         self._init_agents(verbose=verbose)
+        self._init_history()
         
         if verbose:
             log(f"Patient prompt:\n{self.patient_agent.system_prompt}")
@@ -187,7 +181,7 @@ class OPFVIntakeSimulation:
 
         # Start conversation
         staff_greet = self.admin_staff_mas.root.agent.staff_greet
-        dialog_history = [{"role": "Staff", "content": staff_greet}]
+        self.dialog_history['intake'].append({"role": "Staff", "content": staff_greet})
         self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
         role = f"{staff_role(role=self.admin_staff_mas.path[-1].name)}[0%]"
         log(f"{role:<29}: {staff_greet}")
@@ -202,19 +196,19 @@ class OPFVIntakeSimulation:
             # Obtain response from patient
             patient_response = run_with_retry(
                 self.patient_agent,
-                user_prompt=dialog_history[-1]["content"],
+                user_prompt=self.dialog_history['intake'][-1]["content"],
                 using_multi_turn=True,
                 verbose=verbose,
                 **merged_patient_kwargs
             )
-            dialog_history.append({"role": "Patient", "content": patient_response})
+            self.dialog_history['intake'].append({"role": "Patient", "content": patient_response})
             role = f"{colorstr('green', 'Patient')}         [{progress}%]"
             log(f"{role:<29}: {patient_response}")
             yield 'Patient', preprocess_utterance(patient_response)
 
             # Obtain response from staff
-            user_prompt = dialog_history[-1]["content"] + "\nThis is the final turn. Now, you must provide your top5 differential diagnosis." \
-                if inference_idx == self.max_inferences - 1 else dialog_history[-1]["content"]
+            user_prompt = self.dialog_history['intake'][-1]["content"] + "\nThis is the final turn. Now, you must provide your top5 differential diagnosis." \
+                if inference_idx == self.max_inferences - 1 else self.dialog_history['intake'][-1]["content"]
             output = run_with_retry(
                 self.admin_staff_mas.chat,
                 user_prompt=user_prompt,
@@ -235,7 +229,7 @@ class OPFVIntakeSimulation:
                 )
 
             staff_response, is_done, _role = output.response, output.is_done, output.agent
-            dialog_history.append({"role": "Staff", "content": staff_response})
+            self.dialog_history['intake'].append({"role": "Staff", "content": staff_response})
             role = f"{staff_role(role=_role)}[{progress}%]"
             log(f"{role:<29}: {staff_response}")
             yield 'Staff', preprocess_utterance(staff_response)

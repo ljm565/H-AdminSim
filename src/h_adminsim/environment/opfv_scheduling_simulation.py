@@ -7,7 +7,6 @@ from importlib import resources
 from patientsim import PatientAgent
 from decimal import Decimal, getcontext
 from langchain.agents import AgentExecutor
-from langchain_core.messages import HumanMessage, AIMessage
 from typing import Tuple, Union, Optional, TYPE_CHECKING
 
 from h_adminsim.registry.errors import (
@@ -25,6 +24,7 @@ from h_adminsim.registry import (
 from h_adminsim.tools.callback import TokenUsageCallback
 from h_adminsim.tools.sanity_checker import SanityChecker
 from h_adminsim.tools import SchedulingRule, scheduling_tool_calling
+from h_adminsim.environment.op_scheduling_simulation import OPSchedulingSimulation
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.common_utils import *
 
@@ -35,7 +35,9 @@ if TYPE_CHECKING:
 
 
 
-class OPFVSchedulingSimulation:
+class OPFVSchedulingSimulation(OPSchedulingSimulation):
+    HISTORY_KEYS = ('scheduling', 'cancel', 'reschedule')
+
     def __init__(self,
                  patient_agent: PatientAgent,
                  admin_staff_mas: "HospitalMAS",
@@ -48,12 +50,12 @@ class OPFVSchedulingSimulation:
                  fhir_integration: bool = False,
                  schedule_rejection_prompt_path: Optional[str] = None,
                  sanity_checker: Optional[SanityChecker] = None):
-        
+
+        super().__init__(patient_agent, admin_staff_mas)
+
         # Initialize simulation parameters
         getcontext().prec = 10
         self._chief_agent_name = 'first_visit_scheduling'
-        self.patient_agent = patient_agent
-        self.admin_staff_mas = admin_staff_mas
         self.environment = environment
         self._START_HOUR = metadata['time']['start_hour']
         self._END_HOUR = metadata['time']['end_hour']
@@ -134,47 +136,6 @@ class OPFVSchedulingSimulation:
         self.end_phrase = "Thank you."
 
 
-    def _init_agents(self, verbose: bool = True):
-        """
-        Reset the conversation histories and token usage records of both the Patient and Doctor agents.
-
-        Args:
-            verbose (bool, optional): Whether to print verbose output. Defaults to True.
-        """
-        self.patient_agent.reset_history(verbose=verbose)
-        self.admin_staff_mas.reset(verbose=verbose)
-
-
-    def _init_history(self):
-        """
-        Reset the dialogue histories.
-        """
-        self.dialog_history = {
-            'scheduling': [],
-            'cancel': [],
-            'reschedule': [],
-        }
-
-    
-    def _to_lc_history(self, key: str) -> list:
-        """
-        Convert the dialog history for the given key into LangChain message objects.
-
-        Args:
-            key (str): Key identifying which dialog history to convert.
-
-        Returns:
-            list: A list of LangChain HumanMessage and AIMessage objects.
-        """
-        msgs = []
-        for m in self.dialog_history[key]:
-            if m["role"] == "Patient":
-                msgs.append(HumanMessage(content=m["content"]))
-            elif m["role"] == "Staff":
-                msgs.append(AIMessage(content=m["content"]))
-        return msgs
-
-
     def _render_staff_reply(self,
                             staff_response: dict,
                             reply_type: str,
@@ -248,60 +209,6 @@ class OPFVSchedulingSimulation:
                 new = {k: v for k, v in result['new_schedule'].items()
                        if k in ['patient', 'attending_physician', 'department', 'date', 'schedule']}
                 return f"I've moved your original schedule: {original} to the new one: {new}"
-
-
-    def _accumulate_staff_tokens(self,
-                                 staff_response: dict,
-                                 staff_token_stats: dict,
-                                 staff_token_callback: TokenUsageCallback) -> dict:
-        """
-        Merge this turn's staff token usage into the running stats and return them.
-
-        Args:
-            staff_response (dict): The staff scheduling result (carries ``'token'`` for reasoning).
-            staff_token_stats (dict): The running per-key token usage to update.
-            staff_token_callback (TokenUsageCallback): Cumulative callback for the tool-calling path.
-
-        Returns:
-            dict: The updated token statistics.
-        """
-        if self.scheduling_strategy == 'tool_calling':
-            return staff_token_callback.token_usage
-        for k, v in staff_response['token'].items():
-            if k not in staff_token_stats:
-                staff_token_stats[k] = deepcopy(v)
-            else:
-                staff_token_stats[k].extend(v)
-        return staff_token_stats
-
-
-    def _finish_scheduling_turn(self,
-                                reply_type: str,
-                                verbose: bool = False):
-        """
-        Hand the floor back to the orchestrator once the scheduling eval loop is done.
-
-        Args:
-            reply_type (str): Reply types of the scheduling agent.
-            verbose (bool, optional): Whether to print verbose output. Defaults to False.
-        """
-        if len(self.admin_staff_mas.path) <= 1:
-            return
-        
-        closing = self.dialog_history[reply_type][-1]['content']
-        messages = self.admin_staff_mas.state.messages
-        
-        # When end abnormally
-        if messages and messages[-1]['content'] == closing:
-            return
-        
-        # When end normally
-        self.admin_staff_mas.chat(
-            user_prompt=closing,
-            using_multi_turn=False,
-            verbose=verbose,
-            is_done=True,
-        )
 
 
     @staticmethod
