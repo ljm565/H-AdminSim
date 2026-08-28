@@ -1,9 +1,7 @@
 import re
-import os
 import json
 import random
 from copy import deepcopy
-from importlib import resources
 from patientsim import PatientAgent
 from decimal import Decimal, getcontext
 from langchain.agents import AgentExecutor
@@ -1296,109 +1294,17 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         Returns:
             Tuple[dict, dict, dict]: Updated doctor information, test device information, and a result dictionary after cancellation.
         """
-        # Sanity Check
-        if not self.fhir_integration:
-            assert doctor_information is not None, colorstr("red", f"Doctor information must be provided if you don't use FHIR.")
-
-        # Initialize agents and result dictionary
-        result_dict = init_result_dict()
-        self._init_history()
-        self._init_agents(verbose=verbose)
-        patient_schedules = self.environment.patient_schedules if patient_schedules is None else patient_schedules
-        doctor_information = self.environment.get_general_doctor_info_from_fhir() if self.fhir_integration else doctor_information
-        tool_calling_agent = self.scheduling_agent.build_agent(
-            rule=self.rules,
-            doctor_info=doctor_information,
-            patient_schedule_list=patient_schedules,
+        doctor_information, result_dict = self._cancel_simulate(
+            'test_cancel',
             gt_idx=gt_idx,
-            test_device_information=test_device_information,
+            doctor_information=doctor_information,
+            patient_schedules=patient_schedules,
+            verbose=verbose,
+            max_inferences=max_inferences,
+            patient_kwargs=patient_kwargs,
+            tool_data={'test_device_information': test_device_information},
+            **kwargs,
         )
-        merged_patient_kwargs = {**patient_kwargs, **kwargs}
-
-        # Staff turn closure: routes the structured cancellation turn through the MAS.
-        def staff_turn(user_prompt: str) -> Tuple[str, dict]:
-            prediction = self.test_canceling(
-                client=tool_calling_agent,
-                patient_intention=user_prompt,
-                chat_history=self._to_lc_history('test_cancel')
-            )
-            reply = self._render_staff_reply(prediction, 'test_cancel')
-            return reply, prediction
-
-        # Start conversation
-        staff_greet = self.admin_staff_mas.root.agent.staff_greet
-        self.dialog_history['test_cancel'].append({"role": "Staff", "content": staff_greet})
-        self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
-        log(f"{staff_role(role=self.admin_staff_mas.path[-1].name):<25}: {staff_greet}")
-
-        try:
-            for _ in range(max_inferences):
-                # Obtain response from patient
-                patient_response = self.patient_agent(
-                    self.dialog_history['test_cancel'][-1]["content"],
-                    using_multi_turn=True,
-                    verbose=False,
-                    **merged_patient_kwargs
-                )
-                self.dialog_history['test_cancel'].append({"role": "Patient", "content": patient_response})
-                role = f"{colorstr('green', 'Patient')} (cancel)"
-                log(f"{role:<25}: {patient_response}")
-
-                # Canceling from staff
-                output, prediction = self._staff_turn(patient_response, staff_turn)
-
-                # Naive reply turn
-                if prediction['type'] == 'text':
-                    staff_response, _role = output.response, output.agent
-                    self.dialog_history['test_cancel'].append({"role": "Staff", "content": staff_response})
-                    log(f"{staff_role(role=_role):<25}: {staff_response}")
-
-                # Record this turn's retrieval outcome
-                elif prediction['type'] == 'tool':
-                    result_dict = self._retrieval_result(
-                        prediction, 'cancel', STATUS_CODES['cancel']['identify']
-                    )
-
-                    # A wrong identification cancels nothing -> surface as a not-found failure
-                    if prediction['result']['status'] is False:
-                        raise DataNotFoundError(colorstr("red", "Error: Schedule not found error."))
-
-                    # Tool calling result -> successful cancellation (a clarification 'text' reply just re-iterates)
-                    staff_response, _role = output.response, output.agent
-                    self.dialog_history['test_cancel'].append({"role": "Staff", "content": staff_response})
-                    log(f"{staff_role(role=_role):<25}: {staff_response}")
-
-                    # Final response of patient
-                    self.dialog_history['test_cancel'].append({"role": "Patient", "content": self.end_phrase})
-                    role = f"{colorstr('green', 'Patient')} (cancel)"
-                    log(f"{role:<25}: {self.end_phrase}")
-
-                    result_dict['dialog'].append(preprocess_dialog(self.dialog_history['test_cancel']))
-                    break
-
-            # The case without any determination during the simulation
-            if not len(result_dict['gt']):
-                result_dict = {
-                    'gt': [{'cancel': gt_idx}],
-                    'pred': [None],
-                    'status': [False],
-                    'status_code': [STATUS_CODES['cancel']['identify']],
-                    'dialog': [preprocess_dialog(self.dialog_history['test_cancel'])]
-                }
-
-        except Exception as e:
-            result_dict = self._resolve_simulation_error(
-                e, 'test_cancel', {'cancel': gt_idx},
-                error_codes={
-                    AgentSelectionError: STATUS_CODES['agent'],       # Wrong agent activated
-                    TypeError: STATUS_CODES['cancel']['type'],        # Tool calling error
-                },
-                result_dict=result_dict,
-                dialog_only=(DataNotFoundError,),                     # Schedule identification error
-            )
-
-        log("Simulation completed.", color=True)
-        self._finish_scheduling_turn('test_cancel', verbose)
         return doctor_information, test_device_information, result_dict
 
 
@@ -1434,113 +1340,17 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         Returns:
             Tuple[dict, dict, dict]: Updated doctor information, test device information, and a result dictionary after rescheduling.
         """
-        # Sanity Check
-        if not self.fhir_integration:
-            assert doctor_information is not None, colorstr("red", f"Doctor information must be provided if you don't use FHIR.")
-
-        # Initialize agents and result dictionary
-        result_dict = init_result_dict()
-        self._init_history()
-        self._init_agents(verbose=verbose)
-        patient_schedules = self.environment.patient_schedules if patient_schedules is None else patient_schedules
-        doctor_information = self.environment.get_general_doctor_info_from_fhir() if self.fhir_integration else doctor_information
-        merged_patient_kwargs = {**patient_kwargs, **kwargs}
-        merged_staff_kwargs = {**staff_kwargs, **kwargs}
-        tool_calling_agent = self.scheduling_agent.build_agent(
-            rule=self.rules,
-            doctor_info=doctor_information,
-            patient_schedule_list=patient_schedules,
+        doctor_information, result_dict = self._reschedule_simulate(
+            'test_reschedule',
+            self._make_test_reschedule_pipeline,
             gt_idx=gt_idx,
-            test_device_information=test_device_information,
-            reschedule_pipeline=self._make_test_reschedule_pipeline(doctor_information, test_device_information, **merged_staff_kwargs),
+            doctor_information=doctor_information,
+            patient_schedules=patient_schedules,
+            verbose=verbose,
+            max_inferences=max_inferences,
+            patient_kwargs=patient_kwargs,
+            staff_kwargs=staff_kwargs,
+            tool_data={'test_device_information': test_device_information},
+            **kwargs,
         )
-
-        # Staff turn closure: routes the structured rescheduling turn through the MAS.
-        def staff_turn(user_prompt: str) -> Tuple[str, dict]:
-            prediction = self.test_rescheduling(
-                client=tool_calling_agent,
-                patient_intention=user_prompt,
-                chat_history=self._to_lc_history('test_reschedule'),
-            )
-            reply = self._render_staff_reply(prediction, 'test_reschedule')
-            return reply, prediction
-
-        # Start conversation
-        staff_greet = self.admin_staff_mas.root.agent.staff_greet
-        self.dialog_history['test_reschedule'].append({"role": "Staff", "content": staff_greet})
-        self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
-        log(f"{staff_role(role=self.admin_staff_mas.path[-1].name):<25}: {staff_greet}")
-
-        try:
-            for _ in range(max_inferences):
-                # Obtain response from patient
-                patient_response = self.patient_agent(
-                    self.dialog_history['test_reschedule'][-1]["content"],
-                    using_multi_turn=True,
-                    verbose=False,
-                    **merged_patient_kwargs
-                )
-                self.dialog_history['test_reschedule'].append({"role": "Patient", "content": patient_response})
-                role = f"{colorstr('green', 'Patient')} (move)"
-                log(f"{role:<25}: {patient_response}")
-
-                # Rescheduling from staff
-                output, prediction = self._staff_turn(patient_response, staff_turn)
-
-                # Naive reply turn
-                if prediction['type'] == 'text':
-                    staff_response, _role = output.response, output.agent
-                    self.dialog_history['test_reschedule'].append({"role": "Staff", "content": staff_response})
-                    log(f"{staff_role(role=_role):<25}: {staff_response}")
-
-                # Record this turn's rescheduling outcome
-                elif prediction['type'] == 'tool':
-                    # Tool-calling failures resolve nothing -> surface them before recording a staff turn.
-                    tmp_flag = prediction.get('tmp_flag')
-                    if tmp_flag == 'retrieve':
-                        result_dict = prediction['result_dict']
-                        raise DataNotFoundError(colorstr("red", "Error: Schedule not found error."))
-                    elif tmp_flag == 'schedule':
-                        result_dict = prediction['result_dict']
-                        raise SchedulingError(colorstr("red", "Error: Scheduling error."))
-                    elif tmp_flag not in ('waiting_list', 'reschedule'):
-                        raise TypeError(colorstr("red", "Error: Unexpected return type from rescheduling method."))
-                    
-                    result_dict = prediction['result_dict']
-                    staff_response, _role = output.response, output.agent
-                    self.dialog_history['test_reschedule'].append({"role": "Staff", "content": staff_response})
-                    log(f"{staff_role(role=_role):<25}: {staff_response}")
-
-                    # Final response of patient
-                    self.dialog_history['test_reschedule'].append({"role": "Patient", "content": self.end_phrase})
-                    role = f"{colorstr('green', 'Patient')} (move)"
-                    log(f"{role:<25}: {self.end_phrase}")
-
-                    result_dict['dialog'].append(preprocess_dialog(self.dialog_history['test_reschedule']))
-                    break
-
-            # The case without any determination during the simulation
-            if not len(result_dict['gt']):
-                result_dict = {
-                    'gt': [{'reschedule': gt_idx}],
-                    'pred': [None],
-                    'status': [False],
-                    'status_code': [STATUS_CODES['reschedule']['identify']],
-                    'dialog': [preprocess_dialog(self.dialog_history['test_reschedule'])]
-                }
-
-        except Exception as e:
-            result_dict = self._resolve_simulation_error(
-                e, 'test_reschedule', {'reschedule': gt_idx},
-                error_codes={
-                    AgentSelectionError: STATUS_CODES['agent'],           # Wrong agent activated
-                    TypeError: STATUS_CODES['reschedule']['type'],        # Tool calling error
-                },
-                result_dict=result_dict,
-                # Identification / scheduling failures already recorded their own result
-                dialog_only=(DataNotFoundError, SchedulingError),
-            )
-
-        log("Simulation completed.", color=True)
-        self._finish_scheduling_turn('test_reschedule', verbose)
         return doctor_information, test_device_information, result_dict
