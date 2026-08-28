@@ -899,8 +899,14 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
                 # Canceling from staff
                 output, prediction = self._staff_turn(patient_response, staff_turn)
 
+                # Naive reply turn
+                if prediction['type'] == 'text':
+                    staff_response, _role = output.response, output.agent
+                    self.dialog_history['cancel'].append({"role": "Staff", "content": staff_response})
+                    log(f"{staff_role(role=_role):<25}: {staff_response}")
+
                 # Record this turn's retrieval outcome
-                if prediction['type'] == 'tool':
+                elif prediction['type'] == 'tool':
                     result_dict = self._retrieval_result(
                         prediction, 'cancel', STATUS_CODES['cancel']['identify']
                     )
@@ -908,13 +914,12 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
                     # A wrong identification cancels nothing -> surface as a not-found failure
                     if prediction['result']['status'] is False:
                         raise DataNotFoundError(colorstr("red", "Error: Schedule not found error."))
-
-                staff_response, _role = output.response, output.agent
-                self.dialog_history['cancel'].append({"role": "Staff", "content": staff_response})
-                log(f"{staff_role(role=_role):<25}: {staff_response}")
-
-                # Tool calling result -> successful cancellation (a clarification 'text' reply just re-iterates)
-                if prediction['type'] == 'tool':
+                    
+                    # Tool calling result -> successful cancellation (a clarification 'text' reply just re-iterates)
+                    staff_response, _role = output.response, output.agent
+                    self.dialog_history['cancel'].append({"role": "Staff", "content": staff_response})
+                    log(f"{staff_role(role=_role):<25}: {staff_response}")
+                    
                     # Final response of patient
                     self.dialog_history['cancel'].append({"role": "Patient", "content": self.end_phrase})
                     role = f"{colorstr('green', 'Patient')} (cancel)"
@@ -1033,8 +1038,15 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
                 # Rescheduling from staff
                 output, prediction = self._staff_turn(patient_response, staff_turn)
 
-                # Tool-calling failures resolve nothing -> surface them before recording a staff turn.
-                if prediction['type'] == 'tool':
+                # Naive reply turn
+                if prediction['type'] == 'text':
+                    staff_response, _role = output.response, output.agent
+                    self.dialog_history['reschedule'].append({"role": "Staff", "content": staff_response})
+                    log(f"{staff_role(role=_role):<25}: {staff_response}")
+                
+                # Record this turn's rescheduling outcome
+                elif prediction['type'] == 'tool':
+                    # Tool-calling failures resolve nothing -> surface them before recording a staff turn.
                     tmp_flag = prediction.get('tmp_flag')
                     if tmp_flag == 'retrieve':
                         result_dict = prediction['result_dict']
@@ -1045,13 +1057,10 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
                     elif tmp_flag not in ('waiting_list', 'reschedule'):
                         raise TypeError(colorstr("red", "Error: Unexpected return type from rescheduling method."))
 
-                staff_response, _role = output.response, output.agent
-                self.dialog_history['reschedule'].append({"role": "Staff", "content": staff_response})
-                log(f"{staff_role(role=_role):<25}: {staff_response}")
-
-                # Tool calling result -> successful reschedule / waiting-list
-                if prediction['type'] == 'tool':
                     result_dict = prediction['result_dict']
+                    staff_response, _role = output.response, output.agent
+                    self.dialog_history['reschedule'].append({"role": "Staff", "content": staff_response})
+                    log(f"{staff_role(role=_role):<25}: {staff_response}")
 
                     # Final response of patient
                     self.dialog_history['reschedule'].append({"role": "Patient", "content": self.end_phrase})
