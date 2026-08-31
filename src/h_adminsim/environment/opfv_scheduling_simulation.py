@@ -666,10 +666,7 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
             return reply, prediction
 
         # Start conversation
-        staff_greet = self.scheduling_agent.appn_greet
-        self.dialog_history['scheduling'].append({"role": "Staff", "content": staff_greet})
-        self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
-        log(f"{staff_role(role=self.admin_staff_mas.path[-1].name):<25}: {staff_greet}")
+        self._open_staff_turn('scheduling', self.scheduling_agent.appn_greet)
 
         # Iterate over multiple preferences if exists
         preference_reject_prob = 0.0 if len(gt_data) <= 1 else self.preference_rejection_prob
@@ -685,23 +682,16 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
                 tries = 0
                 while 1:
                     # Obtain response from patient
-                    patient_response = self.patient_agent(
-                        self.dialog_history['scheduling'][-1]["content"],
-                        using_multi_turn=True,
-                        verbose=False,
+                    patient_response = self._patient_turn(
+                        'scheduling',
+                        gt_patient_condition['preference'],
                         **merged_patient_kwargs,
                     )
                     patient_token_stats = self.patient_agent.client.token_usages
-                    self.dialog_history['scheduling'].append({"role": "Patient", "content": patient_response})
-                    role = f"{colorstr('green', 'Patient')} ({gt_patient_condition['preference']})"
-                    log(f"{role:<25}: {patient_response}")
 
                     # Scheduling from staff
                     output, prediction = self._staff_turn(patient_response, staff_turn)
-
-                    staff_response, _role = output.response, output.agent
-                    self.dialog_history['scheduling'].append({"role": "Staff", "content": staff_response})
-                    log(f"{staff_role(role=_role):<25}: {staff_response}")
+                    self._record_staff_turn('scheduling', output)
 
                     # Token accounting
                     staff_token_stats = self._accumulate_staff_tokens(
@@ -743,25 +733,13 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
                     preference_reject_prob *= self.preference_rejection_prob_decay
                 ## Non-rejection case
                 else:
-                    if natural_express:
-                        self.update_patient_system_prompt(
-                            new_system_prompt=self.patient_satisfaction_system_prompt
-                        )
-                        patient_response = self.patient_agent(
-                            self.natural_end_phrase.format(schedule=self.dialog_history['scheduling'][-1]['content']),
-                            using_multi_turn=True,
-                            verbose=False,
-                            **merged_patient_kwargs,
-                        )
-                        patient_token_stats = self.patient_agent.client.token_usages
-
-                    else:
-                        patient_response = self.end_phrase
-
-                    self.dialog_history['scheduling'].append({"role": "Patient", "content": patient_response})
-                    role = f"{colorstr('green', 'Patient')} ({gt_data[i]['preference']})"
-                    log(f"{role:<25}: {patient_response}")
-
+                    self._closing_patient_turn(
+                        'scheduling',
+                        gt_data[i]['preference'],
+                        natural_express=natural_express,
+                        **merged_patient_kwargs,
+                    )
+                    patient_token_stats = self.patient_agent.client.token_usages
                     break
 
         except Exception as e:
@@ -960,10 +938,7 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
         merged_staff_kwargs = {**staff_kwargs, **kwargs}
         
         # Start conversation
-        staff_greet = self.scheduling_agent.appn_greet
-        self.dialog_history['scheduling'].append({"role": "Staff", "content": staff_greet})
-        self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
-        log(f"{staff_role(role=self.admin_staff_mas.path[-1].name):<25}: {staff_greet}")
+        self._open_staff_turn('scheduling', self.scheduling_agent.appn_greet)
 
         # Staff turn closure: routes the structured staff scheduling turn through the MAS.
         def staff_turn(user_prompt: str) -> Tuple[str, dict]:
@@ -995,33 +970,25 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
             tries = 0
             while 1:
                 # Obtain response from patient
-                patient_response = run_with_retry(
-                    self.patient_agent,
-                    self.dialog_history['scheduling'][-1]["content"],
-                    using_multi_turn=True,
-                    verbose=False,
+                patient_response = self._patient_turn(
+                    'scheduling',
+                    gt_patient_condition['preference'],
                     max_retries=5,
                     **merged_patient_kwargs,
                 )
-                self.dialog_history['scheduling'].append({"role": "Patient", "content": patient_response})
-                role = f"{colorstr('green', 'Patient')} ({gt_patient_condition['preference']})"
-                log(f"{role:<25}: {patient_response}")
                 yield 'Patient', preprocess_utterance(patient_response), None
-                
+
                 # Scheduling from staff (routed through the MAS orchestrator).
                 # Demo must not surface a misroute -> hard-correct to the chief agent.
                 output, prediction = self._staff_turn(
                     patient_response, staff_turn, force_on_misroute=True
                 )
-
-                staff_response, _role = output.response, output.agent
+                staff_response = self._record_staff_turn('scheduling', output)
+                
+                # Token accounting
                 staff_token_stats = self._accumulate_staff_tokens(
                     prediction, staff_token_stats, staff_token_callback
                 )
-
-                # Record the staff utterance rendered by `_render_staff_reply`
-                self.dialog_history['scheduling'].append({"role": "Staff", "content": staff_response})
-                log(f"{staff_role(role=_role):<25}: {staff_response}")
 
                 # A schedule proposal ends this negotiation turn; a clarification keeps it going.
                 if prediction['type'] == 'tool':
@@ -1052,20 +1019,12 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
                         else gt_patient_condition.get('preferred_doctor')
 
                     if final_preference.lower() == 'asap':
-                        self.update_patient_system_prompt(
-                            new_system_prompt=self.patient_satisfaction_system_prompt
-                        )
-                        patient_response = run_with_retry(
-                            self.patient_agent,
-                            self.natural_end_phrase.format(schedule=self.dialog_history['scheduling'][-1]['content']),
-                            using_multi_turn=True,
-                            verbose=False,
+                        patient_response = self._closing_patient_turn(
+                            'scheduling',
+                            gt_data[i]['preference'],
                             max_retries=5,
                             **merged_patient_kwargs,
                         )
-                        self.dialog_history['scheduling'].append({"role": "Patient", "content": patient_response})
-                        role = f"{colorstr('green', 'Patient')} ({gt_data[i]['preference']})"
-                        log(f"{role:<25}: {patient_response}")
                         yield 'Patient', preprocess_utterance(patient_response), None
 
                     else:
@@ -1084,18 +1043,13 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
                                 preferred_condition=final_preferred_condition
                             )
 
-                            patient_response = run_with_retry(
-                                self.patient_agent,
-                                eval_phrase,
-                                using_multi_turn=True,
-                                verbose=False,
+                            patient_response = self._patient_turn(
+                                'scheduling',
+                                gt_data[i]['preference'],
+                                prompt=eval_phrase,
                                 max_retries=5,
                                 **merged_patient_kwargs,
                             )
-
-                            self.dialog_history['scheduling'].append({"role": "Patient", "content": patient_response})
-                            role = f"{colorstr('green', 'Patient')} ({gt_data[i]['preference']})"
-                            log(f"{role:<25}: {patient_response}")
                             yield 'Patient', preprocess_utterance(patient_response), None
 
                             if '#ACCEPT' in patient_response:
@@ -1106,12 +1060,10 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
                                 patient_response, staff_turn, force_on_misroute=True
                             )
 
-                            staff_response, _role = output.response, output.agent
                             staff_token_stats = self._accumulate_staff_tokens(
                                 prediction, staff_token_stats, staff_token_callback
                             )
-                            self.dialog_history['scheduling'].append({"role": "Staff", "content": staff_response})
-                            log(f"{staff_role(role=_role):<25}: {staff_response}")
+                            staff_response = self._record_staff_turn('scheduling', output)
 
                             if prediction['type'] == 'tool':
                                 pred_schedule = prediction['result']
@@ -1122,10 +1074,9 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
                             accept_tries += 1
 
                 else:
-                    patient_response = self.end_phrase
-                    self.dialog_history['scheduling'].append({"role": "Patient", "content": patient_response})
-                    role = f"{colorstr('green', 'Patient')} ({gt_data[i]['preference']})"
-                    log(f"{role:<25}: {patient_response}")
+                    patient_response = self._closing_patient_turn(
+                        'scheduling', gt_data[i]['preference'], natural_express=False
+                    )
                     yield 'Patient', preprocess_utterance(patient_response), None
 
                 break

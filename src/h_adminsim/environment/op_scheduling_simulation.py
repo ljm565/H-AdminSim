@@ -17,7 +17,7 @@ from h_adminsim.tools.sanity_checker import SanityChecker
 from h_adminsim.environment.op_simulation import OPSimulation
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.prompt_utils import load_prompt
-from h_adminsim.utils.common_utils import init_result_dict, preprocess_dialog, staff_role
+from h_adminsim.utils.common_utils import init_result_dict, preprocess_dialog, run_with_retry, staff_role
 
 if TYPE_CHECKING:
     from h_adminsim.agent import SchedulingAdminStaffAgent
@@ -278,7 +278,7 @@ class OPSchedulingSimulation(OPSimulation, ABC):
             return self._render_staff_reply(prediction, key), prediction
 
         # Start conversation
-        self._open_dialogue(key)
+        self._open_staff_turn(key)
 
         try:
             for _ in range(max_inferences):
@@ -303,7 +303,8 @@ class OPSchedulingSimulation(OPSimulation, ABC):
 
                     # Successful cancellation closes the dialogue
                     self._record_staff_turn(key, output)
-                    self._close_dialogue(key, 'cancel', result_dict)
+                    self._closing_patient_turn(key, 'cancel', natural_express=False)
+                    result_dict['dialog'].append(preprocess_dialog(self.dialog_history[key]))
                     break
 
             # The case without any determination during the simulation
@@ -395,7 +396,7 @@ class OPSchedulingSimulation(OPSimulation, ABC):
             return self._render_staff_reply(prediction, key), prediction
 
         # Start conversation
-        self._open_dialogue(key)
+        self._open_staff_turn(key)
 
         try:
             for _ in range(max_inferences):
@@ -424,7 +425,8 @@ class OPSchedulingSimulation(OPSimulation, ABC):
                     # Successful reschedule / waiting-list closes the dialogue
                     result_dict = prediction['result_dict']
                     self._record_staff_turn(key, output)
-                    self._close_dialogue(key, 'move', result_dict)
+                    self._closing_patient_turn(key, 'move', natural_express=False)
+                    result_dict['dialog'].append(preprocess_dialog(self.dialog_history[key]))
                     break
 
             # The case without any determination during the simulation
@@ -448,69 +450,124 @@ class OPSchedulingSimulation(OPSimulation, ABC):
         return doctor_information, result_dict
 
 
-    def _open_dialogue(self, key: str) -> None:
+    def _open_staff_turn(self, key: str, greet: Optional[str] = None) -> None:
         """
-        Record the staff greeting that opens a cancellation or rescheduling dialogue.
+        Take the staff turn that opens a dialogue, seeding the orchestrator's own
+        message log alongside the dialogue history so the greeting is part of both.
 
         Args:
             key (str): Dialogue-history key of the running simulation.
+            greet (Optional[str], optional): Greeting to open with. Defaults to the
+                                              orchestrator's, which every flow uses except
+                                              first-visit scheduling — that one opens with
+                                              the scheduling worker's own appointment greeting.
         """
-        staff_greet = self.admin_staff_mas.root.agent.staff_greet
+        staff_greet = greet or self.admin_staff_mas.root.agent.staff_greet
         self.dialog_history[key].append({"role": "Staff", "content": staff_greet})
         self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
         log(f"{staff_role(role=self.admin_staff_mas.path[-1].name):<25}: {staff_greet}")
 
 
-    def _patient_turn(self, key: str, label: str, **patient_kwargs) -> str:
+    def _patient_turn(self,
+                      key: str,
+                      label: str,
+                      prompt: Optional[str] = None,
+                      max_retries: Optional[int] = None,
+                      **patient_kwargs) -> str:
         """
-        Take one patient turn from the last utterance in the dialogue and record it.
+        Take one patient turn and record it.
 
         Args:
             key (str): Dialogue-history key of the running simulation.
-            label (str): Short tag shown next to 'Patient' in the log ('cancel', 'move', ...).
+            label (str): Short tag shown next to 'Patient' in the log — the operation for the
+                          cancellation and rescheduling flows ('cancel', 'move'), the patient's
+                          current scheduling preference for the scheduling ones.
+            prompt (Optional[str], optional): What to send the patient agent. Defaults to the
+                                               last utterance in the dialogue; the streaming flow
+                                               overrides it to steer the patient's closing reaction.
+            max_retries (Optional[int], optional): Retry the agent call this many times. Demo
+                                                    paths retry so a transient API error cannot end
+                                                    the stream; evaluation paths let it surface and
+                                                    be recorded. Defaults to None (no retry).
             **patient_kwargs: Additional keyword arguments forwarded to the patient agent.
 
         Returns:
             str: The patient utterance.
         """
-        patient_response = self.patient_agent(
-            self.dialog_history[key][-1]["content"],
-            using_multi_turn=True,
-            verbose=False,
-            **patient_kwargs,
-        )
+        prompt = self.dialog_history[key][-1]["content"] if prompt is None else prompt
+        call_kwargs = dict(using_multi_turn=True, verbose=False, **patient_kwargs)
+
+        if max_retries is None:
+            patient_response = self.patient_agent(prompt, **call_kwargs)
+        else:
+            patient_response = run_with_retry(
+                self.patient_agent, prompt, max_retries=max_retries, **call_kwargs
+            )
+
         self.dialog_history[key].append({"role": "Patient", "content": patient_response})
         role = f"{colorstr('green', 'Patient')} ({label})"
         log(f"{role:<25}: {patient_response}")
         return patient_response
 
 
-    def _record_staff_turn(self, key: str, output) -> None:
+    def _closing_patient_turn(self,
+                              key: str,
+                              label: str,
+                              natural_express: bool = True,
+                              max_retries: Optional[int] = None,
+                              **patient_kwargs) -> str:
+        """
+        Close a scheduling dialogue with the patient's reaction to the proposed schedule.
+
+        Args:
+            key (str): Dialogue-history key of the running simulation.
+            label (str): Short tag shown next to 'Patient' in the log.
+            natural_express (bool, optional): Whether to have the patient react in their own words.
+                                               When False the dialogue closes on the fixed thank-you
+                                               without spending a turn on the agent — what the
+                                               cancellation and rescheduling flows use, since the
+                                               tool has already settled the request and the patient
+                                               has nothing left to weigh up. Defaults to True.
+            max_retries (Optional[int], optional): Retry the agent call this many times; see
+                                                    `_patient_turn`. Defaults to None (no retry).
+            **patient_kwargs: Additional keyword arguments forwarded to the patient agent.
+
+        Returns:
+            str: The patient's closing utterance.
+        """
+        # Fixed closing: nothing to generate, just record it
+        if not natural_express:
+            self.dialog_history[key].append({"role": "Patient", "content": self.end_phrase})
+            role = f"{colorstr('green', 'Patient')} ({label})"
+            log(f"{role:<25}: {self.end_phrase}")
+            return self.end_phrase
+
+        # Have the patient react to the schedule the staff just proposed
+        self.update_patient_system_prompt(new_system_prompt=self.patient_satisfaction_system_prompt)
+        return self._patient_turn(
+            key,
+            label,
+            prompt=self.natural_end_phrase.format(schedule=self.dialog_history[key][-1]['content']),
+            max_retries=max_retries,
+            **patient_kwargs,
+        )
+
+
+    def _record_staff_turn(self, key: str, output) -> str:
         """
         Record the staff utterance produced by a MAS turn.
 
         Args:
             key (str): Dialogue-history key of the running simulation.
             output: The MAS output carrying the rendered reply and the agent that produced it.
+
+        Returns:
+            str: The recorded staff utterance, which the streaming flow also yields.
         """
         staff_response, _role = output.response, output.agent
         self.dialog_history[key].append({"role": "Staff", "content": staff_response})
         log(f"{staff_role(role=_role):<25}: {staff_response}")
-
-
-    def _close_dialogue(self, key: str, label: str, result_dict: dict) -> None:
-        """
-        Close a resolved dialogue with the patient's thanks and attach the transcript.
-
-        Args:
-            key (str): Dialogue-history key of the running simulation.
-            label (str): Short tag shown next to 'Patient' in the log ('cancel', 'move', ...).
-            result_dict (dict): Result dictionary to attach the transcript to.
-        """
-        self.dialog_history[key].append({"role": "Patient", "content": self.end_phrase})
-        role = f"{colorstr('green', 'Patient')} ({label})"
-        log(f"{role:<25}: {self.end_phrase}")
-        result_dict['dialog'].append(preprocess_dialog(self.dialog_history[key]))
+        return staff_response
 
 
     def _init_prompt(self, schedule_rejection_prompt_path: Optional[str] = None):

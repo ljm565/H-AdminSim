@@ -1024,10 +1024,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             return reply, prediction
 
         # Start conversation
-        staff_greet = self.admin_staff_mas.root.agent.staff_greet
-        self.dialog_history['test_scheduling'].append({"role": "Staff", "content": staff_greet})
-        self.admin_staff_mas.state.messages.append({"role": "Staff", "content": staff_greet})
-        log(f"{staff_role(role=self.admin_staff_mas.path[-1].name):<25}: {staff_greet}")
+        self._open_staff_turn('test_scheduling')
 
         # Iterate over multiple preferences if exists
         tries = 0
@@ -1049,16 +1046,12 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
 
                 while 1:
                     # Obtain response from patient
-                    patient_response = self.patient_agent(
-                        self.dialog_history['test_scheduling'][-1]["content"],
-                        using_multi_turn=True,
-                        verbose=False,
+                    patient_response = self._patient_turn(
+                        'test_scheduling',
+                        gt_patient_condition['preference'],
                         **merged_patient_kwargs,
                     )
                     patient_token_stats = self.patient_agent.client.token_usages
-                    self.dialog_history['test_scheduling'].append({"role": "Patient", "content": patient_response})
-                    role = f"{colorstr('green', 'Patient')} ({gt_patient_condition['preference']})"
-                    log(f"{role:<25}: {patient_response}")
 
                     # Decide whether to trigger negotiation after the patient states a hospital-conflicting test-scheduling preference.
                     if (
@@ -1108,9 +1101,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                         raise DataNotFoundError(colorstr("red", "Error: Patient information not found error."))
 
                     # Record the staff utterance (clarification 'text' or test/schedule proposal alike)
-                    staff_response, _role = output.response, output.agent
-                    self.dialog_history['test_scheduling'].append({"role": "Staff", "content": staff_response})
-                    log(f"{staff_role(role=_role):<25}: {staff_response}")
+                    self._record_staff_turn('test_scheduling', output)
 
                     # Advance simulation state based on the structured result
                     if prediction['type'] == 'tool':
@@ -1180,25 +1171,13 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                     preference_reject_prob *= self.preference_rejection_prob_decay
                 ## Non-rejection case
                 else:
-                    if natural_express:
-                        self.update_patient_system_prompt(
-                            new_system_prompt=self.patient_satisfaction_system_prompt
-                        )
-                        patient_response = self.patient_agent(
-                            self.natural_end_phrase.format(schedule=self.dialog_history['test_scheduling'][-1]['content']),
-                            using_multi_turn=True,
-                            verbose=False,
-                            **merged_patient_kwargs,
-                        )
-                        patient_token_stats = self.patient_agent.client.token_usages
-
-                    else:
-                        patient_response = self.end_phrase
-
-                    self.dialog_history['test_scheduling'].append({"role": "Patient", "content": patient_response})
-                    role = f"{colorstr('green', 'Patient')} ({gt_data[i]['preference']})"
-                    log(f"{role:<25}: {patient_response}")
-
+                    self._closing_patient_turn(
+                        'test_scheduling',
+                        gt_data[i]['preference'],
+                        natural_express=natural_express,
+                        **merged_patient_kwargs,
+                    )
+                    patient_token_stats = self.patient_agent.client.token_usages
                     break
 
         except Exception as e:
