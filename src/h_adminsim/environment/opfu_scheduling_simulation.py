@@ -73,6 +73,31 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         self.negotiation_params = negotiation_params
         
     
+    def _rejection_prompt_fields(self,
+                                 patient_condition: dict,
+                                 rejected_preference: str) -> dict:
+        """
+        Phrase a follow-up test-scheduling preference for the schedule-rejection prompt.
+
+        Follow-up preferences name a scheduling objective (`throughput_max`, `visit_min`,
+        `stay_min`, `indifferent`) rather than a doctor or a date, so no field needs filling
+        in and the template asks for no preferred doctor.
+
+        Args:
+            patient_condition (dict): Patient ground-truth condition including current preference.
+            rejected_preference (str): The preference the staff agent proposed in the previous turn.
+
+        Returns:
+            dict: Keyword arguments for `rejection_system_prompt_template.format`.
+        """
+        preference = patient_condition.get('preference')
+        return {
+            'preference': preference,
+            'preference_desc': OPFU_PREFERENCE_PHRASE_PATIENT[preference],
+            'rejected_preference': OPFU_PREFERENCE_PHRASE_STAFF[rejected_preference],
+        }
+
+
     @property
     def scheduling_agent(self) -> "SchedulingAdminStaffAgent":
         """
@@ -420,41 +445,6 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                 schedule['test_schedule'].append(tmp_schedule)
             schedule['test_schedule'].sort(key=lambda x: (x['date'], x['start']))
             return schedule
-
-
-    def update_patient_system_prompt(self, 
-                                     patient_condition: Optional[dict] = None,
-                                     rejected_preference: Optional[str] = None,
-                                     new_system_prompt: Optional[str] = None):
-        """
-        Update a system prompt of the patient agent for proposed schedule rejection scenario etc.
-
-        Args:
-            patient_condition (Optional[dict], optional): Patient ground-truth condition including current preference.
-            rejected_preference (Optional[str], optional): The scheduling preference proposed by the staff agent in the previous turn
-                                                           that the patient must explicitly reject.
-            new_system_prompt (Optional[str], optional): New system prompt to be updated.
-        """
-        if patient_condition is not None and rejected_preference is not None:
-            # Build new system prompts for rejection scenario.
-            preference = patient_condition.get('preference')
-            preference_desc = OPFU_PREFERENCE_PHRASE_PATIENT[preference]
-            rejected_preference_desc = OPFU_PREFERENCE_PHRASE_STAFF[rejected_preference]
-            system_prompt = self.rejection_system_prompt_template.format(
-                preference=preference,
-                preference_desc=preference_desc,
-                rejected_preference=rejected_preference_desc,
-                personality=self.patient_agent.personality,
-            )
-        else:
-            system_prompt = new_system_prompt
-
-        # Update new system prompts for rejection scenario
-        self.patient_agent.system_prompt = system_prompt
-        if len(self.patient_agent.client.histories) and \
-            isinstance(self.patient_agent.client.histories[0], dict) and \
-                self.patient_agent.client.histories[0].get('role') == 'system':
-            self.patient_agent.client.histories[0]['content'][0]['text'] = system_prompt
 
 
     def _get_rescheduled_test_result(self,
@@ -1039,7 +1029,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
 
                 # For the rejection scenario
                 if i != 0:
-                    self.update_patient_system_prompt(
+                    self._update_patient_system_prompt(
                         patient_condition=gt_patient_condition,
                         rejected_preference=gt_data[i-1]['preference']
                     )

@@ -448,6 +448,73 @@ class OPSchedulingSimulation(OPSimulation, ABC):
         log("Simulation completed.", color=True)
         self._finish_scheduling_turn(key, verbose)
         return doctor_information, result_dict
+    
+
+    @abstractmethod
+    def _rejection_prompt_fields(self,
+                                 patient_condition: dict,
+                                 rejected_preference: str) -> dict:
+        """
+        Build the fields that fill this visit type's schedule-rejection prompt.
+
+        The preference vocabularies differ per visit type — first-visit preferences name a
+        doctor or a date, follow-up ones name a test-scheduling objective — so each subclass
+        phrases its own and returns what its template asks for.
+
+        Args:
+            patient_condition (dict): Patient ground-truth condition including current preference.
+            rejected_preference (str): The scheduling preference the staff agent proposed in the
+                                        previous turn that the patient must explicitly reject.
+
+        Returns:
+            dict: Keyword arguments for `rejection_system_prompt_template.format`, excluding
+                  `personality`, which the caller supplies.
+        """
+        raise NotImplementedError(
+            colorstr("red", f"{type(self).__name__} does not implement _rejection_prompt_fields().")
+        )
+
+
+    def _update_patient_system_prompt(self,
+                                      patient_condition: Optional[dict] = None,
+                                      rejected_preference: Optional[str] = None,
+                                      new_system_prompt: Optional[str] = None):
+        """
+        Swap the patient agent's system prompt, either into the rejection scenario or to a
+        caller-supplied one.
+
+        Args:
+            patient_condition (Optional[dict], optional): Patient ground-truth condition including
+                                                           current preference. Given together with
+                                                           `rejected_preference` to enter the
+                                                           rejection scenario.
+            rejected_preference (Optional[str], optional): The scheduling preference proposed by the
+                                                           staff agent in the previous turn that the
+                                                           patient must explicitly reject.
+            new_system_prompt (Optional[str], optional): System prompt to switch to instead, used to
+                                                          steer the patient's closing reaction.
+
+        Raises:
+            ValueError: If neither the rejection pair nor a replacement prompt was given.
+        """
+        # Rejection scenario: the subclass phrases its own preference vocabulary
+        if patient_condition is not None and rejected_preference is not None:
+            system_prompt = self.rejection_system_prompt_template.format(
+                personality=self.patient_agent.personality,
+                **self._rejection_prompt_fields(patient_condition, rejected_preference),
+            )
+        else:
+            if not new_system_prompt:
+                raise ValueError(colorstr("red", f"`new_system_prompt` must be provided."))
+            system_prompt = new_system_prompt
+
+        # Apply it to the agent, and to the system turn already sitting in its history
+        self.patient_agent.system_prompt = system_prompt
+        if len(self.patient_agent.client.histories) and \
+            isinstance(self.patient_agent.client.histories[0], dict) and \
+                self.patient_agent.client.histories[0].get('role') == 'system':
+            self.patient_agent.client.histories[0]['content'][0]['text'] = system_prompt
+
 
 
     def _open_staff_turn(self, key: str, greet: Optional[str] = None) -> None:
@@ -543,7 +610,7 @@ class OPSchedulingSimulation(OPSimulation, ABC):
             return self.end_phrase
 
         # Have the patient react to the schedule the staff just proposed
-        self.update_patient_system_prompt(new_system_prompt=self.patient_satisfaction_system_prompt)
+        self._update_patient_system_prompt(new_system_prompt=self.patient_satisfaction_system_prompt)
         return self._patient_turn(
             key,
             label,

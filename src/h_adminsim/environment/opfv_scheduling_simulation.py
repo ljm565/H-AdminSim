@@ -69,6 +69,36 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
         self.rules = SchedulingRule(metadata, department_data, self.environment, self.fhir_integration)
 
 
+    def _rejection_prompt_fields(self,
+                                 patient_condition: dict,
+                                 rejected_preference: str) -> dict:
+        """
+        Phrase a first-visit scheduling preference for the schedule-rejection prompt.
+
+        A 'date' preference reads as "from {date} onwards", so it is filled in from the
+        booking's `valid_from`; what the staff proposed is left vague on purpose, since the
+        patient is reacting to it rather than restating it.
+
+        Args:
+            patient_condition (dict): Patient ground-truth condition including current preference.
+            rejected_preference (str): The preference the staff agent proposed in the previous turn.
+
+        Returns:
+            dict: Keyword arguments for `rejection_system_prompt_template.format`.
+        """
+        preference = patient_condition.get('preference')
+        preference_desc = OPFV_PREFERENCE_PHRASE_PATIENT[preference] if preference != 'date' \
+            else OPFV_PREFERENCE_PHRASE_PATIENT[preference].format(date=patient_condition.get('valid_from'))
+        rejected_preference_desc = OPFV_PREFERENCE_PHRASE_STAFF[rejected_preference] if rejected_preference != 'date' \
+            else OPFV_PREFERENCE_PHRASE_STAFF[rejected_preference].format(date='a specific date')
+        return {
+            'preference': preference,
+            'preference_desc': preference_desc,
+            'preferred_doctor': patient_condition['preferred_doctor'],
+            'rejected_preference': rejected_preference_desc,
+        }
+
+
     @property
     def scheduling_agent(self) -> "SchedulingAdminStaffAgent":
         """
@@ -204,44 +234,6 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
             date, st_hour = iso_to_date(data['schedule'][0]), iso_to_hour(data['schedule'][0])
             tr_hour = float(Decimal(str(duration)) + Decimal(str(st_hour)))
             return {'schedule': {doctor: {'date': date, 'start': st_hour, 'end': tr_hour}}}
-
-
-    def update_patient_system_prompt(self, 
-                                     patient_condition: Optional[dict] = None,
-                                     rejected_preference: Optional[str] = None,
-                                     new_system_prompt: Optional[str] = None):
-        """
-        Update a system prompt of the patient agent for proposed schedule rejection scenario etc.
-
-        Args:
-            patient_condition (Optional[dict], optional): Patient ground-truth condition including current preference.
-            rejected_preference (Optional[str], optional): The scheduling preference proposed by the staff agent in the previous turn
-                                                           that the patient must explicitly reject.
-            new_system_prompt (Optional[str], optional): New system prompt to be updated.
-        """
-        if patient_condition is not None and rejected_preference is not None:
-            # Build new system prompts for rejection scenario
-            preference = patient_condition.get('preference')
-            preference_desc = OPFV_PREFERENCE_PHRASE_PATIENT[preference] if preference != 'date' \
-                    else OPFV_PREFERENCE_PHRASE_PATIENT[preference].format(date=patient_condition.get('valid_from'))
-            rejected_preference_desc = OPFV_PREFERENCE_PHRASE_STAFF[rejected_preference] if rejected_preference != 'date' \
-                    else OPFV_PREFERENCE_PHRASE_STAFF[rejected_preference].format(date='a specific date')    
-            system_prompt = self.rejection_system_prompt_template.format(
-                preference=preference,
-                preference_desc=preference_desc,
-                preferred_doctor=patient_condition['preferred_doctor'],
-                rejected_preference=rejected_preference_desc,
-                personality=self.patient_agent.personality,
-            )
-        else:
-            system_prompt = new_system_prompt
-
-        # Update new system prompts for rejection scenario
-        self.patient_agent.system_prompt = system_prompt
-        if len(self.patient_agent.client.histories) and \
-            isinstance(self.patient_agent.client.histories[0], dict) and \
-                self.patient_agent.client.histories[0].get('role') == 'system':
-            self.patient_agent.client.histories[0]['content'][0]['text'] = system_prompt
 
 
     def _get_rescheduled_result(self,
@@ -674,7 +666,7 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
             for i, gt_patient_condition in enumerate(gt_data):
                 # For the rejection scenario
                 if i != 0:
-                    self.update_patient_system_prompt(
+                    self._update_patient_system_prompt(
                         patient_condition=gt_patient_condition,
                         rejected_preference=gt_data[i-1]['preference']
                     )
@@ -962,7 +954,7 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
         for i, gt_patient_condition in enumerate(gt_data):
             # For the rejection scenario
             if i != 0:
-                self.update_patient_system_prompt(
+                self._update_patient_system_prompt(
                     patient_condition=gt_patient_condition,
                     rejected_preference=gt_data[i-1]['preference']
                 )
@@ -1031,7 +1023,7 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
                         # doctor or date preference - evaluate with retry
                         accept_tries = 0
                         while accept_tries <= max_inferences:
-                            self.update_patient_system_prompt(
+                            self._update_patient_system_prompt(
                                 new_system_prompt=self.patient_evaluation_system_prompt.format(
                                     preference=final_preference,
                                     preferred_condition=final_preferred_condition
