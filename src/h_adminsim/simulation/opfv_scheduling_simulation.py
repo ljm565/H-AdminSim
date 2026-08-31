@@ -21,7 +21,7 @@ from h_adminsim.registry import (
 from h_adminsim.tools.callback import TokenUsageCallback
 from h_adminsim.tools.sanity_checker import SanityChecker
 from h_adminsim.tools import SchedulingRule, scheduling_tool_calling
-from h_adminsim.environment.op_scheduling_simulation import OPSchedulingSimulation, TurnLimitReached
+from h_adminsim.simulation.op_scheduling_simulation import OPSchedulingSimulation, TurnLimitReached
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.common_utils import *
 

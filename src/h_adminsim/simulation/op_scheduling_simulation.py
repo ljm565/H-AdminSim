@@ -14,15 +14,15 @@ from h_adminsim.registry.errors import (
 from h_adminsim.tools import scheduling_tool_calling
 from h_adminsim.tools.callback import TokenUsageCallback
 from h_adminsim.tools.sanity_checker import SanityChecker
-from h_adminsim.environment.op_simulation import OPSimulation
+from h_adminsim.simulation.op_simulation import OPSimulation
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.prompt_utils import load_prompt
 from h_adminsim.utils.common_utils import init_result_dict, preprocess_dialog, run_with_retry, staff_role
 
 if TYPE_CHECKING:
+    from h_adminsim.tools import SchedulingRule
     from h_adminsim.agent import SchedulingAdminStaffAgent
     from h_adminsim.environment.hospital import HospitalEnvironment
-    from h_adminsim.tools import SchedulingRule
 
 
 

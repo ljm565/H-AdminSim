@@ -9,7 +9,7 @@ from typing import Tuple, Union, Optional, TYPE_CHECKING
 from patientsim import PatientAgent
 
 from h_adminsim.task import OutpatientTask
-from h_adminsim.environment import OPFUSchedulingSimulation
+from h_adminsim.simulation import OPFUSchedulingSimulation
 from h_adminsim.tools.sanity_checker import SanityChecker
 from h_adminsim.registry import (
     STATUS_CODES, 

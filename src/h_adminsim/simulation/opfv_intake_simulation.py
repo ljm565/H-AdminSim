@@ -2,7 +2,7 @@ from typing import Optional, TYPE_CHECKING
 from patientsim import PatientAgent, CheckerAgent
 
 from h_adminsim.registry.errors import AgentSelectionError
-from h_adminsim.environment.op_simulation import OPSimulation
+from h_adminsim.simulation.op_simulation import OPSimulation
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.common_utils import *
 

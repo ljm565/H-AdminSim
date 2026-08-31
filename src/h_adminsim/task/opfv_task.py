@@ -9,7 +9,7 @@ from typing import Tuple, Union, Optional, TYPE_CHECKING
 
 from h_adminsim.task import OutpatientTask
 from h_adminsim.agent import SupervisorAgent
-from h_adminsim.environment import (
+from h_adminsim.simulation import (
     OPFVIntakeSimulation,
     OPFVSchedulingSimulation
 )
