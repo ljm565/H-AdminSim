@@ -29,6 +29,7 @@ from h_adminsim.utils.common_utils import *
 if TYPE_CHECKING:
     from h_adminsim.pipeline import HospitalMAS
     from h_adminsim.agent import SchedulingAdminStaffAgent
+    from h_adminsim.registry.d_class import StaffNegotiationPolicy
     from h_adminsim.environment.hospital import HospitalEnvironment
 
 
@@ -51,7 +52,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                  fhir_integration: bool = False,
                  schedule_rejection_prompt_path: Optional[str] = None,
                  sanity_checker: Optional[SanityChecker] = None,
-                 negotiation_params: dict = {}):
+                 negotiation_policy: Optional["StaffNegotiationPolicy"] = None):
 
         super().__init__(patient_agent, admin_staff_mas)
 
@@ -70,7 +71,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         self._init_prompt(schedule_rejection_prompt_path)
         self.sanity_checker = sanity_checker
         self.rules = SchedulingRule(metadata, department_data, self.environment, self.fhir_integration)
-        self.negotiation_params = negotiation_params
+        self.negotiation_policy = negotiation_policy
         
     
     def _rejection_prompt_fields(self,
@@ -1046,26 +1047,33 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                     # Decide whether to trigger negotiation after the patient states a hospital-conflicting test-scheduling preference.
                     if (
                         not negotiation_metrics_computed
+                        and self.negotiation_policy is not None
                         and gt_patient_condition.get('preference') in {'visit_min', 'stay_min'}
                         and required_test_codes is not None
                         and filtered_test_device_information is not None
                     ):
+                        preference = gt_patient_condition['preference']
                         try:
                             preference_schedule = self.rules.schedule_tests(
-                                gt_patient_condition['preference'],
+                                preference,
                                 filtered_test_device_information,
                                 required_test_codes,
                                 10,
                             )
+                            # tcl_temperature and the per-preference trigger_temperature are hospital-fixed on the policy.
                             metrics = NegotiationMetrics(
-                                preference=gt_patient_condition.get('preference'),
+                                preference=preference,
                                 achieved_schedule=self._normalize_test_schedule_for_metrics(preference_schedule),
                                 filtered_test_device_information=filtered_test_device_information,
                                 rule=self.rules,
                                 environment=self.environment,
                                 dialog_history=self.dialog_history['test_scheduling'],
-                                **self.negotiation_params,
+                                tcl_temperature=self.negotiation_policy.tcl_temperature,
+                                trigger_temperature=self.negotiation_policy.trigger_temperature_for(preference),
+                                negotiation_trigger_threshold=self.negotiation_policy.negotiation_trigger_threshold,
                             ).to_dict()
+                            # The policy makes the final call — the two extremes ignore `ti`, 'negotiation' thresholds it.
+                            metrics['do_negotiate'] = self.negotiation_policy.should_negotiate(metrics['ti'])
                             negotiation_metrics.update({
                                 key: metrics.get(key)
                                 for key in negotiation_metrics
