@@ -28,6 +28,7 @@ schedule_task:
     opfu_schedule_cancellation_prob: 0.05   # Follow-up-visit scheduling cancellation prob.
     opfu_request_early_schedule_prob: 0.075  # Follow-up-visit scheduling rescheduling prob.
     negotiation:
+        name: null      # [null, hospital-side, patient-side]
         tcl_temperature: 1.0
         trigger_temperature_visit: 1.0
         trigger_temperature_stay: 1.0
