@@ -76,9 +76,6 @@ class OPSchedulingSimulation(OPSimulation, ABC):
         Returns:
             SchedulingAdminStaffAgent: The leaf worker handling scheduling for this visit type.
         """
-        raise NotImplementedError(
-            colorstr("red", f"{type(self).__name__} does not expose scheduling_agent.")
-        )
 
 
     @abstractmethod
@@ -98,9 +95,6 @@ class OPSchedulingSimulation(OPSimulation, ABC):
         Returns:
             str: The staff utterance to show the patient.
         """
-        raise NotImplementedError(
-            colorstr("red", f"{type(self).__name__} does not implement _render_staff_reply().")
-        )
 
 
     def canceling(self,
@@ -470,9 +464,6 @@ class OPSchedulingSimulation(OPSimulation, ABC):
             dict: Keyword arguments for `rejection_system_prompt_template.format`, excluding
                   `personality`, which the caller supplies.
         """
-        raise NotImplementedError(
-            colorstr("red", f"{type(self).__name__} does not implement _rejection_prompt_fields().")
-        )
 
 
     def _update_patient_system_prompt(self,

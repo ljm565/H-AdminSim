@@ -103,9 +103,6 @@ class BaseAgent(ABC):
         orchestrator) are driven through ``__call__`` and never act as a leaf, so
         the default raises rather than returning a value.
         """
-        raise NotImplementedError(
-            colorstr("red", f"{type(self).__name__} does not implement act(); it is a router, not a leaf worker.")
-        )
 
 
     def build_subagent_routings(self,
