@@ -478,15 +478,15 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         # Generate follow-up patient profiles based on the generated test combinations and merge them into patient_info
         for patient, infos in patient_info.items():
             # Initialize necessary info variables
-            gender, telecom, birth_date, identifier, address, occupation, symptom_level, department, doctor, prev_end_iso = \
-                None, None, None, None, None, None, None, None, None, None
+            gender, telecom, birth_date, identifier, address, occupation, distance, symptom_level, department, doctor, prev_end_iso = \
+                None, None, None, None, None, None, None, None, None, None, None
             
             # Find the first-visit info
             for info in infos:
                 if info['visit_type'] == 'first_visit':
                     # Basic demographic info
-                    gender, telecom, birth_date, identifier, address, occupation = \
-                        info['gender'], info['telecom'], info['birthDate'], info['identifier'], info['address'], info['occupation']
+                    gender, telecom, birth_date, identifier, address, occupation, distance = \
+                        info['gender'], info['telecom'], info['birthDate'], info['identifier'], info['address'], info['occupation'], info['distance']
 
                     # Basic first-visit info
                     symptom_level, department, doctor = info['symptom_level'], info['department'], info['attending_physician']
@@ -495,7 +495,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                     prev_end_iso = get_iso_time(info['schedule'][1], info['date'])
                     break
 
-            assert all(v is not None for v in [gender, telecom, birth_date, identifier, address, occupation, symptom_level, department, doctor, prev_end_iso]), \
+            assert all(v is not None for v in [gender, telecom, birth_date, identifier, address, occupation, distance, symptom_level, department, doctor, prev_end_iso]), \
                 colorstr("red", f"Missing required first-visit info for patient {patient}: ")
             
             # Make random test combination
@@ -577,6 +577,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                     'identifier': identifier,
                     'address': address,
                     'occupation': occupation,
+                    'distance': distance,
                 }
             )
 

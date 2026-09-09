@@ -292,18 +292,20 @@ def generate_random_code(category: str) -> str:
         category (str): The category for which to generate a code. Must be one of ['use', 'gender'].
 
     Raises:
-        AssertionError: If the category is not one of the supported values.
+        ValueError: If the category is not one of the supported values.
         
     Returns:
         str: A randomly selected code corresponding to the given category.
     """
-    categories = ['use', 'gender']
-    assert category in categories, colorstr("red", f"The category must be one of the values in the {categories}, but got {category}")
     
     if category == 'use':
         return random.choice(['mobile', 'work'])
     elif category == 'gender':
         return random.choice(['male', 'female'])
+    elif category == 'distance':
+        return random.choice(['near', 'medium', 'far'])
+    else:
+        raise ValueError(colorstr("red", f"Unsupported category: {category}"))
 
 
 

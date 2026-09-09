@@ -157,6 +157,7 @@ class FirstVisitDataSynthesizer(DataSynthesizer):
                             'use': 'home'
                         }],
                         'occupation': generate_random_occupation(),
+                        'distance': generate_random_code('distance'),
                     }]
 
         data.patient = patient_info
