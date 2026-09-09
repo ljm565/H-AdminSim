@@ -56,8 +56,8 @@ class AgentDataBuilder:
                 # Basic information
                 visit_type = appn['visit_type']
                 doctor, department, date = appn['attending_physician'], appn['department'], appn['date']
-                gender, telecom, birth_date, identifier, address = \
-                    appn['gender'], appn['telecom'], appn['birthDate'], appn['identifier'], appn['address']
+                gender, telecom, birth_date, identifier, address, occupation, distance = \
+                    appn['gender'], appn['telecom'], appn['birthDate'], appn['identifier'], appn['address'], appn['occupation'], appn['distance']
                 preference = appn['preference']
                 
                 # Make disease-symptom pair
@@ -96,6 +96,8 @@ class AgentDataBuilder:
                     'unavailable': unavailable,
                     'symptom_level': symptom_level,
                     'required_tests': required_tests,
+                    'occupation': occupation,
+                    'distance': distance,
                 }
                 agent = {
                     'visit_type': visit_type,
@@ -105,6 +107,8 @@ class AgentDataBuilder:
                     'birthDate': birth_date,
                     'identifier': identifier,
                     'address': address,
+                    'occupation': occupation,
+                    'distance': distance,
                     'constraint': {
                         'preference': preference,
                         'unavailable': unavailable,
