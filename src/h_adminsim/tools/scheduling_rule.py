@@ -859,7 +859,7 @@ class SchedulingRule:
                 )
 
             # Device check
-            print(idx, info['duration_hour'], info['result_hours'], after_iso)
+            # print(idx, info['duration_hour'], info['result_hours'], after_iso)
             placed_dates_set = {a['date'] for a in assigned.values()} if is_last_test else None
             candidates = self._enumerate_device_slots(
                 mode=mode,
@@ -1016,7 +1016,9 @@ class SchedulingRule:
 
         avoid = self._build_avoid_pairs(tests)
         result = self._backtrack_schedule(tests, ordered, avoid, mode=mode, time_budget_s=time_budget_s)
-        return self._assemble_schedule_result(result['placed'], missing, result['unscheduled'])
+        output = self._assemble_schedule_result(result['placed'], missing, result['unscheduled'])
+        output['preference_type'] = mode
+        return output
 
 
 def create_tools(rule: SchedulingRule,

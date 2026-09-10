@@ -546,6 +546,8 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                 'attending_physician': attending_physician,
                 'test': required_test_list,
                 'preference': preference,
+                'occupation': gt['occupation'],
+                'distance': gt['distance'],
             } for preference in gt.get('preference')
         ]
 
@@ -575,6 +577,8 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                 'telecom': gt['telecom'][0]['value'],
                 'personal_id': gt['identifier'][0]['value'],
                 'address': gt['address'][0]['text'],
+                'occupation': gt['occupation'],
+                'distance': gt['distance'],
             },
         )
     
