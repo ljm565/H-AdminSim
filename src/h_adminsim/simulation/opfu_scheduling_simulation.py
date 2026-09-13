@@ -40,6 +40,20 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
     REJECTION_PROMPT = 'opfu_schedule_patient_rejected_system.txt'
     NOT_FOUND_MESSAGE = "Sorry, we couldn't find your scheduled tests. Could you please check your details again (patient and doctor names)?"
 
+    # Per-round wrappers that hand each negotiation agent the current round + the other party's last line.
+    # Filled with `_wrap_negotiation_turn` (brace-safe), so an utterance containing `{`/`}` cannot break it.
+    STAFF_NEGOTIATION_TURN = (
+        "[Negotiation round {round}. If the patient is still refusing once you have reached your "
+        "forced-close round, arrange the suggesting schedule anyway and end your message with #FORCE_ACCEPT.]\n\n"
+        'This is the patient\'s response: "{utterance}"\n\n'
+        "Reply now, staying strictly within all of your negotiation rules above."
+    )
+    PATIENT_NEGOTIATION_TURN = (
+        "[Negotiation round {round}: the staff keeps pressing you to change your schedule.]\n\n"
+        'This is the staff\'s response: "{utterance}"\n\n'
+        "Reply now, staying strictly within your negotiation behavior and persona above."
+    )
+
     def __init__(self,
                  patient_agent: PatientAgent,
                  admin_staff_mas: "HospitalMAS",
@@ -174,6 +188,8 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             'tcl': None,
             'ti': None,
             'do_negotiate': False,
+            'negotiation_outcome': 'none',   # 'accepted' | 'forced' | 'auto' | 'none' (success == accepted/forced)
+            'negotiation_rounds': 0,         # number of staff persuasion pitches
         }
 
     
@@ -821,25 +837,42 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         metrics['do_negotiate'] = (action == 'negotiate')
         _metrics = {k: v for k, v in metrics.items() if not k.startswith('_')}
         log(colorstr('cyan', f'[negotiation_metrics] {_metrics}'))
+        ############### TMP ###############
+        log(colorstr('cyan', f'{metrics["_T"]}'))
+        log(colorstr('cyan', f'{metrics["_P"]}'))
         return metrics
     
 
+    @staticmethod
+    def _wrap_negotiation_turn(template: str, negotiation_round: int, utterance: str) -> str:
+        """
+        Fill a per-round negotiation wrapper (`STAFF_NEGOTIATION_TURN` / `PATIENT_NEGOTIATION_TURN`).
+
+        Uses `str.replace` rather than `str.format`, so an `utterance` that happens to contain `{` or `}`
+        cannot raise. `{round}` is substituted before `{utterance}`.
+        """
+        return template.replace('{round}', str(negotiation_round)).replace('{utterance}', utterance)
+
+
     def _negotiating(self,
                      patient_preference: str,
-                     negotiation_metrics: dict):
+                     negotiation_metrics: dict,
+                     negotiation_round: int):
         """
-        Run one negotiation turn: the staff persuasion agent responds to the patient's latest utterance.
+        Run one negotiation round: the staff persuasion agent responds to the patient's latest utterance.
 
         The agent keeps persuading while the patient resists, and — once it judges the patient has
-        agreed — ends its message with an `#ACCEPT` control tag (see the hospital negotiation prompt).
-        The caller inspects the returned response for that tag to close the negotiation.
+        agreed (or the forced-close round is reached) — ends its message with an `#ACCEPT` control tag
+        (see the hospital negotiation prompt). The caller inspects the response for that tag to close.
 
         Args:
             patient_preference (str): The patient's stated preference for scheduling (e.g., 'throughput_max', 'visit_min', 'stay_min').
             negotiation_metrics (dict): Metrics computed by `_calculate_negotiation_metrics`, including `pci`, `tcl`, `ti`, and other relevant values.
+            negotiation_round (int): 1-based index of the persuasion round about to be produced; passed to the
+                                     staff so it can honor the forced close after enough rounds of refusal.
 
         Returns:
-            Information: The staff utterance for this negotiation turn.
+            Information: The staff utterance for this negotiation round.
         """
         # Negotiation algorithm
         negotiation_agent = self.init_negotiation_agent(
@@ -847,9 +880,15 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             negotiation_metrics=negotiation_metrics,
         )
 
-        # Respond to the patient's latest utterance (persuade, or accept with an `#ACCEPT` tag).
+        # Respond to the patient's latest utterance (persuade, or accept with an `#ACCEPT` tag), giving the
+        # staff the current round so it can force-close after enough continued refusal.
+        user_prompt = self._wrap_negotiation_turn(
+            self.STAFF_NEGOTIATION_TURN,
+            negotiation_round,
+            self.dialog_history['test_scheduling'][-1]['content'],
+        )
         _pitch = negotiation_agent(
-            user_prompt=self.dialog_history['test_scheduling'][-1]['content'],
+            user_prompt=user_prompt,
             using_multi_turn=True,
             verbose=False,
         )
@@ -859,7 +898,59 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         )
         return pitch
 
-    
+
+    def _throughput_pred_from_metrics(self,
+                                      negotiation_metrics: dict,
+                                      doctor_information: Optional[dict],
+                                      department: str,
+                                      attending_physician: str) -> dict:
+        """
+        Build a bookable throughput_max schedule from the already-computed counterfactual `_T`.
+
+        Reuses `negotiation_metrics['_T']` (what the metrics were derived from, and what the staff argued
+        for), so a negotiated / free-win booking needs no extra scheduling-tool call. Test slots are copied
+        (so the stored `_T` is not mutated later) and the follow-up consultation slot is added the same way
+        `postprocessing` does.
+
+        Args:
+            negotiation_metrics (dict): Metrics carrying `_T`, the throughput_max counterfactual schedule.
+            doctor_information (Optional[dict]): Doctor schedules (None under FHIR).
+            department (str): The patient's department.
+            attending_physician (str): The attending physician who ordered the tests.
+
+        Returns:
+            dict: A `pred_schedule`-shaped throughput_max schedule (with `fu_schedule`).
+        """
+        t = negotiation_metrics['_T']
+        pred = {
+            'preference_type': 'throughput_max',
+            'test_schedule': [{**x} for x in (t.get('test_schedule') or [])],
+            'test_visit_dates': list(t.get('test_visit_dates') or []),
+            'idle_waiting_time': t.get('idle_waiting_time'),
+            'all_results_ready_at': t.get('all_results_ready_at'),
+            'fu_schedule': None,
+        }
+        latest = pred['all_results_ready_at']
+        if latest and attending_physician:
+            filtered_doctor_information = self.environment.get_doctor_schedule(
+                doctor_information=doctor_information,
+                department=department,
+                fhir_integration=self.fhir_integration and doctor_information is None,
+            )
+            candidates = self.rules.physician_filter(
+                filtered_doctor_information, preferred_doctor=attending_physician, min_time=latest,
+            )
+            earliest = self.rules.find_earliest_time(candidates)
+            if earliest['doctor'] and earliest['schedule']:
+                doctor = earliest['doctor'][0]
+                iso = earliest['schedule'][0]
+                duration = filtered_doctor_information['doctor'][doctor]['outpatient_duration']
+                st_hour = iso_to_hour(iso)
+                end_hour = float(Decimal(str(st_hour)) + Decimal(str(duration)))
+                pred['fu_schedule'] = {doctor: {'date': iso_to_date(iso), 'start': st_hour, 'end': end_hour}}
+        return pred
+
+
     def test_scheduling(self,
                         client: AgentExecutor,
                         known_condition: dict,
@@ -1147,7 +1238,8 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                 negotiation_ready = False
                 negotiating_active = False
                 negotiation_done = False
-                negotiation_turn = 0
+                negotiation_round = 0
+                negotiation_outcome = 'none'   # 'accepted' | 'forced' | 'auto' | 'none'
                 negotiation_metrics = self._init_negotiation_metrics(gt_patient_condition.get('preference'))
 
                 # For the rejection scenario
@@ -1158,12 +1250,13 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                     )
 
                 while 1:
-                    # Obtain response from patient (during negotiation, tell the patient the current turn so it can escalate irritation)
+                    # Obtain response from patient (during negotiation, tell the patient the current round so it can escalate irritation)
                     neg_prompt = None
                     if negotiating_active:
-                        neg_prompt = (
-                            f"{self.dialog_history['test_scheduling'][-1]['content']}\n\n"
-                            f"[Negotiation turn {negotiation_turn}: the staff keeps pressing you to change your schedule.]"
+                        neg_prompt = self._wrap_negotiation_turn(
+                            self.PATIENT_NEGOTIATION_TURN,
+                            negotiation_round,
+                            self.dialog_history['test_scheduling'][-1]['content'],
                         )
                     patient_response = self._patient_turn(
                         'test_scheduling',
@@ -1173,23 +1266,31 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                     )
                     patient_token_stats = self.patient_agent.client.token_usages
 
-                    # Active negotiation: staff persuades each turn until it tags the patient's agreement with `#ACCEPT`.
+                    # Active negotiation: staff persuades each round until the patient agrees (`#ACCEPT`) or
+                    # the staff force-closes after enough refusal (`#FORCE_ACCEPT`).
                     if negotiating_active:
                         pitch = self._negotiating(
                             patient_preference=gt_patient_condition['preference'],
                             negotiation_metrics=negotiation_metrics,
+                            negotiation_round=negotiation_round + 1,
                         )
+                        negotiation_round += 1   # this pitch is a round
 
-                        if '#ACCEPT' in pitch.response:
-                            # Accepted: end negotiation, record the acceptance (tag stripped), then let the scheduler book throughput_max.
+                        if '#FORCE_ACCEPT' in pitch.response or '#ACCEPT' in pitch.response:
+                            # Negotiation closed: patient conceded ('accepted') or staff imposed it ('forced').
                             negotiating_active, negotiation_done = False, True
-                            pitch.response = pitch.response.replace('#ACCEPT', '').strip() or 'Great, I will book the earliest schedule for you.'
+                            negotiation_outcome = 'forced' if '#FORCE_ACCEPT' in pitch.response else 'accepted'
+                            pitch.response = pitch.response.replace('#FORCE_ACCEPT', '').replace('#ACCEPT', '').strip() \
+                                or 'Great, I will book the earliest schedule for you.'
                             self._record_staff_turn('test_scheduling', pitch)
-                            patient_response = "Please book all of my tests on the fastest possible schedule so that all results are ready as early as possible.\n[throughput_max preference]"
+                            pred_schedule = self._throughput_pred_from_metrics(
+                                negotiation_metrics, doctor_information,
+                                staff_known_data['department'], staff_known_data['attending_physician'],
+                            )
+                            break
                         else:
-                            # Still resisting: record the pitch and let the patient respond next turn.
+                            # Still resisting: record the pitch and let the patient respond next round.
                             self._record_staff_turn('test_scheduling', pitch)
-                            negotiation_turn += 1
                             tries += 1
                             if tries > max_inferences:
                                 raise TurnLimitReached
@@ -1224,24 +1325,29 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                             pitch = self._negotiating(
                                 patient_preference=gt_patient_condition['preference'],
                                 negotiation_metrics=negotiation_metrics,
+                                negotiation_round=negotiation_round + 1,
                             )
                             self._record_staff_turn('test_scheduling', pitch)
-                            negotiation_turn += 1
+                            negotiation_round += 1
                             tries += 1
                             if tries > max_inferences:
                                 raise TurnLimitReached
                             continue
 
                         elif action == 'auto':
-                            # Free win (pci == inf): the patient concedes nothing, so skip persuasion and book throughput_max directly
+                            # Free win (pci == inf): the patient concedes nothing, so skip persuasion
                             negotiation_done = True
-                            output, prediction = self._staff_turn(
-                                "Please book all of my tests on the fastest possible schedule so that all results are ready as early as possible.\n[throughput_max preference]",
-                                staff_turn,
+                            negotiation_outcome = 'auto'
+                            pred_schedule = self._throughput_pred_from_metrics(
+                                negotiation_metrics, doctor_information,
+                                staff_known_data['department'], staff_known_data['attending_physician'],
                             )
-                            staff_token_stats = self._accumulate_staff_tokens(
-                                prediction, staff_token_stats, staff_token_callback
+                            reply = self._render_staff_reply(
+                                {'type': 'tool', 'result': pred_schedule},
+                                'test_scheduling', gt_patient_condition, staff_known_data, natural_express,
                             )
+                            self._record_staff_turn('test_scheduling', Information(response=reply, agent=self._chief_agent_name))
+                            break
 
                     # Naive reply turn
                     if prediction['type'] == 'text':
@@ -1299,6 +1405,12 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                     if tries > max_inferences:
                         raise TurnLimitReached
 
+                # Record the negotiation outcome + rounds onto the metrics (persisted with the booking).
+                # `success` is derived (accepted/forced), so it is logged but not stored.
+                negotiation_metrics['negotiation_outcome'] = negotiation_outcome
+                negotiation_metrics['negotiation_rounds'] = negotiation_round
+                log(colorstr('cyan', f"[negotiation_result] outcome={negotiation_outcome} rounds={negotiation_round}"))
+
                 # Sanity check
                 ## No GT case
                 if self.sanity_checker is None:
@@ -1331,6 +1443,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                         'test_scheduling',
                         gt_data[i]['preference'],
                         natural_express=natural_express,
+                        satisfied=(negotiation_round == 0),   # negotiated/forced into throughput -> reluctant, not satisfied
                         **merged_patient_kwargs,
                     )
                     patient_token_stats = self.patient_agent.client.token_usages

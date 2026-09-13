@@ -28,6 +28,7 @@ class SchedulingAdminStaffAgent(BaseAgent):
                  scheduling_user_prompt_path: Optional[str] = None,
                  tool_calling_prompt_path: Optional[str] = None,
                  sc_tool_calling_prompt_path: Optional[str] = None,
+                 prompt_kwargs: dict = {},
                  log_verbose: bool = True,
                  **kwargs):
         
@@ -50,6 +51,7 @@ class SchedulingAdminStaffAgent(BaseAgent):
             scheduling_user_prompt_path=scheduling_user_prompt_path,
             tool_calling_prompt_path=tool_calling_prompt_path,
             sc_tool_calling_prompt_path=sc_tool_calling_prompt_path,
+            **prompt_kwargs
         )
         
         if log_verbose:
@@ -105,7 +107,8 @@ class SchedulingAdminStaffAgent(BaseAgent):
                      system_prompt_path: Optional[str] = None, 
                      scheduling_user_prompt_path: Optional[str] = None,
                      tool_calling_prompt_path: Optional[str] = None,
-                     sc_tool_calling_prompt_path: Optional[str] = None) -> Tuple[str, str, str, str]:
+                     sc_tool_calling_prompt_path: Optional[str] = None,
+                     **kwargs) -> Tuple[str, str, str, str]:
         """
         Initialize the system prompt for the administration staff agent.
 
@@ -122,7 +125,9 @@ class SchedulingAdminStaffAgent(BaseAgent):
         Raises:
             FileNotFoundError: If the specified system prompt file does not exist.
         """
+        # =====================================================================================
         # Initialilze with the default system prompt
+        # =====================================================================================
         if not system_prompt_path:
             if self.target_task == 'first_visit_scheduling':
                 prompt_file_name = 'opfv_schedule_staff_system.txt'
@@ -137,8 +142,15 @@ class SchedulingAdminStaffAgent(BaseAgent):
                 raise FileNotFoundError(colorstr("red", f"System prompt file not found: {system_prompt_path}"))
             with open(system_prompt_path, 'r') as f:
                 self.system_prompt = f.read()
+        
+        # Format the system prompt with any provided keyword arguments
+        if kwargs.get('system_prompt'):
+            self.system_prompt = self.system_prompt.format(**kwargs.get('system_prompt'))
 
+
+        # =====================================================================================
         # Initialilze with the default user prompt for scheduling task
+        # =====================================================================================
         if not scheduling_user_prompt_path:
             if self.target_task == 'first_visit_scheduling':
                 prompt_file_name = 'opfv_schedule_staff_reasoning.txt'
@@ -154,7 +166,14 @@ class SchedulingAdminStaffAgent(BaseAgent):
             with open(scheduling_user_prompt_path, 'r') as f:
                 self.scheduling_user_prompt_template = f.read()
 
+        # Format the scheduling user prompt with any provided keyword arguments
+        if kwargs.get('scheduling_user_prompt'):
+            self.scheduling_user_prompt_template = self.scheduling_user_prompt_template.format(**kwargs.get('scheduling_user_prompt'))
+
+
+        # =====================================================================================
         # Initialilze with the default tool calling prompt
+        # =====================================================================================
         if not tool_calling_prompt_path:
             prompt_file_name = 'opfvfu_schedule_staff_tool_calling.txt'
             file_path = resources.files("h_adminsim.assets.prompts").joinpath(prompt_file_name)
@@ -166,8 +185,15 @@ class SchedulingAdminStaffAgent(BaseAgent):
                 raise FileNotFoundError(colorstr("red", f"User prompt file not found: {tool_calling_prompt_path}"))
             with open(tool_calling_prompt_path, 'r') as f:
                 self.tool_calling_prompt = f.read()
-        
+
+        # Format the tool calling prompt with any provided keyword arguments
+        if kwargs.get('tool_calling_prompt'):
+            self.tool_calling_prompt = self.tool_calling_prompt.format(**kwargs.get('tool_calling_prompt'))
+
+
+        # =====================================================================================
         # Initialilze with the only scheduling tool calling prompt
+        # =====================================================================================
         if not sc_tool_calling_prompt_path:
             if self.target_task == 'first_visit_scheduling':
                 prompt_file_name = 'opfv_schedule_staff_sc_tool_calling.txt'
@@ -182,6 +208,10 @@ class SchedulingAdminStaffAgent(BaseAgent):
                 raise FileNotFoundError(colorstr("red", f"User prompt file not found: {sc_tool_calling_prompt_path}"))
             with open(sc_tool_calling_prompt_path, 'r') as f:
                 self.sc_tool_calling_prompt = f.read()
+
+        # Format the scheduling tool calling prompt with any provided keyword arguments
+        if kwargs.get('sc_tool_calling_prompt'):
+            self.sc_tool_calling_prompt = self.sc_tool_calling_prompt.format(**kwargs.get('sc_tool_calling_prompt'))
 
 
     def build_agent(self,

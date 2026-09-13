@@ -572,6 +572,7 @@ class OPSchedulingSimulation(OPSimulation, ABC):
                               key: str,
                               label: str,
                               natural_express: bool = True,
+                              satisfied: bool = True,
                               max_retries: Optional[int] = None,
                               **patient_kwargs) -> str:
         """
@@ -586,6 +587,10 @@ class OPSchedulingSimulation(OPSimulation, ABC):
                                                cancellation and rescheduling flows use, since the
                                                tool has already settled the request and the patient
                                                has nothing left to weigh up. Defaults to True.
+            satisfied (bool, optional): Which closing persona to swap in. True uses the satisfaction
+                                        prompts (a positive thank-you); False uses the unsatisfied prompts,
+                                        so the patient reacts with resigned/irritated acceptance of a
+                                        schedule they were negotiated or forced into. Defaults to True.
             max_retries (Optional[int], optional): Retry the agent call this many times; see
                                                     `_patient_turn`. Defaults to None (no retry).
             **patient_kwargs: Additional keyword arguments forwarded to the patient agent.
@@ -600,12 +605,19 @@ class OPSchedulingSimulation(OPSimulation, ABC):
             log(f"{role:<25}: {self.end_phrase}")
             return self.end_phrase
 
-        # Have the patient react to the schedule the staff just proposed
-        self._update_patient_system_prompt(new_system_prompt=self.patient_satisfaction_system_prompt)
+        # Have the patient react to the schedule the staff just proposed. A satisfied close swaps in the
+        # simple satisfaction persona; an unsatisfied one keeps the patient's own persona (its personality
+        # and the "imposed schedule -> reluctant acceptance" rule) so the reaction stays natural and in
+        # character, and only steers it with a closing user prompt.
+        if satisfied:
+            self._update_patient_system_prompt(new_system_prompt=self.patient_satisfaction_system_prompt)
+            end_phrase = self.natural_end_phrase
+        else:
+            end_phrase = self.unsatisfied_end_phrase
         return self._patient_turn(
             key,
             label,
-            prompt=self.natural_end_phrase.format(schedule=self.dialog_history[key][-1]['content']),
+            prompt=end_phrase.format(schedule=self.dialog_history[key][-1]['content']),
             max_retries=max_retries,
             **patient_kwargs,
         )
@@ -654,6 +666,7 @@ class OPSchedulingSimulation(OPSimulation, ABC):
         # Shared prompts driving the patient's reaction to a proposed schedule
         self.patient_satisfaction_system_prompt = load_prompt('opfvfu_schedule_patient_satisfied_system.txt')
         self.natural_end_phrase = load_prompt('opfvfu_schedule_patient_satisfied_user.txt')
+        self.unsatisfied_end_phrase = load_prompt('opfvfu_schedule_patient_unsatisfied_user.txt')
         self.patient_evaluation_system_prompt = load_prompt('opfvfu_schedule_patient_evaluation_system.txt')
         self.patient_schedule_evaluation_phrase = load_prompt('opfvfu_schedule_patient_evaluation_user.txt')
         self.end_phrase = "Thank you."
