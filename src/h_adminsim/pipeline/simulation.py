@@ -411,7 +411,35 @@ class Simulator:
         
         return agent_simulation_data, agent_results, done_patients
 
-    
+
+    @staticmethod
+    def _save_agent_results(save_path: str, agent_results: dict) -> None:
+        """
+        Save the agent results in the columnar (struct-of-arrays) format, and additionally a grouped
+        (array-of-structs) view next to it, so one simulation result's fields sit together per record.
+
+        The grouped file is a read-only convenience view; the columnar file stays the source of truth
+        (resume and evaluation read it). Columns of uneven length (e.g. an empty `trial`) are padded
+        with `None` so every record carries every key.
+
+        Args:
+            save_path (str): Path to the columnar result JSON; the grouped view is saved alongside it
+                             as `<name>_grouped<ext>`.
+            agent_results (dict): `{task: {key: [...]}}` columnar results.
+        """
+        json_save_fast(save_path, agent_results)
+
+        grouped = {}
+        for task, columns in agent_results.items():
+            n = max((len(v) for v in columns.values()), default=0)
+            grouped[task] = [
+                {k: (v[i] if i < len(v) else None) for k, v in columns.items()}
+                for i in range(n)
+            ]
+        root, ext = os.path.splitext(save_path)
+        json_save_fast(f"{root}_grouped{ext}", grouped)
+
+
     def run(self,
             simulation_data_path: str,
             output_dir: str,
@@ -528,12 +556,12 @@ class Simulator:
                     log(f'{basename} - {task_name} task results..', color=True)
                     log(f'   - accuracy: {accuracy:.3f}, length: {len(correctness)}, status_code: {status_code}')
 
-                json_save_fast(save_path, agent_results)
-            
+                self._save_agent_results(save_path, agent_results)
+
             log(f"Agent completed the tasks successfully", color=True)
-        
+
         except Exception as e:
             if len(agent_results):
-                json_save_fast(save_path, agent_results)
+                self._save_agent_results(save_path, agent_results)
             log(f"Error occured while execute the tasks: {e}", level='error')
             raise

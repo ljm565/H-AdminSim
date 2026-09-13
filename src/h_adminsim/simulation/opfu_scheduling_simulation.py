@@ -10,6 +10,7 @@ from typing import Tuple, Union, Optional, TYPE_CHECKING
 from h_adminsim.registry.errors import (
     SchedulingError,
     ToolCallingError,
+    ToolSelectionError,
     DataNotFoundError,
     AgentSelectionError,
 )
@@ -1412,6 +1413,14 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
 
                         # A successful test schedule ends the inner dialog loop.
                         elif 'test_schedule' in prediction['result']:
+                            # Wrong-tool guard
+                            expected_preference = 'throughput_max' if gt_patient_condition['preference'] == 'indifferent' \
+                                else gt_patient_condition['preference']
+                            got_preference = prediction['result'].get('preference_type')
+                            if got_preference is not None and got_preference != expected_preference:
+                                raise ToolSelectionError(colorstr('red',
+                                    f"Wrong scheduling tool: expected '{expected_preference}' but got '{got_preference}'."))
+
                             pred_schedule = prediction['result']
                             # Export negotiation metrics for EVERY patient (even non-negotiated / non-eligible) for later hospital-utility analysis
                             if self.negotiation_policy is not None and negotiation_metrics['pci'] is None:
@@ -1476,6 +1485,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                 error_codes={
                     TurnLimitReached: STATUS_CODES['simulation'],                  # Ran out of dialogue turns
                     ToolCallingError: STATUS_CODES['test_retrieve']['identify'],
+                    ToolSelectionError: STATUS_CODES['tool'],                      # Wrong scheduling tool for preference
                     SchedulingError: STATUS_CODES['format'],
                     AgentSelectionError: STATUS_CODES['agent'],                    # Wrong agent activated
                 },

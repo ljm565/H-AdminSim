@@ -49,6 +49,7 @@ STATUS_CODES = {
     },
     'preceding': 'preceding task failed',
     'agent': 'wrong agent selection',
+    'tool': 'wrong scheduling tool for preference',
     'unexpected': "unexpected error: {e}",
     'correct': 'pass',
 }
@@ -72,6 +73,15 @@ class DataNotFoundError(Exception):
 
 class SchedulingError(Exception):
     error_code = "SCHEDULING_ERROR"
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+
+class ToolSelectionError(Exception):
+    """Raised when the scheduling agent calls a tool that does not match the patient's stated preference."""
+    error_code = "TOOL_SELECTION_ERROR"
 
     def __init__(self, message: str):
         super().__init__(message)
