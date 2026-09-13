@@ -182,12 +182,22 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         Args:
             preference (str, optional): The scheduling preference to initialize metrics for. Defaults to None.
         """
+        # Same shape as `_calculate_negotiation_metrics` (NegotiationMetrics.to_dict + policy/outcome fields),
+        # so a patient with no computed metrics still exports a consistent record.
         return {
             'preference': preference,
             'pci': None,
             'tcl': None,
             'ti': None,
             'do_negotiate': False,
+            'G': None,
+            'R': None,
+            'U': None,
+            'U_pref': None,
+            'U_thr': None,
+            '_P': None,
+            '_T': None,
+            'negotiation_action': None,
             'negotiation_outcome': 'none',   # 'accepted' | 'forced' | 'auto' | 'none' (success == accepted/forced)
             'negotiation_rounds': 0,         # number of staff persuasion pitches
         }
@@ -799,7 +809,8 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
 
     def _calculate_negotiation_metrics(self,
                                        patient_preferred_schedule: dict,
-                                       filtered_test_device_information: dict) -> dict:
+                                       filtered_test_device_information: dict,
+                                       preference: Optional[str] = None) -> dict:
         """
         Compute the negotiation trigger metrics for the patient's (hospital-conflicting) preference
         schedule and let the staff policy decide whether to negotiate.
@@ -812,11 +823,15 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             patient_preferred_schedule (dict): The preference-based test schedule the staff proposed
                 (carries `preference_type`, `test_schedule`, ...).
             filtered_test_device_information (dict): Device schedules for the required tests.
+            preference (Optional[str], optional): Preference to score against. Defaults to the schedule's
+                                                  own `preference_type`; pass the GT preference explicitly
+                                                  when computing for a non-negotiated schedule whose
+                                                  `preference_type` may be missing (e.g. reasoning fallback).
 
         Returns:
             dict: The negotiation metrics (`preference`, `pci`, `tcl`, `ti`, `do_negotiate`, ...).
         """
-        preference = patient_preferred_schedule['preference_type']
+        preference = preference or patient_preferred_schedule.get('preference_type')
 
         # tcl_temperature and the per-preference trigger_temperature are hospital-fixed on the policy.
         metrics = NegotiationMetrics(
@@ -825,7 +840,6 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             filtered_test_device_information=filtered_test_device_information,
             rule=self.rules,
             environment=self.environment,
-            dialog_history=self.dialog_history['test_scheduling'],
             tcl_temperature=self.negotiation_policy.tcl_temperature,
             trigger_temperature=self.negotiation_policy.trigger_temperature_for(preference),
             negotiation_trigger_threshold=self.negotiation_policy.negotiation_trigger_threshold,
@@ -1260,7 +1274,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                         )
                     patient_response = self._patient_turn(
                         'test_scheduling',
-                        gt_patient_condition['preference'],
+                        f"{gt_patient_condition['preference']},{gt_patient_condition['distance']}",
                         prompt=neg_prompt,
                         **merged_patient_kwargs,
                     )
@@ -1399,6 +1413,13 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                         # A successful test schedule ends the inner dialog loop.
                         elif 'test_schedule' in prediction['result']:
                             pred_schedule = prediction['result']
+                            # Export negotiation metrics for EVERY patient (even non-negotiated / non-eligible) for later hospital-utility analysis
+                            if self.negotiation_policy is not None and negotiation_metrics['pci'] is None:
+                                negotiation_metrics = self._calculate_negotiation_metrics(
+                                    patient_preferred_schedule=pred_schedule,
+                                    filtered_test_device_information=filtered_test_device_information,
+                                    preference=gt_patient_condition['preference'],
+                                )
                             break
 
                     tries += 1
@@ -1441,7 +1462,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                 else:
                     self._closing_patient_turn(
                         'test_scheduling',
-                        gt_data[i]['preference'],
+                        f"{gt_data[i]['preference']},{gt_data[i]['distance']}",
                         natural_express=natural_express,
                         satisfied=(negotiation_round == 0),   # negotiated/forced into throughput -> reluctant, not satisfied
                         **merged_patient_kwargs,

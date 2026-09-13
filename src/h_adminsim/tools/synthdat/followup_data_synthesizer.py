@@ -15,7 +15,6 @@ from h_adminsim.utils.common_utils import *
 from h_adminsim.utils.filesys_utils import *
 from h_adminsim.utils.random_utils import (
     generate_random_prob,
-    generate_random_code_with_prob,
     generate_random_occupation_preference,
     generate_random_occupation_unavailable,
 )

@@ -32,7 +32,6 @@ class NegotiationMetrics:
     - ``tcl``  Test Congestion Level over the window [current_time, max(te_pref, te_thr)].
     - ``G``    Preference concession to switch P -> T, in preference-native units.
     - ``R``    Result-time gain (hours) from switching P -> T.
-    - ``friction`` Dialogue turns spent with this patient (friction proxy).
     - ``U``    Per-patient availability proxy (front-loading gain P -> T).
 
     Slot-level quantities (``tcl``, ``U``) are read off the same ``filtered_test_device_information``
@@ -45,7 +44,6 @@ class NegotiationMetrics:
                  filtered_test_device_information: dict,
                  rule: "SchedulingRule",
                  environment: "HospitalEnvironment",
-                 dialog_history: Optional[list] = None,
                  time_budget_s: float = 10.0,
                  tcl_temperature: float = 1.0,
                  trigger_temperature: float = 1.0,
@@ -61,7 +59,6 @@ class NegotiationMetrics:
                                                      `{'test': {code: {'duration_hour', 'devices': {device: {'schedule': {date: [[s, e], ...]}}}}}}`.
             rule (SchedulingRule): Rule instance used to recompute the throughput_max counterfactual T.
             environment (HospitalEnvironment): Environment supplying `current_time`.
-            dialog_history (Optional[list], optional): Turn list `[{'role', 'content'}, ...]` for the friction proxy. Defaults to None.
             time_budget_s (float, optional): Wall-clock cap on the throughput_max backtracking search. Defaults to 10.0.
             tcl_temperature (float, optional): Softmax temperature for TCL (lower emphasizes the bottleneck test). Defaults to 1.0.
             trigger_temperature (float, optional): Temperature τ dividing the trigger index in the case of visit_min preference:
@@ -76,7 +73,6 @@ class NegotiationMetrics:
         self._tdi = filtered_test_device_information
         self._rule = rule
         self._environment = environment
-        self._dialog_history = dialog_history or []
         self._time_budget_s = time_budget_s
         self._avail_cache = {}
         
@@ -461,19 +457,11 @@ class NegotiationMetrics:
         return self.u_thr - self.u_pref
 
 
-    # ---- Dialogue Friction (F) -----------------------------------------------
-    @property
-    def friction(self) -> int:
-        """
-        Friction proxy: number of patient utterances in the scheduling dialogue.
-        """
-        return sum(1 for m in self._dialog_history if m.get('role') == 'Patient')
-
-
     # ---- export --------------------------------------------------------------
     def to_dict(self) -> dict:
         """
-        All six metrics (plus preference) as a plain dict.
+        All metrics (plus preference) as a plain dict. 
+        Negotiation friction is tracked by the simulation as `negotiation_rounds`, not here.
         """
         return {
             'preference': self.preference,
@@ -483,7 +471,6 @@ class NegotiationMetrics:
             'do_negotiate': self.ti >= self.negotiation_trigger_threshold,
             'G': self.G,
             'R': self.R,
-            'F': self.friction,
             'U': self.U,
             'U_pref': self.u_pref,
             'U_thr': self.u_thr,
