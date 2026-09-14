@@ -414,11 +414,25 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
         # Snapshot the list: a successful reschedule pops the entry from `waiting_list` mid-iteration
         for turn, (idx, original) in enumerate(list(self.environment.waiting_list)):
             if original['status'] == SCHEDULE_STATUS['scheduled'] and original.get('visit_type') == 'first_visit':
-                new_schedule = self._get_rescheduled_result(
-                    known_condition=original,
-                    doctor_information=doctor_information,
-                    **kwargs
-                )
+                # A tool-calling / reasoning-fallback failure only means this waiting entry could not be
+                # improved this round; it stays on the waiting list and must not end the whole simulation.
+                try:
+                    new_schedule = self._get_rescheduled_result(
+                        known_condition=original,
+                        doctor_information=doctor_information,
+                        **kwargs
+                    )
+                except Exception as e:
+                    log(f'Automatic waiting list update failed to produce a schedule: {e}', level='warning')
+                    result_dict = {
+                        'gt': ['automatic rescheduling'],
+                        'pred': [None],
+                        'status': [False],
+                        'status_code': [STATUS_CODES['reschedule']['schedule'].format(status_code=STATUS_CODES['format'])],
+                        'dialog': ['automatic waiting list update from the system']
+                    }
+                    yield {'doctor_information': doctor_information, 'result_dict': result_dict, 'original': original}
+                    continue
 
                 # Sanity check
                 ## No GT case
