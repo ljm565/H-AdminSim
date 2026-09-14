@@ -724,6 +724,71 @@ def init_result_dict() -> dict:
 
 
 
+def hour_to_str(x) -> str:
+    """Compact hour-float rendering (trims trailing zeros): 9.0 -> '9', 9.25 -> '9.25'."""
+    return f"{round(float(x), 4):g}"
+
+
+
+def free_windows(occupied, start_hour, end_hour) -> list:
+    """
+    Complement of `occupied` intervals within [start_hour, end_hour] — the bookable windows.
+
+    `occupied` entries may be `[start, end]` pairs or `{'start', 'end'}` dicts; overlapping / unsorted
+    intervals are handled. Returns a sorted list of `(start, end)` free windows (possibly empty).
+    """
+    ivs = []
+    for it in (occupied or []):
+        s, e = (it.get('start'), it.get('end')) if isinstance(it, dict) else (it[0], it[1])
+        if s is None or e is None:
+            continue
+        s, e = float(s), float(e)
+        if s < e:
+            ivs.append((s, e))
+    ivs.sort()
+
+    free, cur = [], float(start_hour)
+    for s, e in ivs:
+        if s > cur:
+            free.append((cur, min(s, float(end_hour))))
+        cur = max(cur, e)
+        if cur >= float(end_hour):
+            break
+    if cur < float(end_hour):
+        free.append((cur, float(end_hour)))
+    return [(a, b) for a, b in free if a < b]
+
+
+
+def render_availability_tables(items, start_hour, end_hour,
+                               value_header: str = 'Free (bookable) windows, start-end') -> str:
+    """
+    Render availability as compact per-entity markdown tables of FREE (bookable) windows, instead of a
+    verbose JSON dump of occupied intervals. Shared by the OPFV/OPFU reasoning-fallback prompts.
+
+    Args:
+        items: Iterable of `(title, schedule)` where `schedule` is `{date: occupied intervals}`.
+        start_hour: Operating-hours opening bound used to compute free windows.
+        end_hour: Operating-hours closing bound used to compute free windows.
+        value_header (str): Header text for the free-windows column.
+
+    Returns:
+        str: Markdown tables (one `###` block per item), or a placeholder when `items` is empty.
+    """
+    out = []
+    for title, schedule in items:
+        out.append(f"### {title}")
+        out.append(f"| Date | {value_header} |")
+        out.append("|------|" + "-" * (len(value_header) + 2) + "|")
+        for date in sorted(schedule or {}):
+            fw = free_windows(schedule[date], start_hour, end_hour)
+            cell = ", ".join(f"{hour_to_str(s)}-{hour_to_str(e)}" for s, e in fw) if fw else "— (fully booked)"
+            out.append(f"| {date} | {cell} |")
+        out.append("")
+    return "\n".join(out).strip() or "(none)"
+
+
+
 def preprocess_dialog(dialog: dict) -> str:
     """
     Preprocess dialog data into a formatted string.

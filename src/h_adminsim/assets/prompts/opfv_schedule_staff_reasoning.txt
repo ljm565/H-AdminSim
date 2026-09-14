@@ -21,16 +21,15 @@ Respond in JSON format only, as shown in the example below.
     * ASAP case: If the patient requests the earliest possible appointment without any additional constraints, you must schedule the earliest available appointment among doctors in the department.
 
 
-## Example of how to read schedules:
-* [9.0, 10.25]: Indicates an occupied (booked) schedule from 9:00 to 10:15.
-* [10.5, 17.0]: Indicates an occupied (booked) schedule from 10:30 to 17:00.
+## How to read the doctor availability tables below:
+Each doctor gets a table whose rows are dates and whose cell lists that date's **FREE (bookable) windows** as ``start-end`` ranges (already excluding everything occupied, within operating hours). The doctor's consultation duration and workload are shown next to their name.
+* ``9-19`` means the whole operating day is open; ``9-9.1, 9.25-19`` means only those ranges are free.
+* ``— (fully booked)`` means the doctor has no free window that day.
+* Only dates shown in a doctor's table are bookable; assign a time slot only on a date that appears there.
 
 
-## Doctor information and their {DAY}-day schedules:
-NOTE: The schedule field lists the time intervals that are already occupied (booked) for each date. Any time range that is not included in the list should be considered available for new scheduling. Time slots **must** be assigned only for dates that exist in the schedule.
-```json
+## Doctor availability ({DAY}-day horizon), per doctor:
 {DOCTOR}
-```
 
 
 ## Patient scheduling instructions:

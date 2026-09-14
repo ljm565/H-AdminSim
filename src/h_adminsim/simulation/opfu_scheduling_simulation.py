@@ -594,6 +594,29 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                 f'```\n{dialog}\n```')
 
 
+    def _format_test_devices_markdown(self, filtered_test_device_information: dict) -> str:
+        """
+        Render device availability as compact per-device markdown tables of FREE (bookable) windows
+        (via the shared `render_availability_tables`), instead of a verbose JSON dump of occupied
+        intervals. One table per (test, device). This is only the reasoning-fallback prompt's
+        rendering — the underlying `filtered_test_device_information` (used by post-processing /
+        sanity) is unchanged.
+
+        Args:
+            filtered_test_device_information (dict): `{'test': {code: {'duration_hour', 'devices': {device: {'schedule': {date: [...]}}}}}}`.
+
+        Returns:
+            str: Markdown tables of free windows, or a placeholder when there are no devices.
+        """
+        items = [
+            (f"Device `{device}` — supports test `{code}` (duration {info.get('duration_hour')}h)",
+             dinfo.get('schedule') or {})
+            for code, info in (filtered_test_device_information.get('test') or {}).items()
+            for device, dinfo in (info.get('devices') or {}).items()
+        ]
+        return render_availability_tables(items, self._START_HOUR, self._END_HOUR)
+
+
     def _get_rescheduled_test_result(self,
                                      known_condition: dict,
                                      doctor_information: Optional[dict] = None,
@@ -1172,7 +1195,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                 UNAVAILABLE=self._unavailable_prompt_field(known_condition),
                 DAY=self._DAY,
                 TESTS=json.dumps(known_condition['test'], indent=2),
-                TEST_DEVICES=json.dumps(filtered_test_device_information, indent=2),
+                TEST_DEVICES=self._format_test_devices_markdown(filtered_test_device_information),
             )
 
             tries, schedule = 0, None
@@ -1516,6 +1539,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                                     f"Wrong scheduling tool: expected '{expected_preference}' but got '{got_preference}'."))
 
                             pred_schedule = prediction['result']
+                            
                             # Export negotiation metrics for EVERY patient (even non-negotiated / non-eligible) for later hospital-utility analysis
                             if self.negotiation_policy is not None and negotiation_metrics['pci'] is None:
                                 negotiation_metrics = self._calculate_negotiation_metrics(

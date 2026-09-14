@@ -236,6 +236,31 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
             return {'schedule': {doctor: {'date': date, 'start': st_hour, 'end': tr_hour}}}
 
 
+    def _format_doctors_markdown(self, filtered_doctor_information: dict) -> str:
+        """
+        Render doctor availability as compact per-doctor markdown tables of FREE (bookable) windows
+        (via the shared `render_availability_tables`), instead of a verbose JSON dump of occupied
+        intervals. Each title carries the fields the reasoning rules use (consult duration, workload).
+        This only changes the reasoning-fallback prompt's rendering; the underlying data is unchanged.
+
+        Args:
+            filtered_doctor_information (dict): `{'doctor': {name: {'schedule': {date: [...]}, 'outpatient_duration', 'workload', ...}}}`.
+
+        Returns:
+            str: Markdown tables of free windows, or a placeholder when there are no doctors.
+        """
+        items = []
+        for name, info in (filtered_doctor_information.get('doctor') or {}).items():
+            meta = []
+            if info.get('outpatient_duration') is not None:
+                meta.append(f"consult {info['outpatient_duration']}h")
+            if info.get('workload') is not None:
+                meta.append(f"workload {info['workload']}")
+            title = f"Doctor `{name}`" + (f" — {', '.join(meta)}" if meta else "")
+            items.append((title, info.get('schedule') or {}))
+        return render_availability_tables(items, self._START_HOUR, self._END_HOUR)
+
+
     def _get_rescheduled_result(self,
                                 known_condition: dict,
                                 doctor_information: Optional[dict] = None,
@@ -545,7 +570,7 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
                 PREFERENCE=known_condition['patient_intention'], 
                 RESCHEDULING_FLAG=reschedule_desc,
                 DAY=self._DAY,
-                DOCTOR=json.dumps(filtered_doctor_information, indent=2),
+                DOCTOR=self._format_doctors_markdown(filtered_doctor_information),
             )
 
             tries = 0

@@ -34,19 +34,16 @@ NOTE: ``priority`` is a hard time-ordering constraint. If priority(A) < priority
 ```
 
 
-## How to read the schedule fields below (READ CAREFULLY):
-Every ``schedule`` field is a per-date dictionary listing the time intervals that are **already OCCUPIED (booked)** on that date — NOT the available slots.
-* ``"2025-06-13": []`` — the list is empty, meaning **no occupied intervals**, so the device/doctor is **FULLY AVAILABLE for the entire operating-hours window on that date**. Every minute of that day is bookable. An empty list is NOT a signal that the day is unavailable — it is the opposite.
-* ``"2025-06-13": [[9.0, 10.25]]`` — occupied from 9:00 to 10:15; all other times within operating hours are available.
-* ``"2025-06-13": [[10.5, 17.0]]`` — occupied from 10:30 to 17:00; all other times within operating hours are available.
-* ``"2025-06-13": [[9.0, 19.0]]`` — the entire operating-hours window is one occupied block; the day is **fully booked**, no slot available.
-* Only dates that appear as keys in the schedule are bookable. Never invent a date that is not listed.
+## How to read the device availability tables below (READ CAREFULLY):
+For each device you are given a table whose rows are dates and whose cell lists that date's **FREE (bookable) windows** as ``start-end`` ranges — these are the times that are OPEN (already excluding everything occupied), computed within operating hours. You may place a test only inside one of these free windows.
+* ``9-19`` means the whole operating day is open; ``9-9.1, 9.25-19`` means only those two ranges are free and everything else that day is taken.
+* ``— (fully booked)`` means the device has no free window that day.
+* Only dates shown in a device's table are bookable. Never invent a date that is not listed.
+* A free window is a capacity bound only — you must still satisfy Current time, duration, grid alignment, priority, dependencies, avoid_same_day, and patient availability when choosing a slot inside it.
 
 
-## Test device information and their {DAY}-day schedules:
-```json
+## Test device availability ({DAY}-day horizon), per device:
 {TEST_DEVICES}
-```
 
 ## Test scheduling constraints (what makes a schedule valid):
 A predicted test slot ``{{date, start, end}}`` on device ``D`` for test ``T`` is valid only if **all** of the following hold:
@@ -54,7 +51,7 @@ A predicted test slot ``{{date, start, end}}`` on device ``D`` for test ``T`` is
 2. **Operating hours.** ``start < end``, ``Start_hour <= start``, and ``end <= End_hour``.
 3. **Later than current time.** The ISO timestamp built from ``date`` + ``start`` must be strictly later than ``Current time``. Past dates and earlier-on-today slots are invalid even if they are not occupied.
 4. **Exact duration and grid alignment.** ``end - start`` (in the hospital's ``Time unit``) must equal ``T.duration_hour`` exactly. No rounding, no overrun, no shortening. Both ``start`` and ``end`` must also be exact integer multiples of ``Time unit`` — off-grid values (e.g. 9.13 when ``Time unit`` is 0.05) are invalid even if they appear not to overlap any occupied interval, since segment-level conflict checks quantize the values and a hidden conflict may collapse in.
-5. **Device availability.** The chosen ``[start, end]`` interval must not overlap with any occupied interval listed under ``D.schedule[date]`` for that date — not even by a single time unit.
+5. **Device availability.** The chosen ``[start, end]`` interval must lie entirely within one of device ``D``'s FREE windows for that date (from D's availability table) — it may not spill outside a free window by even a single time unit.
 6. **Priority is a hard time-order constraint.** For any two tests A and B with priority(A) < priority(B), A's end time must be at or before B's start time (using ISO timestamps so this holds across dates).
 7. **Dependencies.** For every predecessor P listed in ``T.depends_on``, T's start ISO timestamp must be at or after ``P.end + P.result_hours`` (the moment P's result is ready).
 8. **Avoid-same-day.** For every test ``X`` listed in ``T.avoid_same_day``, ``T.date`` must differ from ``X.date``.
@@ -78,8 +75,8 @@ Schedule as many of the required tests as you can while satisfying every constra
 1. **Topologically order the tests.** Sort the required tests by ``priority`` ascending; within the same priority, place predecessors (anything listed in another test's ``depends_on``) before their dependents.
 2. **Place each test in that order.** For the current test T:
    a. Walk through each supporting device ``D`` in ``T.devices``.
-   b. Walk through D's listed dates in chronological order. Remember: a date with ``[]`` is fully free; treat any free interval of length ``T.duration_hour`` that fits within operating hours as a candidate.
-   c. Reject any candidate slot that (i) starts at or before ``Current time``, (ii) overlaps an occupied interval, (iii) starts before any already-placed test of strictly lower priority ends, (iv) starts before ``predecessor.end + predecessor.result_hours`` for any predecessor in ``depends_on``, (v) lands on a date that conflicts with ``avoid_same_day``, (vi) overlaps in time with any already-placed test of this patient on another device on the same date (single patient, single location at a time), (vii) has ``start`` or ``end`` that is not an exact integer multiple of ``Time unit``, or (viii) falls on a date — or in the half of a date — the patient cannot attend.
+   b. Walk through D's listed dates in chronological order. For each date, use its FREE windows from the availability table; any sub-interval of length ``T.duration_hour`` that fits inside a free window is a candidate.
+   c. Reject any candidate slot that (i) starts at or before ``Current time``, (ii) is not fully contained in one of D's free windows for that date, (iii) starts before any already-placed test of strictly lower priority ends, (iv) starts before ``predecessor.end + predecessor.result_hours`` for any predecessor in ``depends_on``, (v) lands on a date that conflicts with ``avoid_same_day``, (vi) overlaps in time with any already-placed test of this patient on another device on the same date (single patient, single location at a time), (vii) has ``start`` or ``end`` that is not an exact integer multiple of ``Time unit``, or (viii) falls on a date — or in the half of a date — the patient cannot attend.
    d. Among the remaining candidates, pick:
       * For **`throughput_max`**: the earliest start ISO timestamp overall.
       * For **`indifferent`**: the earliest start ISO timestamp overall (same as **`throughput_max`**).
