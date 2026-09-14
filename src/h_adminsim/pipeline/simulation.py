@@ -18,6 +18,9 @@ from h_adminsim.utils.common_utils import compare_iso_time, get_iso_time, str_to
 
 
 class Simulator:
+    VIRTUAL_FIRST_VISIT_KEY = '_virtual_first_visit'
+
+
     def __init__(self,
                  task: dict,
                  simulation_start_day_before: float = 3,
@@ -287,6 +290,7 @@ class Simulator:
             'last_updated_time': environment.current_time,
             'waiting_order': -1,
             'status': SCHEDULE_STATUS['completed'],
+            'is_virtual': True,
         }
         environment.patient_schedules.append(virtual)
         environment.booking_num[doctor] += 1
@@ -338,7 +342,7 @@ class Simulator:
 
 
     @staticmethod
-    def resume_results(agent_simulation_data: dict, results_path: str) -> Tuple[dict, dict, set]:
+    def resume_results(agent_simulation_data: dict, results_path: str) -> Tuple[dict, dict, dict, list]:
         """
         Resume a previously saved simulation by aligning agent results.
 
@@ -347,10 +351,13 @@ class Simulator:
             results_path (str): Path to the JSON file containing the saved simulation results.
 
         Returns:
-            Tuple[dict, int]:
+            Tuple[dict, dict, dict, list]:
                 - dict: Schedule updated static agent test data.
                 - dict: Previously saved agent results.
-                - set: A dictionary containing patients that have already been processed for each task.
+                - dict: A dictionary containing patients that have already been processed for each task.
+                - list: Virtual first-visit bookings seeded by the previous run, for the caller to
+                        replay into the environment. Empty when the run seeded none, or when it
+                        predates the sidecar.
         """
         # Load previous results
         agent_results = json_load(results_path)
@@ -394,9 +401,8 @@ class Simulator:
             for status, pred in zip(statuses, preds):
                 if status and 'status' in pred and pred['status'] != SCHEDULE_STATUS['cancelled']:
                     # Resume test-device schedule for follow-up patients
-                    for entry in pred['test']:
-                        (device, info), = entry.items()
-                        date, slot = info['date'], [info['start'], info['end']]
+                    for entry in pred.get('test') or []:
+                        device, date, slot = entry['device'], entry['date'], entry['schedule']
                         dev_schedule = device_to_schedule[device]
                         dev_schedule[date].append(slot)
                         dev_schedule[date].sort()
@@ -406,10 +412,19 @@ class Simulator:
                         fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].append(pred['schedule'])
                         fixed_schedule[pred['attending_physician']]['schedule'][pred['date']].sort()
         
+        # Re-block the doctor slots held by the previous run's virtual first-visits
+        virtual_first_visits = agent_results.get(Simulator.VIRTUAL_FIRST_VISIT_KEY) or []
+        fixed_schedule = agent_simulation_data['doctor']
+        for virtual in virtual_first_visits:
+            doctor_schedule = fixed_schedule[virtual['attending_physician']]['schedule']
+            doctor_schedule.setdefault(virtual['date'], []).append(virtual['schedule'])
+            doctor_schedule[virtual['date']].sort()
+
         for task, patients in done_patients.items():
             log(f"{task:<20}: {colorstr(len(patients))} patient(s) resumed")
-        
-        return agent_simulation_data, agent_results, done_patients
+        log(f"{'virtual first-visit':<20}: {colorstr(len(virtual_first_visits))} booking(s) resumed")
+
+        return agent_simulation_data, agent_results, done_patients, virtual_first_visits
 
 
     @staticmethod
@@ -431,6 +446,8 @@ class Simulator:
 
         grouped = {}
         for task, columns in agent_results.items():
+            if task.startswith('_'):    # Environment state, not a task's columnar result
+                continue
             n = max((len(v) for v in columns.values()), default=0)
             grouped[task] = [
                 {k: (v[i] if i < len(v) else None) for k, v in columns.items()}
@@ -438,6 +455,25 @@ class Simulator:
             ]
         root, ext = os.path.splitext(save_path)
         json_save_fast(f"{root}_grouped{ext}", grouped)
+
+
+    @staticmethod
+    def _record_virtual_first_visits(agent_results: dict, environment: HospitalEnvironment) -> None:
+        """
+        Record the virtual first-visits this run seeded, so a resume restores the same calendar.
+
+        These bookings are predicted by no task, yet they hold a doctor slot and count toward
+        `booking_num`, so without them a resumed run sees a hospital with more availability than
+        the interrupted one had. They go under `VIRTUAL_FIRST_VISIT_KEY` rather than a task key,
+        and a resumed run re-records the restored seeds together with its own.
+
+        Args:
+            agent_results (dict): Columnar results about to be saved; mutated in place.
+            environment (HospitalEnvironment): Environment whose `patient_schedules` are scanned.
+        """
+        virtual_first_visits = [s for s in environment.patient_schedules if s.get('is_virtual')]
+        if virtual_first_visits:
+            agent_results[Simulator.VIRTUAL_FIRST_VISIT_KEY] = virtual_first_visits
 
 
     def run(self,
@@ -464,6 +500,8 @@ class Simulator:
         is_file = os.path.isfile(simulation_data_path)
         agent_simulation_data_files = [simulation_data_path] if is_file else get_files(simulation_data_path, ext='json')
 
+        agent_results, environment, save_path = dict(), None, None
+
         try:
             os.makedirs(output_dir, exist_ok=True)
 
@@ -484,8 +522,9 @@ class Simulator:
 
                 # Resume the results and the virtual hospital environment
                 if resume and os.path.exists(save_path):
-                    agent_simulation_data, agent_results, done_patients = Simulator.resume_results(agent_simulation_data, save_path)
-                    environment.resume(agent_results)
+                    agent_simulation_data, agent_results, done_patients, virtual_first_visits = \
+                        Simulator.resume_results(agent_simulation_data, save_path)
+                    environment.resume(agent_results, virtual_first_visits=virtual_first_visits)
 
                 # Data per patient
                 index = 0
@@ -543,7 +582,10 @@ class Simulator:
                     index += 1
 
                 # Logging the results
+                Simulator._record_virtual_first_visits(agent_results, environment)
                 for task_name, result in agent_results.items():
+                    if task_name.startswith('_'):    # Environment state, not a task's result
+                        continue
                     if task_name == 'first_visit_intake':
                         statuses = [all(s.values()) for s in result['status']]
                         status_codes = ['/'.join(s.values()) for s in result['status_code']]
@@ -562,6 +604,8 @@ class Simulator:
 
         except Exception as e:
             if len(agent_results):
+                if environment is not None:
+                    Simulator._record_virtual_first_visits(agent_results, environment)
                 self._save_agent_results(save_path, agent_results)
             log(f"Error occured while execute the tasks: {e}", level='error')
             raise

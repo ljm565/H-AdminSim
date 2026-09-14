@@ -421,56 +421,59 @@ class HospitalEnvironment:
         return filtered_test_device_information
     
 
-    def resume(self, agent_results: dict):
+    def resume(self, agent_results: dict, virtual_first_visits: Optional[list] = None):
         """
         Resume the hospital environment from previously saved agent results.
 
         Args:
-            agent_test_data (dict): Input data containing static information 
-                                    about doctors, patients, and other hospital resources.
             agent_results (dict): Previously saved results from the agent's simulation.
+            virtual_first_visits (Optional[list], optional): Virtual first-visit bookings seeded by
+                                                              the previous run. They hold a doctor
+                                                              slot but are predicted by no task, so
+                                                              they are replayed from their sidecar
+                                                              instead of from `agent_results`.
+                                                              Defaults to None.
         """
         new_time = None
-        if 'first_visit_scheduling' in agent_results:
-            statuses = [x for y in agent_results['first_visit_scheduling']['status'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
-            preds = [x for y in agent_results['first_visit_scheduling']['pred'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
+
+        # Seeded past visits come first
+        for virtual in virtual_first_visits or []:
+            self.patient_schedules.append(virtual)
+            self.booking_num[virtual['attending_physician']] += 1
+
+        for task_name in ('first_visit_scheduling', 'follow_up_visit_scheduling'):
+            if task_name not in agent_results:
+                continue
+
+            statuses = [x for y in agent_results[task_name]['status'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
+            preds = [x for y in agent_results[task_name]['pred'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
             for status, pred in zip(statuses, preds):
-                if isinstance(status, bool) and status:
-                    # Mirror update_env: skip when schedule is empty (e.g., follow-up with no doctor visit)
-                    if not pred.get('schedule'):
-                        continue
-                    
-                    if 'patient' in pred:
-                        self.patient_schedules.append(pred)
-                        if new_time is None or compare_iso_time(pred['last_updated_time'], new_time):
-                            new_time = pred['last_updated_time']
-                    
-                    if 'status' in pred and not pred['status'] == SCHEDULE_STATUS['cancelled']:
-                        self.booking_num[pred['attending_physician']] += 1
-            
-            self.waiting_list = sorted([(i, s) for i, s in enumerate(self.patient_schedules) if s['waiting_order'] >= 0], key=lambda x: x[1]['waiting_order'])
+                if not (isinstance(status, bool) and status):
+                    continue
 
-        if 'follow_up_visit_scheduling' in agent_results:
-            statuses = [x for y in agent_results['follow_up_visit_scheduling']['status'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
-            preds = [x for y in agent_results['follow_up_visit_scheduling']['pred'] for x in (y if isinstance(y, list) or isinstance(y, tuple) else [y])]
-            for status, pred in zip(statuses, preds):
-                if isinstance(status, bool) and status:
-                    # Mirror update_env: skip when schedule is empty (e.g., follow-up with no doctor visit)
-                    if not pred.get('schedule'):
-                        continue
+                # Retrieval-only records (a cancel/reschedule tool's identified index) carry no booking
+                if not isinstance(pred, dict) or 'patient' not in pred:
+                    continue
 
-                    if 'patient' in pred:
-                        self.patient_schedules.append(pred)
-                        if new_time is None or compare_iso_time(pred['last_updated_time'], new_time):
-                            new_time = pred['last_updated_time']
+                # Mirror update_env: the booking is recorded even when its consultation slot is empty
+                self.patient_schedules.append(pred)
+                if new_time is None or compare_iso_time(pred['last_updated_time'], new_time):
+                    new_time = pred['last_updated_time']
 
-                    if 'status' in pred and not pred['status'] == SCHEDULE_STATUS['cancelled']:
-                        self.booking_num[pred['attending_physician']] += 1
+                if pred.get('schedule') and pred.get('status') != SCHEDULE_STATUS['cancelled']:
+                    self.booking_num[pred['attending_physician']] += 1
+
+        # Waiting list update
+        self.waiting_list = sorted(
+            [(i, s) for i, s in enumerate(self.patient_schedules) if s.get('waiting_order', -1) >= 0],
+            key=lambda x: x[1]['waiting_order'],
+        )
+
         if new_time:
             self.update_current_time(new_time)
 
         log(f"Resumed hospital time set to {self.current_time}.")
-        log(f"Resumed hospital environment with {len(self.patient_schedules)} patient schedules.")
+        log(f"Resumed hospital environment with {len(self.patient_schedules)} patient schedules ({len(virtual_first_visits or [])} virtual first-visit(s)).")
         log(f"Resumed waiting list with {len(self.waiting_list)} patient schedules.")
         log(f"Current booking numbers per doctor: {self.booking_num}")
 

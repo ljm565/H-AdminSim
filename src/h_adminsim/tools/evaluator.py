@@ -40,6 +40,9 @@ class Evaluator:
             data = json_load(file)
 
             for task, value in data.items():
+                if task.startswith('_'):    # Environment state a run saved, not a task's result
+                    continue
+
                 if not task in aggregated_results:
                     aggregated_results[task] = {'status': [], 'status_code': []}
 
@@ -140,6 +143,9 @@ class Evaluator:
         for file in self.files:
             data = json_load(file)
             for task, value in data.items():
+                if task.startswith('_'):    # Environment state a run saved, not a task's result
+                    continue
+
                 if task not in aggregated_results:
                     aggregated_results[task] = {'token': []}
                 aggregated_results[task]['token'].extend(value['token'])
