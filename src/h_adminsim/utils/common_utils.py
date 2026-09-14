@@ -813,6 +813,117 @@ def staff_role(state: Optional[ConversationState] = None,
 
 
 
+def normalize_unavailable(unavailable: dict) -> Optional[dict]:
+    """
+    Normalize the patient's test-time unavailability into a single canonical shape.
+
+    Accepts the synthesized data shape (`{'type', 'day', 'half_day', 'explanation'}`, where `type`
+    is `None` / `'day'` / `'half_day'`) and the shape a scheduling tool builds from its arguments
+    (the same keys minus `type`, which is inferred), and returns `None` whenever nothing is actually
+    blocked — so every caller can simply test the result for truthiness.
+
+    The result uses those same keys, so normalizing an already-normalized record is a no-op — which
+    the scheduling path relies on, since a tool normalizes its arguments and `schedule_tests`
+    normalizes again.
+
+    Args:
+        unavailable (dict): Raw unavailability record.
+
+    Returns:
+        Optional[dict]: `{'type': 'day' | 'half_day', 'day': [YYYY-MM-DD, ...],
+                        'half_day': None | 'am' | 'pm', 'explanation': str}`, or None when the
+                        record blocks nothing (no type, no dates, or an unusable half-day value).
+    """
+    if not isinstance(unavailable, dict):
+        return None
+
+    dates = sorted({str(d) for d in (unavailable.get('day') or []) if d})
+    if not dates:
+        return None
+
+    half_day = unavailable.get('half_day')
+    half_day = registry.HALF_DAY_ALIASES.get(str(half_day).strip().lower()) if half_day else None
+
+    # `type` is authoritative when present (data shape); otherwise infer it from the half-day value (tool shape).
+    unavailable_type = unavailable.get('type') or ('half_day' if half_day else 'day')
+    if unavailable_type == 'day':
+        half_day = None
+    elif unavailable_type != 'half_day' or half_day is None:
+        return None   # unknown type, or a half-day constraint without a usable half
+
+    return {
+        'type': unavailable_type,
+        'day': dates,
+        'half_day': half_day,
+        'explanation': unavailable.get('explanation') or '',
+    }
+
+
+
+def unavailable_blocked_interval(half_day: str,
+                                 start_hour: float,
+                                 end_hour: float) -> Optional[list[float]]:
+    """
+    Operating-hours interval blocked by a half-day constraint.
+
+    The morning / afternoon split is taken at `registry.HALF_DAY_BOUNDARY_HOUR`, clipped to the hospital's
+    operating hours so an unusual opening time cannot produce an out-of-range interval.
+
+    Args:
+        half_day (str): `'am'` (morning blocked) or `'pm'` (afternoon blocked).
+        start_hour (float): Hospital opening hour.
+        end_hour (float): Hospital closing hour.
+
+    Returns:
+        Optional[list[float]]: `[blocked_start, blocked_end]` in hours, or None when the
+                                constraint blocks nothing inside operating hours.
+    """
+    if half_day == 'am':
+        blocked = [start_hour, min(registry.HALF_DAY_BOUNDARY_HOUR, end_hour)]
+    elif half_day == 'pm':
+        blocked = [max(registry.HALF_DAY_BOUNDARY_HOUR, start_hour), end_hour]
+    else:
+        return None
+    return blocked if blocked[0] < blocked[1] else None
+
+
+
+def describe_unavailable(unavailable: dict, audience: str = 'patient') -> str:
+    """
+    Render the patient's test-time unavailability as prompt-ready text.
+
+    Args:
+        unavailable (dict): Raw unavailability record (either shape accepted by `normalize_unavailable`).
+        audience (str, optional): `'patient'` for second-person phrasing, `'staff'` for third-person. Defaults to 'patient'.
+
+    Returns:
+        str: One sentence describing what the patient cannot attend (or that nothing is blocked).
+    """
+    phrases = registry.OPFU_UNAVAILABLE_PHRASE_PATIENT if audience == 'patient' \
+        else registry.OPFU_UNAVAILABLE_PHRASE_STAFF
+
+    normalized = normalize_unavailable(unavailable)
+    if normalized is None:
+        return phrases['none']
+
+    # Both the ISO date and its spoken form, so the patient can say it naturally and the staff can pass it back as ISO.
+    rendered_dates = []
+    for date in normalized['day']:
+        try:
+            spoken = str_to_datetime(f'{date}T00:00:00').strftime('%A, %B %d')
+            rendered_dates.append(f'{date} ({spoken})')
+        except Exception:
+            rendered_dates.append(date)
+
+    return phrases[normalized['type']].format(
+        dates=', '.join(rendered_dates),
+        half_day_word=registry.HALF_DAY_WORD.get(normalized['half_day'], ''),
+        half_day_range=registry.HALF_DAY_RANGE.get(normalized['half_day'], ''),
+        explanation=normalized['explanation'],
+    )
+
+
+
 def calculate_idle_wait(assignments, priority_floor: float = float('inf')) -> float:
     """
     Idle waiting hours the patient spends between consecutive same-day tests.

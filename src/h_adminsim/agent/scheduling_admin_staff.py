@@ -222,7 +222,8 @@ class SchedulingAdminStaffAgent(BaseAgent):
                     only_schedule_tool: bool = False,
                     reschedule_pipeline: Optional[callable] = None,
                     required_test_codes: Optional[list] = None,
-                    test_device_information: Optional[dict] = None) -> AgentExecutor:
+                    test_device_information: Optional[dict] = None,
+                    patient_unavailable: Optional[dict] = None) -> AgentExecutor:
         """
         Build a LangChain agent with scheduling tools.
 
@@ -235,6 +236,11 @@ class SchedulingAdminStaffAgent(BaseAgent):
             reschedule_pipeline (Optional[callable], optional): Callable executing the post-retrieval rescheduling pipeline. Defaults to None.
             required_test_codes (Optional[list], optional): Codes of the tests the patient must take. Defaults to None.
             test_device_information (Optional[dict], optional): Test device schedules — enables the test-scheduling tools together with ``required_test_codes``, and feeds the test-cancellation tool. Defaults to None.
+            patient_unavailable (Optional[dict], optional): The patient's test-time unavailability, when it is already known
+                                                            from a stored booking (rescheduling / waiting-list re-runs). Given
+                                                            here, it overrides whatever the agent passes to the scheduling tools.
+                                                            Leave it None during a live dialogue, where the constraint must come
+                                                            from what the patient actually said. Defaults to None.
 
         Returns:
             AgentExecutor: A LangChain agent executor with the scheduling tools.
@@ -244,6 +250,7 @@ class SchedulingAdminStaffAgent(BaseAgent):
             reschedule_pipeline=reschedule_pipeline,
             required_test_codes=required_test_codes,
             test_device_information=test_device_information,
+            patient_unavailable=patient_unavailable,
         )
         tool_calling_prompt = self.sc_tool_calling_prompt if only_schedule_tool else self.tool_calling_prompt
         prompt = ChatPromptTemplate.from_messages([

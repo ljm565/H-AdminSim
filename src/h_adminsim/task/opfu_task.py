@@ -548,6 +548,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                 'preference': preference,
                 'occupation': gt['occupation'],
                 'distance': gt['distance'],
+                'unavailable': gt['unavailable'],
             } for preference in gt.get('preference')
         ]
 
@@ -579,6 +580,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                 'address': gt['address'][0]['text'],
                 'occupation': gt['occupation'],
                 'distance': gt['distance'],
+                'unavailable': describe_unavailable(gt['unavailable']),
             },
         )
     

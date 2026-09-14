@@ -18,7 +18,12 @@ Rules:
 - If ONLY visit-count is mentioned and speed is not addressed, you MUST call `follow_up_visit_min_test_schedule`.
 - If ONLY the between-test idle time is mentioned (sitting around between tests) and neither finishing-soon nor visit-count is addressed, you MUST call `follow_up_stay_min_test_schedule`.
 - All three tools require the attending physician's name, which is already known from the conversation; pass it as the argument.
-- If the patient's request does not clearly and explicitly fall into exactly one of the above cases (or corresponding tools), you must immediately output the text "NO TOOL". "NO TOOL" is for when the patient expresses a specific preference that none of the tools can satisfy (e.g., wanting the tests only on a particular weekday or within a specific date range). Note: having NO preference is NOT a "NO TOOL" case — that is the no-preference rule above and maps to `follow_up_throughput_max_test_schedule`.
+- If the patient said there are days, or a morning / an afternoon, on which they CANNOT come in, pass them to whichever tool you chose:
+  - `unavailable_dates`: every such date, as `YYYY-MM-DD`. Resolve what the patient said ("April 23rd", "the 23rd") against the dates already mentioned in the conversation to get the year; if they named a weekday only, ask which date they mean instead of guessing.
+  - `unavailable_half_day`: `"am"` if only their MORNING is blocked, `"pm"` if only their AFTERNOON is blocked, and omit it when they cannot come at all on those dates.
+  - Omit both arguments when the patient reported no such constraint. Never invent one, and never fold their preference into it.
+  - An unavailability does NOT change which tool to call: still pick the tool by what the patient optimizes for, and it is never a reason to output "NO TOOL".
+- If the patient's request does not clearly and explicitly fall into exactly one of the above cases (or corresponding tools), you must immediately output the text "NO TOOL". "NO TOOL" is for when the patient expresses a specific preference that none of the tools can satisfy (e.g., wanting the tests only on a particular weekday, or only within a specific date range). Note: having NO preference is NOT a "NO TOOL" case — that is the no-preference rule above and maps to `follow_up_throughput_max_test_schedule`. Stating dates or a half-day they CANNOT attend is also NOT a "NO TOOL" case — that is handled by the arguments above.
 
 
 Always call a tool or output the text "NO TOOL".

@@ -1,6 +1,8 @@
+import re
 import time
 from copy import deepcopy
 from decimal import Decimal
+from datetime import datetime
 from collections import defaultdict
 from langchain.tools import tool
 from langchain.agents import AgentExecutor
@@ -367,6 +369,25 @@ class SchedulingRule:
         return doctor_info
 
 
+    def _unavailable_windows(self, unavailable: Optional[dict]) -> tuple:
+        """
+        Split a normalized unavailability into the pieces the slot search needs.
+
+        Args:
+            unavailable (Optional[dict]): Normalized unavailability (see `normalize_unavailable`), or None.
+
+        Returns:
+            tuple[set, Optional[list[float]]]: The blocked dates, and the `[start, end]` hour interval blocked
+                                               on each of them — `None` meaning the whole date is blocked.
+        """
+        if not unavailable:
+            return set(), None
+        if unavailable['type'] == 'day':
+            return set(unavailable['day']), None
+        interval = unavailable_blocked_interval(unavailable['half_day'], self._START_HOUR, self._END_HOUR)
+        return (set(unavailable['day']), interval) if interval else (set(), None)
+
+
     def _enumerate_device_slots(self,
                                 mode: str,
                                 test_info: dict,
@@ -376,7 +397,8 @@ class SchedulingRule:
                                 patient_busy: Optional[dict] = None,
                                 is_last_test: bool = False,
                                 is_last_in_priority_cluster: bool = False,
-                                placed_dates: Optional[set] = None) -> list:
+                                placed_dates: Optional[set] = None,
+                                unavailable: Optional[dict] = None) -> list:
         """
         Enumerate candidate (device, date, start_iso, end_iso) windows for a single test.
 
@@ -400,6 +422,10 @@ class SchedulingRule:
             placed_dates (Optional[set]): Set of dates already used by previously-placed tests in this branch.
                                           Only consulted when `is_last_test and mode == 'visit_min'` to keep at most one
                                           candidate (existing-date earliest if any, else new-date earliest). Defaults to None.
+            unavailable (Optional[dict]): Normalized patient unavailability (see `normalize_unavailable`). A `'day'`
+                                          constraint drops the whole date; a `'half_day'` one is merged into the date's
+                                          busy intervals, so the run/endpoint logic below never yields a blocked slot.
+                                          Defaults to None.
 
         Returns:
             list[tuple[str, str, str, str]]: `(device_name, date, start_iso, end_iso)` tuples
@@ -410,6 +436,7 @@ class SchedulingRule:
         min_time_slot_n = max(1, int(Decimal(str(duration)) / Decimal(str(self._TIME_UNIT))))
         all_time_segments = convert_time_to_segment(self._START_HOUR, self._END_HOUR, self._TIME_UNIT)
         patient_busy = patient_busy or {}
+        unavailable_dates, unavailable_interval = self._unavailable_windows(unavailable)
 
         for device_name, device_info in test_info.get('devices', {}).items():
             stop_device_scan = False
@@ -420,7 +447,15 @@ class SchedulingRule:
                 if date in forbidden_dates:
                     continue
 
-                fixed_intervals = list(device_schedule.get(date, [])) + list(extra.get(date, [])) + list(patient_busy.get(date, []))
+                # The patient cannot attend: drop the date entirely, or block the half-day they cannot make.
+                patient_unavailable = []
+                if date in unavailable_dates:
+                    if unavailable_interval is None:
+                        continue
+                    patient_unavailable = [unavailable_interval]
+
+                fixed_intervals = list(device_schedule.get(date, [])) + list(extra.get(date, [])) \
+                    + list(patient_busy.get(date, [])) + patient_unavailable
                 fixed_segments = sum(
                     [convert_time_to_segment(self._START_HOUR, self._END_HOUR, self._TIME_UNIT, fs)
                      for fs in fixed_intervals],
@@ -629,7 +664,8 @@ class SchedulingRule:
                             ordered: list,
                             avoid: dict,
                             mode: str,
-                            time_budget_s: Optional[float] = None) -> dict:
+                            time_budget_s: Optional[float] = None,
+                            unavailable: Optional[dict] = None) -> dict:
         """
         Branch-and-bound backtracking search across slot/device choices.
 
@@ -660,6 +696,8 @@ class SchedulingRule:
             mode (str): `'throughput_max'`, `'visit_min'`, or `'stay_min'`.
             time_budget_s (Optional[float], optional): Wall-clock cap on the backtracking search. `stay_min` can
                                                        blow up combinatorially when tests share a priority. `None` disables the cap. Defaluts to None.
+            unavailable (Optional[dict], optional): Normalized patient unavailability applied to every candidate slot
+                                                    (see `_enumerate_device_slots`). Defaults to None.
 
         Returns:
             dict: `{'placed': {code: assignment}, 'unscheduled': [codes], 'objective': tuple}`.
@@ -871,6 +909,7 @@ class SchedulingRule:
                 is_last_test=is_last_test,
                 is_last_in_priority_cluster=is_last_in_priority_cluster,
                 placed_dates=placed_dates_set,
+                unavailable=unavailable,
             )
 
             # stay_min: try candidates on a not-yet-used date first. Spreading tests across days yields
@@ -956,7 +995,8 @@ class SchedulingRule:
                        mode: str,
                        filtered_test_device_information: dict,
                        test_codes: list,
-                       time_budget_s: Optional[float] = None) -> dict:
+                       time_budget_s: Optional[float] = None,
+                       unavailable: Optional[dict] = None) -> dict:
         """
         Unified backtracking test scheduler. Searches every (device, date, start)
         combination via `_backtrack_schedule` and returns the lex-minimal assignment
@@ -981,15 +1021,21 @@ class SchedulingRule:
             test_codes (list[str]): Codes of the tests the patient must take.
             time_budget_s (Optional[float], optional): Wall-clock cap on the backtracking search. `stay_min` can
                                                        blow up combinatorially when tests share a priority. `None` disables the cap. Defaluts to None.
+            unavailable (Optional[dict], optional): The patient's test-time unavailability, in either shape accepted by
+                                                    `normalize_unavailable`. Blocked dates / half-days are removed from
+                                                    the candidate slots, so no test can be placed when the patient cannot
+                                                    attend (a test with no remaining feasible slot is left unscheduled,
+                                                    exactly like any other infeasible test). Defaults to None.
 
         Returns:
             dict: `{'test_schedule', 'test_visit_dates', 'idle_waiting_time', 'all_results_ready_at', 'unscheduled', 'status'}`
-                  (see `_assemble_schedule_result`); the empty-input fast path returns the same
-                  keys with empty values.
+                  (see `_assemble_schedule_result`) plus `preference_type` and the `applied_unavailable` constraint;
+                  the empty-input fast path returns the same keys with empty values.
         """
+        unavailable = normalize_unavailable(unavailable)
         empty_result = {
             'test_schedule': {}, 'test_visit_dates': [], 'idle_waiting_time': None, 'all_results_ready_at': None,
-            'unscheduled': [], 'status': 'ok',
+            'unscheduled': [], 'status': 'ok', 'preference_type': mode, 'applied_unavailable': unavailable,
         }
         if not test_codes:
             return empty_result
@@ -1015,10 +1061,109 @@ class SchedulingRule:
             ))
 
         avoid = self._build_avoid_pairs(tests)
-        result = self._backtrack_schedule(tests, ordered, avoid, mode=mode, time_budget_s=time_budget_s)
+        result = self._backtrack_schedule(
+            tests, ordered, avoid, mode=mode, time_budget_s=time_budget_s, unavailable=unavailable
+        )
         output = self._assemble_schedule_result(result['placed'], missing, result['unscheduled'])
         output['preference_type'] = mode
+        output['applied_unavailable'] = unavailable
         return output
+
+
+_MONTH_TO_NUMBER = {
+    name: number
+    for number in range(1, 13)
+    for name in (datetime(2000, number, 1).strftime('%B').lower(), datetime(2000, number, 1).strftime('%b').lower())
+}
+
+
+def _known_schedule_dates(test_device_information: Optional[dict]) -> set:
+    """
+    Every date the hospital's test devices are scheduled over — the horizon a patient-stated date must land in.
+
+    Args:
+        test_device_information (Optional[dict]): Filtered test device information.
+
+    Returns:
+        set[str]: ISO dates (YYYY-MM-DD) appearing in any device schedule.
+    """
+    dates = set()
+    for test_info in (test_device_information or {}).get('test', {}).values():
+        for device_info in (test_info.get('devices') or {}).values():
+            dates.update((device_info.get('schedule') or {}).keys())
+    return dates
+
+
+def _extract_month_day(raw_date: str) -> Optional[tuple]:
+    """
+    Pull a (month, day) pair out of a loosely-written date.
+
+    Handles the forms a staff agent realistically produces from a spoken date — `2025-04-23`,
+    `04/23`, `4-23-2025`, `April 23`, `23 Apr` — so a year the patient never said cannot make
+    the constraint silently miss.
+
+    Args:
+        raw_date (str): Date as written by the agent.
+
+    Returns:
+        Optional[tuple[int, int]]: `(month, day)`, or None when nothing date-like is found.
+    """
+    iso = re.search(r'(\d{4})-(\d{1,2})-(\d{1,2})', raw_date)
+    if iso:
+        return int(iso.group(2)), int(iso.group(3))
+
+    named = re.search(r'([A-Za-z]{3,9})\.?\s+(\d{1,2})', raw_date)
+    if named and named.group(1).lower() in _MONTH_TO_NUMBER:
+        return _MONTH_TO_NUMBER[named.group(1).lower()], int(named.group(2))
+
+    named_reversed = re.search(r'(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?([A-Za-z]{3,9})', raw_date)
+    if named_reversed and named_reversed.group(2).lower() in _MONTH_TO_NUMBER:
+        return _MONTH_TO_NUMBER[named_reversed.group(2).lower()], int(named_reversed.group(1))
+
+    numeric = re.search(r'\b(\d{1,2})[/-](\d{1,2})\b', raw_date)
+    if numeric:
+        return int(numeric.group(1)), int(numeric.group(2))
+
+    return None
+
+
+def _resolve_unavailable_dates(raw_dates: Union[str, list, None], known_dates: set) -> list:
+    """
+    Resolve the dates a staff agent passed into the ISO dates of the scheduling horizon.
+
+    Args:
+        raw_dates (Union[str, list, None]): Dates as the agent wrote them (a single string is accepted too).
+        known_dates (set): ISO dates covered by the device schedules.
+
+    Returns:
+        list[str]: Matching ISO dates. An unrecognizable date is kept verbatim, where it simply
+                   matches no schedule date and therefore blocks nothing.
+    """
+    if not raw_dates:
+        return []
+    if isinstance(raw_dates, str):
+        raw_dates = [raw_dates]
+
+    by_month_day = defaultdict(list)
+    for date in known_dates:
+        try:
+            parsed = str_to_datetime(f'{date}T00:00:00')
+        except ValueError:
+            continue
+        by_month_day[(parsed.month, parsed.day)].append(date)
+
+    resolved = set()
+    for raw_date in raw_dates:
+        raw_date = str(raw_date).strip()
+        if not raw_date:
+            continue
+        if raw_date in known_dates or not known_dates:
+            resolved.add(raw_date)
+            continue
+        month_day = _extract_month_day(raw_date)
+        resolved.update(by_month_day.get(month_day, [raw_date]) if month_day else [raw_date])
+
+    return sorted(resolved)
 
 
 def create_tools(rule: SchedulingRule,
@@ -1028,7 +1173,22 @@ def create_tools(rule: SchedulingRule,
                  only_schedule_tool: bool = False,
                  reschedule_pipeline: Optional[callable] = None,
                  test_device_information: Optional[dict] = None,
-                 required_test_codes: Optional[list] = None) -> list[tool]:
+                 required_test_codes: Optional[list] = None,
+                 patient_unavailable: Optional[dict] = None) -> list[tool]:
+    # Dates / half-days the patient cannot attend. Supplied by the caller only when the constraint is already
+    # known from a stored booking (rescheduling, waiting-list re-runs); during a live dialogue it stays None and
+    # the agent must pass what the patient said through the tool arguments below.
+    known_schedule_dates = _known_schedule_dates(test_device_information)
+
+    def resolve_unavailable(unavailable_dates, unavailable_half_day):
+        """Bound constraint when the caller supplied one, else the constraint the agent extracted from the patient."""
+        if patient_unavailable is not None:
+            return normalize_unavailable(patient_unavailable)
+        return normalize_unavailable({
+            'day': _resolve_unavailable_dates(unavailable_dates, known_schedule_dates),
+            'half_day': unavailable_half_day,
+        })
+
     @tool
     def physician_filter_tool(preferred_doctor: str, min_time: Optional[str] = None, max_time: Optional[str] = None) -> dict:
         """
@@ -1301,7 +1461,9 @@ def create_tools(rule: SchedulingRule,
     
 
     @tool
-    def follow_up_throughput_max_test_schedule(attending_physician: str) -> dict:
+    def follow_up_throughput_max_test_schedule(attending_physician: str,
+                                               unavailable_dates: Optional[list[str]] = None,
+                                               unavailable_half_day: Optional[str] = None) -> dict:
         """
         Schedule the required tests so every RESULT is ready as EARLY as possible
         (minimize the latest result-ready time). Visit-day count and on-site waiting
@@ -1330,22 +1492,40 @@ def create_tools(rule: SchedulingRule,
             identified, since a follow-up consultation appointment will be scheduled
             with that physician after all tests are completed.
 
+            If the patient said there are days — or a morning / an afternoon — on which
+            they CANNOT come in, pass them as `unavailable_dates` (and `unavailable_half_day`);
+            the tests are then placed only in windows the patient can actually attend. A
+            patient-stated unavailability is NOT a reason to refuse the call or to pick a
+            different tool: the tool to use is still the one matching what the patient
+            optimizes for.
+
         Args:
             attending_physician (str):
                 Name of the attending physician for whom the follow-up consultation
                 appointment should be scheduled after all required tests are completed.
                 This argument is mandatory and must be explicitly provided.
+            unavailable_dates (Optional[list[str]], optional):
+                Dates the patient said they CANNOT come in for the tests, as `YYYY-MM-DD`
+                strings. Pass every such date the patient mentioned; no test will be placed
+                on them (or, with `unavailable_half_day`, in that half of them). Leave it out
+                when the patient mentioned no such constraint. Defaults to None.
+            unavailable_half_day (Optional[str], optional):
+                `'am'` when the patient cannot come in the MORNING of `unavailable_dates`,
+                `'pm'` when they cannot come in the AFTERNOON. Omit it when the patient cannot
+                come at all on those dates. Defaults to None.
 
         Returns:
             dict: Mapping of test schedules with fields `test_schedule`, `test_visit_dates`,
                 `all_results_ready_at`, `unscheduled`, `fu_schedule`, `status`, and `action`.
         """
-        log(f'[TOOL CALL] follow_up_throughput_max_test_schedule | attending_physician={attending_physician}', color=True)
+        log(f'[TOOL CALL] follow_up_throughput_max_test_schedule | attending_physician={attending_physician} '
+            f'| unavailable_dates={unavailable_dates} | unavailable_half_day={unavailable_half_day}', color=True)
         prefix = 'Dr.'
         if prefix not in attending_physician:
             attending_physician = f'{prefix} {attending_physician}'
         result = rule.schedule_tests(
-            'throughput_max', test_device_information, required_test_codes, 10
+            'throughput_max', test_device_information, required_test_codes, 10,
+            unavailable=resolve_unavailable(unavailable_dates, unavailable_half_day),
         )
         fu_appn = rule.physician_filter(doctor_info, attending_physician, result['all_results_ready_at'])
         fu_appn = rule.find_earliest_time(fu_appn)
@@ -1355,7 +1535,9 @@ def create_tools(rule: SchedulingRule,
 
 
     @tool
-    def follow_up_visit_min_test_schedule(attending_physician: str) -> dict:
+    def follow_up_visit_min_test_schedule(attending_physician: str,
+                                          unavailable_dates: Optional[list[str]] = None,
+                                          unavailable_half_day: Optional[str] = None) -> dict:
         """
         Group the required tests into the SMALLEST number of separate visit days, even
         if some results come back later and even if that leaves idle gaps within a day.
@@ -1382,22 +1564,40 @@ def create_tools(rule: SchedulingRule,
             identified, since a follow-up consultation appointment will be scheduled
             with that physician after all tests are completed.
 
+            If the patient said there are days — or a morning / an afternoon — on which
+            they CANNOT come in, pass them as `unavailable_dates` (and `unavailable_half_day`);
+            the tests are then placed only in windows the patient can actually attend. A
+            patient-stated unavailability is NOT a reason to refuse the call or to pick a
+            different tool: the tool to use is still the one matching what the patient
+            optimizes for.
+
         Args:
             attending_physician (str):
                 Name of the attending physician for whom the follow-up consultation
                 appointment should be scheduled after all required tests are completed.
                 This argument is mandatory and must be explicitly provided.
+            unavailable_dates (Optional[list[str]], optional):
+                Dates the patient said they CANNOT come in for the tests, as `YYYY-MM-DD`
+                strings. Pass every such date the patient mentioned; no test will be placed
+                on them (or, with `unavailable_half_day`, in that half of them). Leave it out
+                when the patient mentioned no such constraint. Defaults to None.
+            unavailable_half_day (Optional[str], optional):
+                `'am'` when the patient cannot come in the MORNING of `unavailable_dates`,
+                `'pm'` when they cannot come in the AFTERNOON. Omit it when the patient cannot
+                come at all on those dates. Defaults to None.
 
         Returns:
             dict: Mapping of test schedules with fields `test_schedule`, `test_visit_dates`,
                 `all_results_ready_at`, `unscheduled`, `fu_schedule`, `status`, and `action`.
         """
-        log(f'[TOOL CALL] follow_up_visit_min_test_schedule | attending_physician={attending_physician}', color=True)
+        log(f'[TOOL CALL] follow_up_visit_min_test_schedule | attending_physician={attending_physician} '
+            f'| unavailable_dates={unavailable_dates} | unavailable_half_day={unavailable_half_day}', color=True)
         prefix = 'Dr.'
         if prefix not in attending_physician:
             attending_physician = f'{prefix} {attending_physician}'
         result = rule.schedule_tests(
-            'visit_min', test_device_information, required_test_codes, 10
+            'visit_min', test_device_information, required_test_codes, 10,
+            unavailable=resolve_unavailable(unavailable_dates, unavailable_half_day),
         )
         fu_appn = rule.physician_filter(doctor_info, attending_physician, result['all_results_ready_at'])
         fu_appn = rule.find_earliest_time(fu_appn)
@@ -1407,7 +1607,9 @@ def create_tools(rule: SchedulingRule,
 
     
     @tool
-    def follow_up_stay_min_test_schedule(attending_physician: str) -> dict:
+    def follow_up_stay_min_test_schedule(attending_physician: str,
+                                         unavailable_dates: Optional[list[str]] = None,
+                                         unavailable_half_day: Optional[str] = None) -> dict:
         """
         Schedule the required tests to MINIMIZE the patient's idle time at the hospital —
         the dead time spent sitting and waiting between one test and the next ON THE SAME
@@ -1438,22 +1640,40 @@ def create_tools(rule: SchedulingRule,
             identified, since a follow-up consultation appointment will be scheduled
             with that physician after all tests are completed.
 
+            If the patient said there are days — or a morning / an afternoon — on which
+            they CANNOT come in, pass them as `unavailable_dates` (and `unavailable_half_day`);
+            the tests are then placed only in windows the patient can actually attend. A
+            patient-stated unavailability is NOT a reason to refuse the call or to pick a
+            different tool: the tool to use is still the one matching what the patient
+            optimizes for.
+
         Args:
             attending_physician (str):
                 Name of the attending physician for whom the follow-up consultation
                 appointment should be scheduled after all required tests are completed.
                 This argument is mandatory and must be explicitly provided.
+            unavailable_dates (Optional[list[str]], optional):
+                Dates the patient said they CANNOT come in for the tests, as `YYYY-MM-DD`
+                strings. Pass every such date the patient mentioned; no test will be placed
+                on them (or, with `unavailable_half_day`, in that half of them). Leave it out
+                when the patient mentioned no such constraint. Defaults to None.
+            unavailable_half_day (Optional[str], optional):
+                `'am'` when the patient cannot come in the MORNING of `unavailable_dates`,
+                `'pm'` when they cannot come in the AFTERNOON. Omit it when the patient cannot
+                come at all on those dates. Defaults to None.
 
         Returns:
             dict: Mapping of test schedules with fields `test_schedule`, `test_visit_dates`,
                 `all_results_ready_at`, `unscheduled`, `fu_schedule`, `status`, and `action`.
         """
-        log(f'[TOOL CALL] follow_up_stay_min_test_schedule | attending_physician={attending_physician}', color=True)
+        log(f'[TOOL CALL] follow_up_stay_min_test_schedule | attending_physician={attending_physician} '
+            f'| unavailable_dates={unavailable_dates} | unavailable_half_day={unavailable_half_day}', color=True)
         prefix = 'Dr.'
         if prefix not in attending_physician:
             attending_physician = f'{prefix} {attending_physician}'
         result = rule.schedule_tests(
-            'stay_min', test_device_information, required_test_codes, 10
+            'stay_min', test_device_information, required_test_codes, 10,
+            unavailable=resolve_unavailable(unavailable_dates, unavailable_half_day),
         )
         fu_appn = rule.physician_filter(doctor_info, attending_physician, result['all_results_ready_at'])
         fu_appn = rule.find_earliest_time(fu_appn)

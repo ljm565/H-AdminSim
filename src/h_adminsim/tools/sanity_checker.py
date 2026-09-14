@@ -267,7 +267,7 @@ class SanityChecker:
                                            `{'test_schedule': [{<device_code>: {'date', 'start', 'end'}}, ...],
                                            'fu_schedule': {<doctor_name>: {'date', 'start', 'end'}} | None,
                                            'all_results_ready_at': iso_str}`.
-            gt_patient_condition (dict): GT containing at least `required_tests` (list with `test_code`), `preference` ('throughput_max' | 'visit_min' | 'stay_min' | 'indifferent') and `attending_physician`.
+            gt_patient_condition (dict): GT containing at least `required_tests` (list with `test_code`), `preference` ('throughput_max' | 'visit_min' | 'stay_min' | 'indifferent'), `attending_physician`, and optionally `unavailable` — the dates / half-days the patient cannot attend, which every placed test must avoid and which also constrains the rule-based optimum.
             test_device_information (dict): Filtered output of `HospitalEnvironment.get_test_device_schedule` covering all required tests.
             environment (HospitalEnvironment): Provides `current_time` and `_utc_offset`.
             doctor_information (Optional[dict], optional): Dictionary of doctor data including their existing schedules.
@@ -312,6 +312,14 @@ class SanityChecker:
         prev_priority, prev_end_time = -1, None
         result_ready_iso_by_test, date_by_test = {}, {}
         utc_offset = environment._utc_offset
+
+        # Dates / half-days the patient cannot attend; every placed test must stay clear of them.
+        unavailable = normalize_unavailable(gt_patient_condition.get('unavailable'))
+        unavailable_dates = set(unavailable['day']) if unavailable else set()
+        unavailable_interval = unavailable_blocked_interval(
+            unavailable['half_day'], self._START_HOUR, self._END_HOUR
+        ) if unavailable else None
+
         try:
             for schedule_info in test_schedule:
                 tc, pr = schedule_info['code'], schedule_info['priority']
@@ -357,7 +365,17 @@ class SanityChecker:
                 )
                 if set(pred_segments) & set(fixed_segments):
                     return False, ts_codes['conflict']
-                
+
+                # Patient unavailability: the whole date is blocked, or only the half-day they cannot make
+                if date in unavailable_dates:
+                    if unavailable_interval is None:
+                        return False, ts_codes['unavailable']
+                    blocked_segments = convert_time_to_segment(
+                        self._START_HOUR, self._END_HOUR, self._TIME_UNIT, unavailable_interval
+                    )
+                    if set(pred_segments) & set(blocked_segments):
+                        return False, ts_codes['unavailable']
+
                 # Update conditions
                 result_ready_iso_by_test[tc] = schedule_info['result_ready_at']
                 date_by_test[tc] = date
@@ -385,14 +403,10 @@ class SanityChecker:
         if preference == 'indifferent':
             preference = 'throughput_max'
 
-        if rule is not None:
-            test_codes_list = list(gt_test_codes)
-            if preference == 'throughput_max':
-                optimal = rule.schedule_tests('throughput_max', test_device_information, test_codes_list, 10)
-            elif preference == 'visit_min':
-                optimal = rule.schedule_tests('visit_min', test_device_information, test_codes_list, 10)
-            elif preference == 'stay_min':
-                optimal = rule.schedule_tests('stay_min', test_device_information, test_codes_list, 10)
+        if rule is not None and preference in ('throughput_max', 'visit_min', 'stay_min'):
+            optimal = rule.schedule_tests(
+                preference, test_device_information, list(gt_test_codes), 10, unavailable=unavailable
+            )
 
         if optimal is not None:
             # Simple post-processing

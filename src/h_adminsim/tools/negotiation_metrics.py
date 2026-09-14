@@ -44,6 +44,7 @@ class NegotiationMetrics:
                  filtered_test_device_information: dict,
                  rule: "SchedulingRule",
                  environment: "HospitalEnvironment",
+                 unavailable: Optional[dict] = None,
                  time_budget_s: float = 10.0,
                  tcl_temperature: float = 1.0,
                  trigger_temperature: float = 1.0,
@@ -59,6 +60,9 @@ class NegotiationMetrics:
                                                      `{'test': {code: {'duration_hour', 'devices': {device: {'schedule': {date: [[s, e], ...]}}}}}}`.
             rule (SchedulingRule): Rule instance used to recompute the throughput_max counterfactual T.
             environment (HospitalEnvironment): Environment supplying `current_time`.
+            unavailable (Optional[dict], optional): The patient's test-time unavailability. The throughput_max
+                                                    counterfactual T is searched under it, since T is what a won
+                                                    negotiation actually books the patient into. Defaults to None.
             time_budget_s (float, optional): Wall-clock cap on the throughput_max backtracking search. Defaults to 10.0.
             tcl_temperature (float, optional): Softmax temperature for TCL (lower emphasizes the bottleneck test). Defaults to 1.0.
             trigger_temperature (float, optional): Temperature τ dividing the trigger index in the case of visit_min preference:
@@ -73,6 +77,7 @@ class NegotiationMetrics:
         self._tdi = filtered_test_device_information
         self._rule = rule
         self._environment = environment
+        self._unavailable = unavailable
         self._time_budget_s = time_budget_s
         self._avail_cache = {}
         
@@ -122,7 +127,8 @@ class NegotiationMetrics:
         `test_schedule` is normalized to a start-sorted list with hour-float start/end, matching P.
         """
         schedule = self._rule.schedule_tests(
-            'throughput_max', self._tdi, self.test_codes, self._time_budget_s
+            'throughput_max', self._tdi, self.test_codes, self._time_budget_s,
+            unavailable=self._unavailable,
         )
         schedule['test_schedule'] = sorted(
             ({**t, 'start': iso_to_hour(t['start']), 'end': iso_to_hour(t['end'])}

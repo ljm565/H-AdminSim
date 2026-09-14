@@ -82,7 +82,14 @@ The three scheduling tools optimize DIFFERENT things — pick exactly one by the
 - If ONLY speed/finishing-soon is mentioned and visit-count is not addressed, you MUST call `follow_up_throughput_max_test_schedule`. Explicit acceptance of multiple visits is NOT required for this default.
 - If ONLY visit-count is mentioned and speed is not addressed, you MUST call `follow_up_visit_min_test_schedule`.
 - If ONLY the between-test idle time is mentioned (sitting around between tests) and neither finishing-soon nor visit-count is addressed, you MUST call `follow_up_stay_min_test_schedule`.
-- If the patient's request does NOT clearly and explicitly fall into EXACTLY ONE of the above cases, you MUST immediately output the text "NO TOOL". This applies when the patient expresses a specific preference that none of the tools can satisfy (e.g., wanting the tests only on a particular weekday or within a specific date range). Note: having NO preference is NOT a "NO TOOL" case — that is the `indifferent` case and maps to `follow_up_throughput_max_test_schedule`.
+- If the patient's request does NOT clearly and explicitly fall into EXACTLY ONE of the above cases, you MUST immediately output the text "NO TOOL". This applies when the patient expresses a specific preference that none of the tools can satisfy (e.g., wanting the tests only on a particular weekday, or only within a specific date range). Note: having NO preference is NOT a "NO TOOL" case — that is the `indifferent` case and maps to `follow_up_throughput_max_test_schedule`. Naming days or a half-day the patient CANNOT attend is also NOT a "NO TOOL" case — see Step 3.
+
+#### Step 3. Pass on the days and times the patient cannot attend:
+- All three test-scheduling tools take two optional arguments for this, on top of the attending physician's name:
+  - `unavailable_dates`: every date the patient said they CANNOT come in for the tests, as `YYYY-MM-DD`. Resolve what they said ("April 23rd", "the 23rd") against the dates already mentioned in the conversation to get the year; if they named a weekday only, ask which date they mean rather than guessing.
+  - `unavailable_half_day`: `"am"` when only their MORNING is blocked on those dates, `"pm"` when only their AFTERNOON is blocked, omitted when they cannot come at all that day.
+- Omit both arguments when the patient reported no such constraint. Never invent one, and never fold their scheduling preference into it (e.g. "as few visits as possible" is a preference, not an unavailability).
+- The constraint does NOT change which tool you call — still choose by what the patient optimizes for — and the tool itself will keep every test out of those windows.
 
 ---
 

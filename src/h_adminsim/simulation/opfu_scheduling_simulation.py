@@ -2,6 +2,7 @@ import re
 import json
 import random
 from copy import deepcopy
+from collections import defaultdict
 from patientsim import PatientAgent
 from decimal import Decimal, getcontext
 from langchain.agents import AgentExecutor
@@ -19,6 +20,8 @@ from h_adminsim.registry import (
     SCHEDULE_STATUS,
     OPFU_PREFERENCE_PHRASE_STAFF,
     OPFU_PREFERENCE_PHRASE_PATIENT,
+    OPFU_PROPOSAL_PHRASE_STAFF,
+    OPFU_UNAVAILABLE_PHRASE_STAFF,
 )
 from h_adminsim.tools.callback import TokenUsageCallback
 from h_adminsim.tools.sanity_checker import SanityChecker
@@ -54,6 +57,12 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         'This is the staff\'s response: "{utterance}"\n\n'
         "Reply now, staying strictly within your negotiation behavior and persona above."
     )
+    # Lead-in for the closing confirmation. The schedule itself is rendered from the booking rather than
+    # taken from the persuasion agent's own wording, so this keeps 'accepted' and 'forced' distinguishable.
+    NEGOTIATION_CLOSING_LEAD = {
+        'accepted': "Great — here's how I'll arrange it, then.",
+        'forced': "Since getting your results back early matters for your care, I'll go ahead and arrange it this way.",
+    }
 
     def __init__(self,
                  patient_agent: PatientAgent,
@@ -103,7 +112,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
 
         Args:
             patient_condition (dict): Patient ground-truth condition including current preference,
-                                      occupation, and hospital distance.
+                                      occupation, hospital distance, and test-time unavailability.
             rejected_preference (str): The preference the staff agent proposed in the previous turn.
 
         Returns:
@@ -113,9 +122,10 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         return {
             'preference': preference,
             'preference_desc': OPFU_PREFERENCE_PHRASE_PATIENT[preference],
-            'rejected_preference': OPFU_PREFERENCE_PHRASE_STAFF[rejected_preference],
+            'rejected_preference': OPFU_PROPOSAL_PHRASE_STAFF[rejected_preference],
             'occupation': patient_condition.get('occupation'),
             'distance': patient_condition.get('distance'),
+            'unavailable': describe_unavailable(patient_condition.get('unavailable')),
         }
 
 
@@ -129,6 +139,43 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         so it is fetched from the MAS on demand rather than cached as instance state.
         """
         return self.admin_staff_mas.get_agent('follow_up_visit_scheduling')
+
+
+    @staticmethod
+    def _summarize_schedule_for_negotiation(schedule: dict) -> str:
+        """
+        Plain-language summary of one candidate schedule for the persuasion prompt.
+
+        The persuasion agent is otherwise handed raw slot dicts in decimal hours and has to re-derive,
+        every round, how many visit days each schedule takes and which one finishes first — exactly the
+        step its pitches get wrong (claiming the patient's own schedule is the faster one). Pre-rendering
+        those facts keeps them out of the model's hands.
+
+        Args:
+            schedule (dict): A `pred_schedule`-shaped schedule (`test_schedule` as a start-sorted list
+                             with hour-float `start` / `end`), i.e. the metrics' `_P` or `_T`.
+
+        Returns:
+            str: Visit days with clock times, the result-ready moment, and same-day idle waiting.
+        """
+        tests = schedule.get('test_schedule') or []
+        if not tests:
+            return 'No test could be placed.'
+
+        def _clock(hour):
+            return hour_to_hhmmss(float(hour))[:5]
+
+        by_date = defaultdict(list)
+        for test in sorted(tests, key=lambda t: (t['date'], t['start'])):
+            by_date[test['date']].append(f"{test['name']} {_clock(test['start'])}-{_clock(test['end'])}")
+
+        days = '; '.join(f"{date} ({', '.join(items)})" for date, items in by_date.items())
+        ready = schedule.get('all_results_ready_at')
+        ready_text = f"{iso_to_date(ready)} {_clock(iso_to_hour(ready))}" if ready else 'unknown'
+        idle = schedule.get('idle_waiting_time') or 0
+        return (f"{len(by_date)} visit day(s) — {days}. "
+                f"All results ready by {ready_text}. "
+                f"Idle waiting between same-day tests: {idle} hour(s).")
 
 
     def init_negotiation_agent(self,
@@ -169,7 +216,9 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                         'patient_preference_explanation': OPFU_PREFERENCE_PHRASE_STAFF[patient_preference],
                         'dialogue_history': preprocess_dialog(self.dialog_history['test_scheduling'][:-1]),
                         'time_unit': self._TIME_UNIT,
-                        **negotiation_metrics
+                        **negotiation_metrics,
+                        '_P_summary': self._summarize_schedule_for_negotiation(negotiation_metrics['_P']),
+                        '_T_summary': self._summarize_schedule_for_negotiation(negotiation_metrics['_T']),
                     },
                 },
             )
@@ -446,6 +495,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                 
                 # Allocate schedule information
                 text_dict['preference_type'] = None
+                text_dict['applied_unavailable'] = None   # the reasoning fallback reads the constraint from its prompt, not as a structured argument
                 text_dict['test_schedule'] = test_schedule
                 text_dict['test_visit_dates'] = list(test_visit_dates)
                 text_dict['idle_waiting_time'] = calculate_idle_wait(test_schedule)
@@ -489,11 +539,12 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         elif strategy == 'tool_calling':
             schedule = {
                 'preference_type': data['preference_type'],
-                'test_schedule': [], 
-                'test_visit_dates': data['test_visit_dates'], 
+                'test_schedule': [],
+                'test_visit_dates': data['test_visit_dates'],
                 'idle_waiting_time': data['idle_waiting_time'],
-                'fu_schedule': None, 
-                'all_results_ready_at': data['all_results_ready_at']
+                'fu_schedule': None,
+                'all_results_ready_at': data['all_results_ready_at'],
+                'applied_unavailable': data['applied_unavailable'],
             }
             
             # Follow-up visit schedule post-processing
@@ -515,6 +566,32 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                 schedule['test_schedule'].append(tmp_schedule)
             schedule['test_schedule'].sort(key=lambda x: (x['date'], x['start']))
             return schedule
+
+
+    def _unavailable_prompt_field(self, known_condition: dict) -> str:
+        """
+        Fill the reasoning fallback's "patient unavailability" section.
+
+        The tool-calling path gets this constraint as tool arguments the agent extracts from the dialogue;
+        the reasoning fallback has no such arguments, so it is given either the booking's stored constraint
+        (rescheduling / waiting-list re-runs, where no patient is present to restate it) or the conversation
+        itself, from which the staff must read what the patient said.
+
+        Args:
+            known_condition (dict): Patient conditions known to the staff.
+
+        Returns:
+            str: Text for the prompt's `{UNAVAILABLE}` placeholder.
+        """
+        if 'unavailable' in known_condition:
+            return describe_unavailable(known_condition['unavailable'], audience='staff')
+
+        dialog = preprocess_dialog(self.dialog_history.get('test_scheduling') or [])
+        if not dialog:
+            return OPFU_UNAVAILABLE_PHRASE_STAFF['none']
+        return ('Read it off the conversation below: honor every date — or morning / afternoon of a date — the '
+                'patient said they cannot come in, and treat it as no constraint if they mentioned none.\n'
+                f'```\n{dialog}\n```')
 
 
     def _get_rescheduled_test_result(self,
@@ -550,14 +627,14 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             fhir_integration=self.fhir_integration and test_device_information is None,
         )
 
-        # The agent picks the follow-up test-scheduling tool (`throughput_max`/`visit_min`/`stay_min`) by the booking's
-        # original preference (`indifferent` is routed to `follow_up_throughput_max_test_schedule` as the hospital default)
+        # The agent picks the follow-up test-scheduling tool
         _schedule_client = self.scheduling_agent.build_agent(
             rule=self.rules,
             doctor_info=filtered_doctor_information,
             only_schedule_tool=True,
             required_test_codes=required_test_codes,
             test_device_information=filtered_test_device_information,
+            patient_unavailable=known_condition.get('unavailable'),
         )
         # Express the original preference and re-supply required tests for the reasoning fallback
         known_condition = {
@@ -612,9 +689,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         def _strictly_earlier(new_t, old_t):
             return new_t is not None and old_t is not None and compare_iso_time(old_t, new_t) and new_t != old_t
 
-        # Preference-based improvement: `visit_min` fewer visit dates (then earlier results), `stay_min` less idle
-        # waiting between same-day tests, `throughput_max` (default) earlier result-ready time.
-        # `indifferent` follows the hospital-friendly default policy, so it uses the same criterion as `throughput_max`.
+        # Preference-based improvement
         preference = original_schedule.get('preference')
         if preference == 'indifferent':
             preference = 'throughput_max'
@@ -650,6 +725,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             'preference': original_schedule.get('preference'),
             'preferred_doctor': original_schedule.get('preferred_doctor'),
             'valid_from': original_schedule.get('valid_from'),
+            'unavailable': original_schedule.get('unavailable'),
             'test': new_schedule['test_schedule'],
             'idle_waiting_time': new_schedule['idle_waiting_time'],
             'last_updated_time': self.environment.current_time,
@@ -811,7 +887,8 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
     def _calculate_negotiation_metrics(self,
                                        patient_preferred_schedule: dict,
                                        filtered_test_device_information: dict,
-                                       preference: Optional[str] = None) -> dict:
+                                       preference: Optional[str] = None,
+                                       unavailable: Optional[dict] = None) -> dict:
         """
         Compute the negotiation trigger metrics for the patient's (hospital-conflicting) preference
         schedule and let the staff policy decide whether to negotiate.
@@ -828,6 +905,9 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                                                   own `preference_type`; pass the GT preference explicitly
                                                   when computing for a non-negotiated schedule whose
                                                   `preference_type` may be missing (e.g. reasoning fallback).
+            unavailable (Optional[dict], optional): The patient's test-time unavailability, so the throughput_max
+                                                    counterfactual the staff argues for (and books on a won
+                                                    negotiation) stays attendable. Defaults to None.
 
         Returns:
             dict: The negotiation metrics (`preference`, `pci`, `tcl`, `ti`, `do_negotiate`, ...).
@@ -841,6 +921,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             filtered_test_device_information=filtered_test_device_information,
             rule=self.rules,
             environment=self.environment,
+            unavailable=unavailable,
             tcl_temperature=self.negotiation_policy.tcl_temperature,
             trigger_temperature=self.negotiation_policy.trigger_temperature_for(preference),
             negotiation_trigger_threshold=self.negotiation_policy.negotiation_trigger_threshold,
@@ -943,6 +1024,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             'test_visit_dates': list(t.get('test_visit_dates') or []),
             'idle_waiting_time': t.get('idle_waiting_time'),
             'all_results_ready_at': t.get('all_results_ready_at'),
+            'applied_unavailable': t.get('applied_unavailable'),
             'fu_schedule': None,
         }
         latest = pred['all_results_ready_at']
@@ -1087,6 +1169,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                 CURRENT_TIME=current_time,
                 DEPARTMENT=department,
                 PREFERENCE=known_condition['patient_intention'],
+                UNAVAILABLE=self._unavailable_prompt_field(known_condition),
                 DAY=self._DAY,
                 TESTS=json.dumps(known_condition['test'], indent=2),
                 TEST_DEVICES=json.dumps(filtered_test_device_information, indent=2),
@@ -1247,6 +1330,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         # Iterate over multiple preferences if exists
         tries = 0
         preference_reject_prob = 0.0 if len(gt_data) <= 1 else self.preference_rejection_prob
+        booked_preference = gt_data[0]['preference']
         try:
             # Preference iteration
             for i, gt_patient_condition in enumerate(gt_data):
@@ -1257,33 +1341,31 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                 negotiation_outcome = 'none'   # 'accepted' | 'forced' | 'auto' | 'none'
                 negotiation_metrics = self._init_negotiation_metrics(gt_patient_condition.get('preference'))
 
-                # For the rejection scenario
+                # For the rejection scenario: the patient rejects what the staff actually arranged last time
                 if i != 0:
                     self._update_patient_system_prompt(
                         patient_condition=gt_patient_condition,
-                        rejected_preference=gt_data[i-1]['preference']
+                        rejected_preference=booked_preference
                     )
 
                 while 1:
-                    # Obtain response from patient (during negotiation, tell the patient the current round so it can escalate irritation)
-                    neg_prompt = None
+                    # Active negotiation
                     if negotiating_active:
+                        # Patient negotiation response (the round number lets the patient escalate its irritation)
                         neg_prompt = self._wrap_negotiation_turn(
                             self.PATIENT_NEGOTIATION_TURN,
                             negotiation_round,
                             self.dialog_history['test_scheduling'][-1]['content'],
                         )
-                    patient_response = self._patient_turn(
-                        'test_scheduling',
-                        f"{gt_patient_condition['preference']},{gt_patient_condition['distance']}",
-                        prompt=neg_prompt,
-                        **merged_patient_kwargs,
-                    )
-                    patient_token_stats = self.patient_agent.client.token_usages
+                        patient_response = self._patient_turn(
+                            'test_scheduling',
+                            f"{gt_patient_condition['preference']},{gt_patient_condition['distance']}",
+                            prompt=neg_prompt,
+                            **merged_patient_kwargs,
+                        )
+                        patient_token_stats = self.patient_agent.client.token_usages
 
-                    # Active negotiation: staff persuades each round until the patient agrees (`#ACCEPT`) or
-                    # the staff force-closes after enough refusal (`#FORCE_ACCEPT`).
-                    if negotiating_active:
+                        # Staff negotiation response
                         pitch = self._negotiating(
                             patient_preference=gt_patient_condition['preference'],
                             negotiation_metrics=negotiation_metrics,
@@ -1295,13 +1377,15 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                             # Negotiation closed: patient conceded ('accepted') or staff imposed it ('forced').
                             negotiating_active, negotiation_done = False, True
                             negotiation_outcome = 'forced' if '#FORCE_ACCEPT' in pitch.response else 'accepted'
-                            pitch.response = pitch.response.replace('#FORCE_ACCEPT', '').replace('#ACCEPT', '').strip() \
-                                or 'Great, I will book the earliest schedule for you.'
-                            self._record_staff_turn('test_scheduling', pitch)
                             pred_schedule = self._throughput_pred_from_metrics(
                                 negotiation_metrics, doctor_information,
                                 staff_known_data['department'], staff_known_data['attending_physician'],
                             )
+                            pitch.response = self.NEGOTIATION_CLOSING_LEAD[negotiation_outcome] + ' ' + self._render_staff_reply(
+                                {'type': 'tool', 'result': pred_schedule},
+                                'test_scheduling', gt_patient_condition, staff_known_data, natural_express,
+                            )
+                            self._record_staff_turn('test_scheduling', pitch)
                             break
                         else:
                             # Still resisting: record the pitch and let the patient respond next round.
@@ -1311,13 +1395,22 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                                 raise TurnLimitReached
                             continue
 
-                    # Scheduling from staff
-                    output, prediction = self._staff_turn(patient_response, staff_turn)
+                    # Regular turn: the patient speaks, then the staff schedules
+                    else:
+                        patient_response = self._patient_turn(
+                            'test_scheduling',
+                            f"{gt_patient_condition['preference']},{gt_patient_condition['distance']}",
+                            **merged_patient_kwargs,
+                        )
+                        patient_token_stats = self.patient_agent.client.token_usages
 
-                    # Token accounting
-                    staff_token_stats = self._accumulate_staff_tokens(
-                        prediction, staff_token_stats, staff_token_callback
-                    )
+                        # Scheduling from staff
+                        output, prediction = self._staff_turn(patient_response, staff_turn)
+
+                        # Token accounting
+                        staff_token_stats = self._accumulate_staff_tokens(
+                            prediction, staff_token_stats, staff_token_callback
+                        )
 
                     # Start negotiating (once per preference): staff proposed the patient's preferred schedule -> enter the persuasion sub-loop.
                     if (
@@ -1332,6 +1425,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                         negotiation_metrics = self._calculate_negotiation_metrics(
                             patient_preferred_schedule=prediction['result'],
                             filtered_test_device_information=filtered_test_device_information,
+                            unavailable=gt_patient_condition['unavailable'],
                         )
                         action = negotiation_metrics['negotiation_action']
 
@@ -1428,6 +1522,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                                     patient_preferred_schedule=pred_schedule,
                                     filtered_test_device_information=filtered_test_device_information,
                                     preference=gt_patient_condition['preference'],
+                                    unavailable=gt_patient_condition['unavailable'],
                                 )
                             break
 
@@ -1462,8 +1557,10 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                     break
 
                 # Preference rejection logic
+                booked_preference = 'throughput_max' \
+                    if (negotiation_done or gt_data[i]['preference'] == 'indifferent') else gt_data[i]['preference']
                 next_pref_differs = (i != len(gt_data) - 1) and \
-                    (gt_data[i + 1]['preference'] != gt_data[i]['preference']) and \
+                    (gt_data[i + 1]['preference'] != booked_preference) and \
                         (gt_data[i + 1]['preference'] != 'indifferent')     # `indifferent` preference conflicts with rejection logic semantically
                 if random.random() < preference_reject_prob and next_pref_differs and len(pred_schedule['test_visit_dates']) > 1:
                     preference_reject_prob *= self.preference_rejection_prob_decay
@@ -1523,9 +1620,10 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                     'date': fu_schedule['date'] if fu_schedule else None,
                     'schedule': [fu_schedule['start'], fu_schedule['end']] if fu_schedule else None,
                     'patient_intention': staff_known_data['patient_intention'],
-                    'preference': gt_data[i].get('preference'),
+                    'preference': 'throughput_max' if negotiation_done else gt_data[i].get('preference'),
                     'preferred_doctor': gt_data[i].get('preferred_doctor'),
                     'valid_from': gt_data[i].get('valid_from'),
+                    'unavailable': gt_data[i].get('unavailable'),   # kept so later re-runs honor the same constraint
                     'test': pred_schedule['test_schedule'],
                     'idle_waiting_time': pred_schedule['idle_waiting_time'],
                     'negotiation_metrics': negotiation_metrics,

@@ -27,6 +27,16 @@ SCHEDULE_STATUS = {
     'cancelled': 'cancelled',
     'not_yet': 'not_yet',
 }
+HALF_DAY_BOUNDARY_HOUR = 12.0
+HALF_DAY_ALIASES = {
+    'am': 'am', 'a.m.': 'am', 'morning': 'am', 'mornings': 'am',
+    'pm': 'pm', 'p.m.': 'pm', 'afternoon': 'pm', 'afternoons': 'pm',
+}
+HALF_DAY_WORD = {'am': 'morning', 'pm': 'afternoon'}
+HALF_DAY_RANGE = {
+    'am': f'from opening until {int(HALF_DAY_BOUNDARY_HOUR)}:00',
+    'pm': f'from {int(HALF_DAY_BOUNDARY_HOUR)}:00 until closing',
+}
 DEPARTMENT_NORMALIZATION = {
     'rheumatory': 'rheumatology',
     'pulmonology': 'pulmonary',

@@ -12,6 +12,7 @@ Test scheduling responsibilities:
     * ``depends_on``: each predecessor's result must be ready (end + ``result_hours``) before the dependent test starts.
     * ``avoid_same_day``: listed tests must not share a date with the current test.
 - Never overlap the chosen slot with the device's already-occupied intervals.
+- Never place a test on a date the patient cannot attend, nor inside the half of a date they cannot attend (morning: opening hour until 12:00; afternoon: 12:00 until closing hour). This is a hard constraint that narrows the slots to optimize over; it never changes which preference is being optimized.
 - Partial scheduling is allowed: if a particular test cannot be fit anywhere in the provided horizon while satisfying every constraint, omit it from the output (do not invent a slot). Omitted tests are re-scheduled by a later process.
 
 Optimization based on patient preference:
