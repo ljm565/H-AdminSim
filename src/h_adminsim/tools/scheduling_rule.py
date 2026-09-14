@@ -1,8 +1,6 @@
-import re
 import time
 from copy import deepcopy
 from decimal import Decimal
-from datetime import datetime
 from collections import defaultdict
 from langchain.tools import tool
 from langchain.agents import AgentExecutor
@@ -1070,13 +1068,6 @@ class SchedulingRule:
         return output
 
 
-_MONTH_TO_NUMBER = {
-    name: number
-    for number in range(1, 13)
-    for name in (datetime(2000, number, 1).strftime('%B').lower(), datetime(2000, number, 1).strftime('%b').lower())
-}
-
-
 def _known_schedule_dates(test_device_information: Optional[dict]) -> set:
     """
     Every date the hospital's test devices are scheduled over — the horizon a patient-stated date must land in.
@@ -1094,76 +1085,58 @@ def _known_schedule_dates(test_device_information: Optional[dict]) -> set:
     return dates
 
 
-def _extract_month_day(raw_date: str) -> Optional[tuple]:
+def _resolve_unavailable_dates(raw_dates: Union[str, list, None], known_dates: set) -> tuple:
     """
-    Pull a (month, day) pair out of a loosely-written date.
+    Split the dates a staff agent passed into those the scheduling horizon actually contains and those it does not.
 
-    Handles the forms a staff agent realistically produces from a spoken date — `2025-04-23`,
-    `04/23`, `4-23-2025`, `April 23`, `23 Apr` — so a year the patient never said cannot make
-    the constraint silently miss.
-
-    Args:
-        raw_date (str): Date as written by the agent.
-
-    Returns:
-        Optional[tuple[int, int]]: `(month, day)`, or None when nothing date-like is found.
-    """
-    iso = re.search(r'(\d{4})-(\d{1,2})-(\d{1,2})', raw_date)
-    if iso:
-        return int(iso.group(2)), int(iso.group(3))
-
-    named = re.search(r'([A-Za-z]{3,9})\.?\s+(\d{1,2})', raw_date)
-    if named and named.group(1).lower() in _MONTH_TO_NUMBER:
-        return _MONTH_TO_NUMBER[named.group(1).lower()], int(named.group(2))
-
-    named_reversed = re.search(r'(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?([A-Za-z]{3,9})', raw_date)
-    if named_reversed and named_reversed.group(2).lower() in _MONTH_TO_NUMBER:
-        return _MONTH_TO_NUMBER[named_reversed.group(2).lower()], int(named_reversed.group(1))
-
-    numeric = re.search(r'\b(\d{1,2})[/-](\d{1,2})\b', raw_date)
-    if numeric:
-        return int(numeric.group(1)), int(numeric.group(2))
-
-    return None
-
-
-def _resolve_unavailable_dates(raw_dates: Union[str, list, None], known_dates: set) -> list:
-    """
-    Resolve the dates a staff agent passed into the ISO dates of the scheduling horizon.
+    A date counts only as an exact `YYYY-MM-DD` match. The agent is required to take the year from the
+    patient rather than invent one, so a date that is not in the booking window — a guessed year, or a
+    month and day with no year at all — is handed back for clarification instead of being quietly
+    mapped onto whichever horizon date happens to share its month and day.
 
     Args:
         raw_dates (Union[str, list, None]): Dates as the agent wrote them (a single string is accepted too).
         known_dates (set): ISO dates covered by the device schedules.
 
     Returns:
-        list[str]: Matching ISO dates. An unrecognizable date is kept verbatim, where it simply
-                   matches no schedule date and therefore blocks nothing.
+        tuple[list[str], list[str]]: Dates found in the horizon, and the ones that were not.
     """
     if not raw_dates:
-        return []
+        return [], []
     if isinstance(raw_dates, str):
         raw_dates = [raw_dates]
 
-    by_month_day = defaultdict(list)
-    for date in known_dates:
-        try:
-            parsed = str_to_datetime(f'{date}T00:00:00')
-        except ValueError:
-            continue
-        by_month_day[(parsed.month, parsed.day)].append(date)
-
-    resolved = set()
+    matched, unmatched = set(), []
     for raw_date in raw_dates:
         raw_date = str(raw_date).strip()
         if not raw_date:
             continue
-        if raw_date in known_dates or not known_dates:
-            resolved.add(raw_date)
-            continue
-        month_day = _extract_month_day(raw_date)
-        resolved.update(by_month_day.get(month_day, [raw_date]) if month_day else [raw_date])
+        # With no horizon to check against, there is nothing to verify the date against: take it as given.
+        if not known_dates or raw_date in known_dates:
+            matched.add(raw_date)
+        elif raw_date not in unmatched:
+            unmatched.append(raw_date)
 
-    return sorted(resolved)
+    return sorted(matched), unmatched
+
+
+def _unavailable_clarification(unresolved_dates: list) -> dict:
+    """
+    Tool result telling the caller to go back to the patient for a full date.
+
+    Args:
+        unresolved_dates (list[str]): Dates the agent passed that the booking window does not contain.
+
+    Returns:
+        dict: A `clarification` action carrying the patient-facing question.
+    """
+    listed = ', '.join(f'"{d}"' for d in unresolved_dates)
+    return {
+        'action': 'clarification',
+        'unresolved_dates': unresolved_dates,
+        'message': (f"Sorry, I have {listed} down for the day(s) you can't come in, but that is not a date in "
+                    "our booking window. Could you give me the full date, including the year?"),
+    }
 
 
 def create_tools(rule: SchedulingRule,
@@ -1181,13 +1154,16 @@ def create_tools(rule: SchedulingRule,
     known_schedule_dates = _known_schedule_dates(test_device_information)
 
     def resolve_unavailable(unavailable_dates, unavailable_half_day):
-        """Bound constraint when the caller supplied one, else the constraint the agent extracted from the patient."""
+        """
+        Bound constraint when the caller supplied one, else the constraint the agent extracted from the patient.
+
+        Returns `(unavailable, unresolved_dates)`; a non-empty `unresolved_dates` means the agent named a
+        date the booking window does not contain, and the caller must ask the patient instead of scheduling.
+        """
         if patient_unavailable is not None:
-            return normalize_unavailable(patient_unavailable)
-        return normalize_unavailable({
-            'day': _resolve_unavailable_dates(unavailable_dates, known_schedule_dates),
-            'half_day': unavailable_half_day,
-        })
+            return normalize_unavailable(patient_unavailable), []
+        resolved, unresolved = _resolve_unavailable_dates(unavailable_dates, known_schedule_dates)
+        return normalize_unavailable({'day': resolved, 'half_day': unavailable_half_day}), unresolved
 
     @tool
     def physician_filter_tool(preferred_doctor: str, min_time: Optional[str] = None, max_time: Optional[str] = None) -> dict:
@@ -1508,7 +1484,12 @@ def create_tools(rule: SchedulingRule,
                 Dates the patient said they CANNOT come in for the tests, as `YYYY-MM-DD`
                 strings. Pass every such date the patient mentioned; no test will be placed
                 on them (or, with `unavailable_half_day`, in that half of them). Leave it out
-                when the patient mentioned no such constraint. Defaults to None.
+                when the patient mentioned no such constraint.
+                The YEAR must be one the patient stated out loud — never supply it yourself
+                from today's date, from earlier dates in the conversation, or from the
+                appointment horizon. If the patient gave only a month and a day, a weekday, or
+                a relative phrase, ask them for the full date first instead of calling this
+                tool with a guessed year. Defaults to None.
             unavailable_half_day (Optional[str], optional):
                 `'am'` when the patient cannot come in the MORNING of `unavailable_dates`,
                 `'pm'` when they cannot come in the AFTERNOON. Omit it when the patient cannot
@@ -1523,9 +1504,11 @@ def create_tools(rule: SchedulingRule,
         prefix = 'Dr.'
         if prefix not in attending_physician:
             attending_physician = f'{prefix} {attending_physician}'
+        unavailable, unresolved_dates = resolve_unavailable(unavailable_dates, unavailable_half_day)
+        if unresolved_dates:
+            return _unavailable_clarification(unresolved_dates)
         result = rule.schedule_tests(
-            'throughput_max', test_device_information, required_test_codes, 10,
-            unavailable=resolve_unavailable(unavailable_dates, unavailable_half_day),
+            'throughput_max', test_device_information, required_test_codes, 10, unavailable=unavailable
         )
         fu_appn = rule.physician_filter(doctor_info, attending_physician, result['all_results_ready_at'])
         fu_appn = rule.find_earliest_time(fu_appn)
@@ -1580,7 +1563,12 @@ def create_tools(rule: SchedulingRule,
                 Dates the patient said they CANNOT come in for the tests, as `YYYY-MM-DD`
                 strings. Pass every such date the patient mentioned; no test will be placed
                 on them (or, with `unavailable_half_day`, in that half of them). Leave it out
-                when the patient mentioned no such constraint. Defaults to None.
+                when the patient mentioned no such constraint.
+                The YEAR must be one the patient stated out loud — never supply it yourself
+                from today's date, from earlier dates in the conversation, or from the
+                appointment horizon. If the patient gave only a month and a day, a weekday, or
+                a relative phrase, ask them for the full date first instead of calling this
+                tool with a guessed year. Defaults to None.
             unavailable_half_day (Optional[str], optional):
                 `'am'` when the patient cannot come in the MORNING of `unavailable_dates`,
                 `'pm'` when they cannot come in the AFTERNOON. Omit it when the patient cannot
@@ -1595,9 +1583,11 @@ def create_tools(rule: SchedulingRule,
         prefix = 'Dr.'
         if prefix not in attending_physician:
             attending_physician = f'{prefix} {attending_physician}'
+        unavailable, unresolved_dates = resolve_unavailable(unavailable_dates, unavailable_half_day)
+        if unresolved_dates:
+            return _unavailable_clarification(unresolved_dates)
         result = rule.schedule_tests(
-            'visit_min', test_device_information, required_test_codes, 10,
-            unavailable=resolve_unavailable(unavailable_dates, unavailable_half_day),
+            'visit_min', test_device_information, required_test_codes, 10, unavailable=unavailable
         )
         fu_appn = rule.physician_filter(doctor_info, attending_physician, result['all_results_ready_at'])
         fu_appn = rule.find_earliest_time(fu_appn)
@@ -1656,7 +1646,12 @@ def create_tools(rule: SchedulingRule,
                 Dates the patient said they CANNOT come in for the tests, as `YYYY-MM-DD`
                 strings. Pass every such date the patient mentioned; no test will be placed
                 on them (or, with `unavailable_half_day`, in that half of them). Leave it out
-                when the patient mentioned no such constraint. Defaults to None.
+                when the patient mentioned no such constraint.
+                The YEAR must be one the patient stated out loud — never supply it yourself
+                from today's date, from earlier dates in the conversation, or from the
+                appointment horizon. If the patient gave only a month and a day, a weekday, or
+                a relative phrase, ask them for the full date first instead of calling this
+                tool with a guessed year. Defaults to None.
             unavailable_half_day (Optional[str], optional):
                 `'am'` when the patient cannot come in the MORNING of `unavailable_dates`,
                 `'pm'` when they cannot come in the AFTERNOON. Omit it when the patient cannot
@@ -1671,9 +1666,11 @@ def create_tools(rule: SchedulingRule,
         prefix = 'Dr.'
         if prefix not in attending_physician:
             attending_physician = f'{prefix} {attending_physician}'
+        unavailable, unresolved_dates = resolve_unavailable(unavailable_dates, unavailable_half_day)
+        if unresolved_dates:
+            return _unavailable_clarification(unresolved_dates)
         result = rule.schedule_tests(
-            'stay_min', test_device_information, required_test_codes, 10,
-            unavailable=resolve_unavailable(unavailable_dates, unavailable_half_day),
+            'stay_min', test_device_information, required_test_codes, 10, unavailable=unavailable
         )
         fu_appn = rule.physician_filter(doctor_info, attending_physician, result['all_results_ready_at'])
         fu_appn = rule.find_earliest_time(fu_appn)

@@ -1138,6 +1138,11 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                         prediction['tmp_flag'] = 'retrieve'
                     return prediction
 
+                elif res['action'] == 'clarification':
+                    prediction['type'] = 'text'
+                    prediction['result'] = res['message']
+                    return prediction
+
                 elif res['action'] == 'scheduling':
                     filtered_doctor_information = self.environment.get_doctor_schedule(
                         doctor_information=doctor_information,
