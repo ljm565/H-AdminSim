@@ -1376,7 +1376,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         try:
             # Preference iteration
             for i, gt_patient_condition in enumerate(gt_data):
-                negotiation_ready = False
+                negotiation_ready = bool(staff_known_data.get('test'))  # Because of preference rejection logic
                 negotiating_active = False
                 negotiation_done = False
                 negotiation_round = 0
