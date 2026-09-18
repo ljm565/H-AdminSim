@@ -44,8 +44,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
     REJECTION_PROMPT = 'opfu_schedule_patient_rejected_system.txt'
     NOT_FOUND_MESSAGE = "Sorry, we couldn't find your scheduled tests. Could you please check your details again (patient and doctor names)?"
 
-    # Per-round wrappers that hand each negotiation agent the current round + the other party's last line.
-    # Filled with `_wrap_negotiation_turn` (brace-safe), so an utterance containing `{`/`}` cannot break it.
+    # Per-round wrappers that hand each negotiation agent the current round + the other party's last line
     STAFF_NEGOTIATION_TURN = (
         "[Negotiation round {round}. If the patient is still refusing once you have reached your "
         "forced-close round, arrange the suggesting schedule anyway and end your message with #FORCE_ACCEPT.]\n\n"
@@ -57,11 +56,19 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         'This is the staff\'s response: "{utterance}"\n\n'
         "Reply now, staying strictly within your negotiation behavior and persona above."
     )
-    # Lead-in for the closing confirmation. The schedule itself is rendered from the booking rather than
-    # taken from the persuasion agent's own wording, so this keeps 'accepted' and 'forced' distinguishable.
+
+    # Lead-in for the closing confirmation
     NEGOTIATION_CLOSING_LEAD = {
         'accepted': "Great — here's how I'll arrange it, then.",
         'forced': "Since getting your results back early matters for your care, I'll go ahead and arrange it this way.",
+    }
+
+    # Negotiation outcome -> the patient's closing persona
+    NEGOTIATION_CLOSINGS = {
+        'none': 'satisfied',
+        'auto': 'satisfied',
+        'accepted': 'conceded',
+        'forced': 'imposed',
     }
 
     def __init__(self,
@@ -1613,7 +1620,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                         'test_scheduling',
                         f"{gt_data[i]['preference']},{gt_data[i]['distance']}",
                         natural_express=natural_express,
-                        satisfied=(negotiation_round == 0),   # negotiated/forced into throughput -> reluctant, not satisfied
+                        closing=self.NEGOTIATION_CLOSINGS[negotiation_outcome],
                         **merged_patient_kwargs,
                     )
                     patient_token_stats = self.patient_agent.client.token_usages

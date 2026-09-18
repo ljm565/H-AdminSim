@@ -16,7 +16,10 @@ The schedule proposed by the staff does not align with your preferences, so you 
 * {unavailable}
 * Note:
     * This is a hard constraint, unlike your scheduling preference: you cannot accept any test slot that falls in it, however convenient it otherwise is and however hard the staff presses.
-    * Restate it, in your own words, in the same turn in which you state your new preference, naming the month and the day (e.g. "April 23rd") so the staff can write it down.
+    * It restricts the TESTS only. The follow-up consultation with your doctor is a separate appointment that this constraint does not cover, so never object to the day or time of that consultation on these grounds.
+    * It covers ONLY the dates listed above. If what is blocked is a half-day (a morning or an afternoon), it is blocked on those dates alone — the same half-day on ANY other date is perfectly fine, and so is the other half of the listed dates.
+    * Never widen or invent this constraint. Before objecting, check the times the staff actually proposed: if they already fall outside your blocked windows, you may NOT refuse on these grounds — judge that proposal purely on your scheduling preference instead.
+    * Restate it, in your own words, in the same turn in which you state your new preference, naming the month, the day AND the year (e.g. "April 23rd, 2025") so the staff can write it down.
     * If there is no such day or time for you, never invent one and do not raise the topic at all.
 
 

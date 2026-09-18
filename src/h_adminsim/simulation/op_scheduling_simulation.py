@@ -55,6 +55,14 @@ class OPSchedulingSimulation(OPSimulation, ABC):
     # declared by subclasses because it names what they book (appointments vs tests).
     NOT_FOUND_MESSAGE: str
 
+    # --- Shared class attributes -------------------------------------------
+    # How the schedule was settled -> the closing user prompt the patient reacts with.
+    CLOSING_PERSONAS = {
+        'satisfied': 'natural_end_phrase',
+        'conceded': 'conceded_end_phrase',
+        'imposed': 'unsatisfied_end_phrase',
+    }
+
     # --- Instance state the subclass `__init__` is expected to set ---------
     _chief_agent_name: str
     environment: "HospitalEnvironment"
@@ -572,7 +580,7 @@ class OPSchedulingSimulation(OPSimulation, ABC):
                               key: str,
                               label: str,
                               natural_express: bool = True,
-                              satisfied: bool = True,
+                              closing: str = 'satisfied',
                               max_retries: Optional[int] = None,
                               **patient_kwargs) -> str:
         """
@@ -587,17 +595,29 @@ class OPSchedulingSimulation(OPSimulation, ABC):
                                                cancellation and rescheduling flows use, since the
                                                tool has already settled the request and the patient
                                                has nothing left to weigh up. Defaults to True.
-            satisfied (bool, optional): Which closing persona to swap in. True uses the satisfaction
-                                        prompts (a positive thank-you); False uses the unsatisfied prompts,
-                                        so the patient reacts with resigned/irritated acceptance of a
-                                        schedule they were negotiated or forced into. Defaults to True.
+            closing (str, optional): How the schedule was settled, which picks the closing persona.
+                                     `'satisfied'` got what they asked for (a positive thank-you);
+                                     `'conceded'` was talked out of their preference but agreed to the
+                                     schedule, so they confirm it reluctantly; `'imposed'` never agreed
+                                     and had it arranged anyway, so they react with irritation. Keeping
+                                     the latter two apart matters: a patient who has just said yes must
+                                     not turn round and call the same schedule "not what I asked for".
+                                     Defaults to 'satisfied'.
             max_retries (Optional[int], optional): Retry the agent call this many times; see
                                                     `_patient_turn`. Defaults to None (no retry).
             **patient_kwargs: Additional keyword arguments forwarded to the patient agent.
 
         Returns:
             str: The patient's closing utterance.
+
+        Raises:
+            ValueError: If `closing` is not one of `'satisfied'`, `'conceded'`, `'imposed'`.
         """
+        if closing not in self.CLOSING_PERSONAS:
+            raise ValueError(
+                colorstr('red', f"Unknown closing persona: {closing} (expected one of {sorted(self.CLOSING_PERSONAS)})")
+            )
+
         # Fixed closing: nothing to generate, just record it
         if not natural_express:
             self.dialog_history[key].append({"role": "Patient", "content": self.end_phrase})
@@ -605,15 +625,7 @@ class OPSchedulingSimulation(OPSimulation, ABC):
             log(f"{role:<25}: {self.end_phrase}")
             return self.end_phrase
 
-        # Have the patient react to the schedule the staff just proposed. A satisfied close swaps in the
-        # simple satisfaction persona; an unsatisfied one keeps the patient's own persona (its personality
-        # and the "imposed schedule -> reluctant acceptance" rule) so the reaction stays natural and in
-        # character, and only steers it with a closing user prompt.
-        if satisfied:
-            self._update_patient_system_prompt(new_system_prompt=self.patient_satisfaction_system_prompt)
-            end_phrase = self.natural_end_phrase
-        else:
-            end_phrase = self.unsatisfied_end_phrase
+        end_phrase = getattr(self, self.CLOSING_PERSONAS[closing])
         return self._patient_turn(
             key,
             label,
@@ -664,8 +676,8 @@ class OPSchedulingSimulation(OPSimulation, ABC):
                 self.rejection_system_prompt_template = f.read()
 
         # Shared prompts driving the patient's reaction to a proposed schedule
-        self.patient_satisfaction_system_prompt = load_prompt('opfvfu_schedule_patient_satisfied_system.txt')
         self.natural_end_phrase = load_prompt('opfvfu_schedule_patient_satisfied_user.txt')
+        self.conceded_end_phrase = load_prompt('opfvfu_schedule_patient_conceded_user.txt')
         self.unsatisfied_end_phrase = load_prompt('opfvfu_schedule_patient_unsatisfied_user.txt')
         self.patient_evaluation_system_prompt = load_prompt('opfvfu_schedule_patient_evaluation_system.txt')
         self.patient_schedule_evaluation_phrase = load_prompt('opfvfu_schedule_patient_evaluation_user.txt')
