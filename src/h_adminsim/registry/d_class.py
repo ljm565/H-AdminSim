@@ -79,7 +79,7 @@ class StaffNegotiationPolicy:
 
         # patient-side never negotiates, so no persuasion prompt is ever used.
         if self.name == 'patient-side':
-            self.negotiation_prompt_path = str(resources.files("h_adminsim.assets.prompts").joinpath("staff_negotiation_policy_patient_system.txt"))
+            self.negotiation_prompt_path = ''
             log(f"Cleared negotiation prompt for '{self.name}' policy (it never negotiates).", level='warning')
         
         elif self.name == 'hospital-side':
