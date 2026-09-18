@@ -82,6 +82,7 @@ class FirstVisitDataSynthesizer(DataSynthesizer):
 
         # Build scheduler
         scheduler = ScheduleAssigner(start_hour, end_hour, interval_hour)
+        booking_window_end = data.metadata.end_date     # Appointment window is limited to the hospital simulation date, not to doctor schedule end date
 
         # Config values
         preference_candidates = config.hospital_data.first_visit.preference.type
@@ -96,6 +97,9 @@ class FirstVisitDataSynthesizer(DataSynthesizer):
             duration = int(Decimal(str(1)) / Decimal(str(capacity_per_hour)) / Decimal(str(interval_hour)))
 
             for date, schedule_times in doc_data['schedule'].items():
+                if date > booking_window_end:
+                    continue
+
                 # Recompute schedule segments from stored schedule_times
                 schedule_segments_flat = []
                 for time_range in schedule_times:

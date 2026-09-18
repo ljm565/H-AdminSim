@@ -57,9 +57,18 @@ class DataSynthesizer:
             generate_random_iso_date_between(
                 str(config.hospital_data.start_date.min),
                 str(config.hospital_data.start_date.max),
-            ), 
+            ),
             days
         )
+
+        # Doctor schedule dates (independent to the hospital simulation dates)
+        doctor_schedule_days = int(config.hospital_data.get('doctor_schedule_days') or days)
+        if doctor_schedule_days < days:
+            raise AssertionError(colorstr('red', f'`doctor_schedule_days` ({doctor_schedule_days}) must be >= `days` ({days})'))
+        if config.hospital_data.working_days.max > doctor_schedule_days:
+            raise AssertionError(colorstr('red', f'`working_days.max` ({config.hospital_data.working_days.max}) '
+                                                 f'must be <= `doctor_schedule_days` ({doctor_schedule_days})'))
+        doctor_dates = generate_date_range(dates[0], doctor_schedule_days)
         interval_hour = float(config.hospital_data.interval_hour)
         start_hour = float(random.randint(config.hospital_data.start_hour.min, config.hospital_data.start_hour.max))
         end_hour = float(random.randint(config.hospital_data.end_hour.min, config.hospital_data.end_hour.max))
@@ -78,6 +87,8 @@ class DataSynthesizer:
             start_date=dates[0],
             end_date=dates[-1],
             days=days,
+            doctor_schedule_end_date=doctor_dates[-1],   # == end_date unless the outpatient horizon was extended
+            doctor_schedule_days=doctor_schedule_days,
             department_num=department_n,
             doctor_num=doctor_n,
             time=Information(
@@ -110,7 +121,7 @@ class DataSynthesizer:
                     config.hospital_data.working_days.min,
                     config.hospital_data.working_days.max
                 )
-                working_dates = sorted(random.sample(dates, working_days))
+                working_dates = sorted(random.sample(doctor_dates, working_days))
                 doctor_info[doctor] = {
                     'department': department,
                     'specialty': {
@@ -128,8 +139,8 @@ class DataSynthesizer:
                     }],
                     'birthDate': generate_random_date()
                 }
-                # Generate doctor schedules based on the pre-defined days
-                for date in dates:
+                # Generate doctor schedules according to the doctor_dates
+                for date in doctor_dates:
                     # Working day case
                     if date in working_dates:
                         _, schedule_times = scheduler(

@@ -13,6 +13,7 @@ hospital_data:
         min: 2025-03-17      # ISO format: YYYY-MM-DD
         max: 2025-09-21      # ISO format: YYYY-MM-DD
     days: 7
+    doctor_schedule_days: 7         # Outpatient horizon (>= `days`). Raise it above `days` to give follow-up consultations clinic days beyond the booking window; equal to `days` keeps the current behavior.
     interval_hour: 0.25
     start_hour:
         min: 9
@@ -26,7 +27,7 @@ hospital_data:
     doctor_per_department:
         min: 1
         max: 2
-    working_days:                   # The number of days a doctor can work during the given simulation period, with a random number of days assigned to each doctor.
+    working_days:                   # The number of days a doctor can work during `doctor_schedule_days`, with a random number of days assigned to each doctor.
         min: 3
         max: 4
     doctor_capacity_per_hour:

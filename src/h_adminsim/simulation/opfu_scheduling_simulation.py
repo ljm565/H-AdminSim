@@ -377,7 +377,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                     all_results_ready_at = pred_schedule.get('all_results_ready_at')
                     if all_results_ready_at:
                         parts.append(
-                            f"and can I make an follow-up appointment with {fu_doctor} after {all_results_ready_at}"
+                            f"and can I make a follow-up appointment with {fu_doctor} after {all_results_ready_at}"
                         )
                     else:
                         parts.append(f"(follow-up with {fu_doctor} cannot be booked at this time)")
