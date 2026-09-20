@@ -1,8 +1,8 @@
 import os
 import random
 import numpy as np
-from typing import Optional
 from datetime import timedelta
+from typing import Any, Optional
 from decimal import Decimal, getcontext
 
 from h_adminsim.task import OutpatientTask
@@ -428,7 +428,7 @@ class Simulator:
 
 
     @staticmethod
-    def _save_agent_results(save_path: str, agent_results: dict) -> None:
+    def _save_agent_results(save_path: str, agent_results: dict, metadata: dict = None) -> None:
         """
         Save the agent results in the columnar (struct-of-arrays) format, and additionally a grouped
         (array-of-structs) view next to it, so one simulation result's fields sit together per record.
@@ -441,8 +441,13 @@ class Simulator:
             save_path (str): Path to the columnar result JSON; the grouped view is saved alongside it
                              as `<name>_grouped<ext>`.
             agent_results (dict): `{task: {key: [...]}}` columnar results.
+            metadata (dict, optional): Run metadata (operating window + negotiation τ) stored under the
+                             `_metadata` key in both files, so downstream tools read it straight from the
+                             result rather than re-deriving it. The `_` prefix keeps evaluators (which
+                             iterate task keys) from treating it as a task.
         """
-        json_save_fast(save_path, agent_results)
+        columnar = {**agent_results, '_metadata': metadata} if metadata is not None else agent_results
+        json_save_fast(save_path, columnar)
 
         grouped = {}
         for task, columns in agent_results.items():
@@ -453,8 +458,64 @@ class Simulator:
                 {k: (v[i] if i < len(v) else None) for k, v in columns.items()}
                 for i in range(n)
             ]
+        if metadata is not None:
+            grouped['_metadata'] = metadata
         root, ext = os.path.splitext(save_path)
         json_save_fast(f"{root}_grouped{ext}", grouped)
+
+
+    @staticmethod
+    def _to_builtin_scalar(value: Any) -> Any:
+        """
+        Cast a scalar down to its plain built-in type so `orjson` can serialize it.
+
+        Values read from the YAML config arrive as `ruamel.yaml` scalars (e.g. `ScalarFloat`), which
+        subclass `float`/`int`/`str`. `orjson` refuses `float` subclasses, so a τ taken straight from
+        the config blows up the result save — after the file has already been truncated.
+
+        Args:
+            value (Any): Scalar to normalize; non-scalars are returned untouched.
+
+        Returns:
+            Any: The value as a built-in `bool`/`int`/`float`/`str`, or unchanged.
+        """
+        if isinstance(value, bool):     # Must precede int: bool is an int subclass
+            return bool(value)
+        if isinstance(value, int):
+            return int(value)
+        if isinstance(value, float):
+            return float(value)
+        if isinstance(value, str):
+            return str(value)
+        return value
+
+
+    def _collect_metadata(self, environment) -> dict:
+        """
+        Run metadata for the result files: the device operating window and, for the follow-up
+        negotiation policy, its per-preference trigger temperatures τ. Poles carry τ = None
+        (`hospital-side` always negotiates, `patient-side` never — τ is irrelevant there); only the
+        tunable `'negotiation'` policy records real τ values.
+
+        Every value is cast back to a built-in scalar, since config-sourced numbers are `ruamel.yaml`
+        scalars that `orjson` cannot serialize.
+        """
+        metadata = {
+            'start_hour': environment._START_HOUR,
+            'end_hour': environment._END_HOUR,
+            'time_unit': environment._TIME_UNIT,
+            'policy': None,
+            'tau_visit': None,
+            'tau_stay': None,
+        }
+        task = self.task.get('follow_up_visit_scheduling')
+        staff_policy = getattr(task, 'staff_policy', None)
+        if staff_policy is not None:
+            metadata['policy'] = staff_policy.name
+            if staff_policy.name == 'negotiation':
+                metadata['tau_visit'] = staff_policy.trigger_temperature_visit
+                metadata['tau_stay'] = staff_policy.trigger_temperature_stay
+        return {k: Simulator._to_builtin_scalar(v) for k, v in metadata.items()}
 
 
     @staticmethod
@@ -598,14 +659,16 @@ class Simulator:
                     log(f'{basename} - {task_name} task results..', color=True)
                     log(f'   - accuracy: {accuracy:.3f}, length: {len(correctness)}, status_code: {status_code}')
 
-                self._save_agent_results(save_path, agent_results)
+                self._save_agent_results(save_path, agent_results, metadata=self._collect_metadata(environment))
 
             log(f"Agent completed the tasks successfully", color=True)
 
         except Exception as e:
             if len(agent_results):
+                metadata = None
                 if environment is not None:
                     Simulator._record_virtual_first_visits(agent_results, environment)
-                self._save_agent_results(save_path, agent_results)
+                    metadata = self._collect_metadata(environment)
+                self._save_agent_results(save_path, agent_results, metadata=metadata)
             log(f"Error occured while execute the tasks: {e}", level='error')
             raise

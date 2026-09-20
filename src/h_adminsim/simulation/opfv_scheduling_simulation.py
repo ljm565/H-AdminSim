@@ -667,7 +667,7 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
         
         # Initialize necessary variables
         self._init_history()
-        staff_token_stats = {}
+        patient_token_stats, staff_token_stats = {}, {}
         staff_token_callback = TokenUsageCallback()
         filtered_doctor_information = self.environment.get_doctor_schedule(
             doctor_information=doctor_information,

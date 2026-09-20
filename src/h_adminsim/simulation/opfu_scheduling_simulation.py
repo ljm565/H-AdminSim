@@ -1345,7 +1345,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         result_dict = init_result_dict()
         self._init_agents(verbose=verbose)
         self._init_history()
-        staff_token_stats = {}
+        patient_token_stats, staff_token_stats = {}, {}
         staff_token_callback = TokenUsageCallback()
         patient_info = self.environment.patient_schedules
         filtered_doctor_information = None
