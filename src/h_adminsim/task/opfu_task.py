@@ -64,7 +64,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
 
         # Initialize the negotiation metrics for each preference
         self.staff_policy = StaffNegotiationPolicy(
-            **negotiation_params
+            **{k: v for k, v in negotiation_params.items() if not (k == 'name' and v is None)}
         )
 
         # Others

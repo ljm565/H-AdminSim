@@ -13,6 +13,7 @@ from h_adminsim.task.opfu_task import *
 from h_adminsim.pipeline import Simulator, HospitalMAS
 from h_adminsim.utils import set_logging, LOGGING_NAME
 from h_adminsim.utils.mas_utils import init_mas_system
+from h_adminsim.utils.common_utils import replace_none_value
 from h_adminsim.utils.filesys_utils import yaml_save, get_files
 
 
@@ -35,6 +36,7 @@ def init_worker_logging(output_dir: str, name: str):
 
 def load_config(config_path: str):
     config = Config(config_path)
+    config = replace_none_value(config)
     return config
 
 

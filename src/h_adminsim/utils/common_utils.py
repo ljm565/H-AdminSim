@@ -1,11 +1,13 @@
 import time
 import pytz
 import random
+from sconf import Config
 from collections import defaultdict
+from collections.abc import MutableMapping, MutableSequence
 from decimal import Decimal, getcontext
 from datetime import datetime, timedelta
-from typing import Optional, Union, Tuple
 from google.genai.errors import ServerError
+from typing import Optional, Union, Tuple, Any
 from openai import InternalServerError, BadRequestError
 
 from h_adminsim import registry
@@ -1024,3 +1026,37 @@ def calculate_idle_wait(assignments, priority_floor: float = float('inf')) -> fl
                 total += gap
     
     return float(total)
+
+
+
+def replace_none_value(config: Any) -> Any:
+    """
+    Recursively replace the string `'None'` with a real `None` throughout a configuration object.
+
+    `Config.dumps()` writes a real `None` as the bare token `None`, which YAML reads back as the STRING
+    `'None'` — so a config saved by one run and reloaded by the next would hand every null value on as a
+    string. This restores them, letting `**config` calls fall back to their defaults as intended.
+
+    Containers are updated IN PLACE and returned, so the concrete type survives: the top level stays a
+    `Config` and nested levels stay `munch.Munch`, both of which the run code accesses by attribute
+    (`config.task_model`) and assigns to (`config.yaml_file = ...`). Rebuilding them as plain dicts
+    would break both. `Config` is duck-typed rather than a `Mapping` subclass, and only its top level is
+    a `Config` at all, so mappings are matched on either.
+
+    Args:
+        config (Any): A configuration object, container, or scalar value.
+
+    Returns:
+        Any: The same object with every `'None'` string replaced by `None`.
+    """
+    if isinstance(config, (Config, MutableMapping)):
+        for key, value in config.items():
+            config[key] = replace_none_value(value)
+        return config
+    if isinstance(config, MutableSequence):
+        for idx, value in enumerate(config):
+            config[idx] = replace_none_value(value)
+        return config
+    if isinstance(config, tuple):
+        return tuple(replace_none_value(value) for value in config)
+    return None if isinstance(config, str) and config == 'None' else config
