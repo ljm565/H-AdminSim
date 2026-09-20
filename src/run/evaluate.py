@@ -9,42 +9,22 @@ from h_adminsim.utils.filesys_utils import get_files, json_load, json_save_fast
 
 
 
-def load_time_metadata(results_path):
+def read_run_metadata(results_path):
     """
-    Find the synthetic-hospital data that produced `results_path` and read its operating window
-    (`metadata.time`). The window (start/end hour) is randomized per hospital, so it must come from the
-    hospital's own data rather than a fixed default.
-
-    A results folder (e.g. `.../opfu_scheduling_hos_gpt-5-mini`) sits next to the run's `data/` and
-    `agent_data/` folders under a shared parent (e.g. `.../tertiary_fvfu`); each result file
-    `<hospital>_agent_result.json` maps to `data/<hospital>.json` (or `agent_data/<hospital>_agent.json`).
+    Read the `_metadata` block the simulator stored in the result file — the operating window
+    (start/end hour, time_unit) and the negotiation policy / trigger temperatures τ. Assumes the run
+    was saved with metadata (re-run, or backfill older results).
 
     Returns:
-        tuple[float, float, float]: (start_hour, end_hour, time_unit). Across multiple hospitals the
-        widest window is used (min start, max end).
+        dict: `{start_hour, end_hour, time_unit, policy, tau_visit, tau_stay}`.
     """
-    parent = os.path.dirname(os.path.normpath(results_path))
     result_files = get_files(results_path, '_result.json')
     if not result_files:
         raise FileNotFoundError(f"No '*_result.json' under {results_path}")
-
-    starts, ends, units = [], [], []
-    for rf in result_files:
-        hospital_id = os.path.basename(rf).split('_agent_result')[0]
-        candidates = (
-            os.path.join(parent, 'data', f'{hospital_id}.json'),
-            os.path.join(parent, 'agent_data', f'{hospital_id}_agent.json'),
-        )
-        meta_time = next((json_load(c).get('metadata', {}).get('time', {})
-                          for c in candidates if os.path.isfile(c)), None)
-        if not meta_time:
-            raise FileNotFoundError(
-                f"Cannot find hospital metadata for '{hospital_id}' under {parent}/(data|agent_data)")
-        starts.append(float(meta_time['start_hour']))
-        ends.append(float(meta_time['end_hour']))
-        units.append(float(meta_time.get('interval_hour', meta_time.get('time_unit'))))
-
-    return min(starts), max(ends), units[0]
+    md = json_load(result_files[0]).get('_metadata')
+    if not md:
+        raise ValueError(f"No '_metadata' in {result_files[0]} — re-run the simulation or backfill it.")
+    return md
 
 
 
@@ -70,13 +50,14 @@ def main(args):
 
     # follow-up (OPFU negotiation): dashboard values and/or interpolation tau seeds
     if any(t in args.type for t in ('dashboard', 'tau')):
-        start_hour, end_hour, time_unit = load_time_metadata(args.path)
-        log(f'Loaded operating window from hospital metadata: {start_hour}-{end_hour} (time_unit {time_unit})')
+        md = read_run_metadata(args.path)
+        log(f"Run metadata: window {md['start_hour']}-{md['end_hour']} (time_unit {md['time_unit']}), "
+            f"policy {md.get('policy')}, tau ({md.get('tau_visit')}, {md.get('tau_stay')})")
         fu = FollowUpVisitEvaluator(
             path=args.path,
-            start_hour=start_hour,
-            end_hour=end_hour,
-            time_unit=time_unit,
+            start_hour=md['start_hour'],
+            end_hour=md['end_hour'],
+            time_unit=md['time_unit'],
             model_name=(args.model or 'n/a'),   # label only; not needed for tau extraction
             counterpart_path=args.counterpart_path,
         )
@@ -93,21 +74,33 @@ def main(args):
                 log(f'{pref:<12} ({len(vals)}): {vals}')
             log('')
 
+    # discrete multi-run dashboard: one results folder per τ stop, assembled from each run's _metadata
+    if 'dashboard_multi' in args.type:
+        save_path = args.out or 'dashboard_multi_data.json'
+        FollowUpVisitEvaluator.multi_run_dashboard_data(
+            run_paths=args.runs,
+            model_name=(args.model or 'n/a'),
+            save_path=save_path,
+        )
+        log('')
+
 
 
 
 if __name__ == '__main__':
     parser = ArgumentParser()
-    parser.add_argument('-p', '--path', type=str, required=True,
-                        help='Agent test results folder. For "dashboard" this is the hospital-side (tau=0) run.')
+    parser.add_argument('-p', '--path', type=str, required=False, default=None,
+                        help='Agent test results folder. For "dashboard" this is the hospital-side (tau=0) run. '
+                             'Not used by "dashboard_multi" (use --runs).')
     parser.add_argument(
         '-t', '--type',
         type=str,
         required=True,
         nargs='+',
-        choices=['task', 'human', 'department', 'rounds', 'token', 'dashboard', 'tau'],
+        choices=['task', 'human', 'department', 'rounds', 'token', 'dashboard', 'tau', 'dashboard_multi'],
         help='Evaluations to run (you can specify multiple). "dashboard" computes the follow-up '
-             'negotiation dashboard values; "tau" extracts per-preference interpolation tau seeds.'
+             'negotiation dashboard values; "tau" extracts per-preference interpolation tau seeds; '
+             '"dashboard_multi" assembles the discrete multi-run dashboard from several run folders.'
     )
     parser.add_argument('--model', type=str, required=False, default=None,
                         help='Model name (required for "token" and "dashboard")')
@@ -118,11 +111,18 @@ if __name__ == '__main__':
                         help='[dashboard] Output JSON path (default: <path>/dashboard_data.json)')
     parser.add_argument('--tau_n', type=int, required=False, default=4,
                         help='[tau/dashboard] Number of interior tau seeds to extract per preference (default: 4)')
+    parser.add_argument('--runs', type=str, nargs='+', required=False, default=None,
+                        help='[dashboard_multi] Results folders, one per τ stop (hospital, interpolation runs, patient).')
     args = parser.parse_args()
 
     if 'dashboard' in args.type and not args.model:
         parser.error('--model is required when running "dashboard"')
     if 'token' in args.type and not args.model:
         parser.error('--model is required when running "token"')
+    if 'dashboard_multi' in args.type and not args.runs:
+        parser.error('--runs is required when running "dashboard_multi"')
+    # every mode except dashboard_multi needs a single -p/--path
+    if any(t != 'dashboard_multi' for t in args.type) and not args.path:
+        parser.error('-p/--path is required')
 
     main(args)

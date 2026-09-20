@@ -436,9 +436,24 @@ class FollowUpVisitEvaluator(Evaluator):
                 yield m
 
 
+    @staticmethod
+    def _ti(m):
+        """
+        τ-invariant trigger index ``ti = PCI·TCL``, recomputed from the stored PCI and TCL rather than
+        read from the stored ``ti`` field. The stored ``ti`` is ``PCI·TCL / trigger_temperature``, so it
+        is scaled per run/preference; recomputing keeps it comparable across runs (e.g. interpolation
+        runs with trigger_temperature != 1). None when PCI is inf (auto free win) or a value is missing.
+        """
+        pci, tcl = m.get('pci'), m.get('tcl')
+        if pci is None or tcl is None:
+            return None
+        return pci * tcl
+
+
     def _metric_row(self, m):
         """Flatten a `negotiation_metrics` dict to the dashboard fields (+ derived flags)."""
         row = {k: m.get(k) for k in self.METRIC_KEYS}
+        row['ti'] = self._ti(m)                       # τ-invariant PCI·TCL (not the scaled stored ti)
         row['pci_inf'] = (m.get('pci') is None)       # orjson serializes float('inf') as null
         row['auto'] = (m.get('negotiation_action') == 'auto')
         return row
@@ -475,13 +490,15 @@ class FollowUpVisitEvaluator(Evaluator):
         Pick `tau_n` interior trigger-temperature (τ) candidates per preference for interpolating
         between the two poles (τ=0 hospital → τ=∞ patient).
 
-        Uses the hospital-side eligible cohort's `ti` values. Since that run's `trigger_temperature`
-        is 1, the stored ``ti == PCI·TCL``; setting the ``'negotiation'`` policy's
-        ``trigger_temperature`` to a value τ (with ``negotiation_trigger_threshold == 1``) makes exactly
-        the patients with ``PCI·TCL >= τ`` negotiate. So per preference we sort the ti values ascending
-        (visit_min / stay_min, ti > 0; the free-win ``auto`` case has ti None and is excluded) and take
-        evenly-ranked quantile points — giving τ candidates that split the cohort into roughly equal
-        bands. `auto` free wins always negotiate regardless of τ, so they are not thresholds.
+        Uses ``ti = PCI·TCL`` recomputed τ-invariantly (via `_ti`, not the scaled stored ``ti`` field),
+        so it is valid for any run regardless of `trigger_temperature`. Setting the ``'negotiation'``
+        policy's ``trigger_temperature`` to a value τ (with ``negotiation_trigger_threshold == 1``) makes
+        exactly the patients with ``PCI·TCL >= τ`` negotiate — equivalently one may keep
+        ``trigger_temperature == 1`` and set ``negotiation_trigger_threshold`` to the same value. So per
+        preference we sort the ti values ascending (visit_min / stay_min, ti > 0; the free-win ``auto``
+        case has ti None and is excluded) and take evenly-ranked quantile points — giving cutoff
+        candidates that split the cohort into roughly equal bands. `auto` free wins always negotiate
+        regardless of the cutoff, so they are not thresholds.
 
         NOTE: ti is endogenous — a run at one of these τ re-books everyone and shifts ti, so the realized
         negotiation fraction drifts from the intended quantile. Treat these as interpolation *seeds*.
@@ -491,7 +508,7 @@ class FollowUpVisitEvaluator(Evaluator):
         """
         by_pref = {'visit_min': [], 'stay_min': []}
         for m in self._iter_metrics(self.files):
-            pref, ti = m.get('preference'), m.get('ti')
+            pref, ti = m.get('preference'), self._ti(m)   # ti = PCI·TCL (τ-invariant)
             if pref in by_pref and ti is not None and ti > 0:
                 by_pref[pref].append(round(float(ti), 6))
 
@@ -617,6 +634,123 @@ class FollowUpVisitEvaluator(Evaluator):
         }
 
 
+    # ---- discrete multi-run dashboard (one folder per τ stop) -----------------
+    @staticmethod
+    def _read_metadata(path):
+        """Read the `_metadata` block a run saved (operating window + policy/τ)."""
+        files = get_files(path, '_result.json')
+        if not files:
+            raise FileNotFoundError(f"No '*_result.json' under {path}")
+        md = json_load(files[0]).get('_metadata')
+        if not md:
+            raise ValueError(f"No '_metadata' in {files[0]} — re-run the simulation or backfill it.")
+        return md
+
+
+    def _run_points(self):
+        """
+        This run's negotiation-eligible records (PCI > 0 or inf) as discrete-dashboard points, with the
+        MEASURED target status (`negotiation_action` in negotiate/auto). Keeps non-targets (`keep`) too,
+        so the scatter can show who was / was not negotiated at this run's τ.
+        """
+        points = []
+        for m in self._iter_metrics(self.files):
+            pci = m.get('pci')
+            if not (pci is None or (pci and pci > 0)):
+                continue
+            target = m.get('negotiation_action') in ('negotiate', 'auto')
+            points.append({
+                'pci': pci, 'tcl': m.get('tcl'), 'preference': m.get('preference'), 'pci_inf': pci is None,
+                'is_target': target,
+                'outcome': (m.get('negotiation_outcome') if target else 'keep'),
+                'R': m.get('R') or 0, 'G': m.get('G') or 0, 'U': m.get('U') or 0,
+                'U_pref': m.get('U_pref') or 0, 'U_thr': m.get('U_thr') or 0,
+                'rounds': (m.get('negotiation_rounds') or 0) if target else 0,
+            })
+        return points
+
+
+    @classmethod
+    def _points_stats(cls, points):
+        """Per-run tile/trade-off stats over the target subset of `points`."""
+        tg = [p for p in points if p['is_target']]
+        accepted = [p for p in tg if p['outcome'] == 'accepted']
+        forced = [p for p in tg if p['outcome'] == 'forced']
+        concluded = accepted + forced
+        gv = [p['G'] for p in tg if p['preference'] == 'visit_min']
+        gs = [p['G'] for p in tg if p['preference'] == 'stay_min']
+        rounds = [p['rounds'] for p in tg]
+        return {
+            'n_target': len(tg), 'n_total': len(points),
+            'accepted': len(accepted), 'forced': len(forced),
+            'acceptance_rate': round(len(accepted) / len(concluded) * 100, 1) if concluded else None,
+            'sum_R': round(sum(p['R'] for p in tg), 1),
+            'mean_G_visit': round(cls._mean(gv), 2), 'mean_G_stay': round(cls._mean(gs), 2),
+            'mean_U': round(cls._mean([p['U'] for p in tg]), 3),
+            'mean_U_pref': round(cls._mean([p['U_pref'] for p in tg]), 3),
+            'mean_U_thr': round(cls._mean([p['U_thr'] for p in tg]), 3),
+            'friction_total': sum(rounds), 'friction_mean': round(cls._mean(rounds), 2),
+        }
+
+
+    @classmethod
+    def multi_run_dashboard_data(cls, run_paths, model_name='n/a', save_path=None, verbose=True):
+        """
+        Assemble the discrete multi-run dashboard payload from several run folders — one per τ stop
+        (e.g. hospital-side, one or more interpolation runs, patient-side). Each folder's `_metadata`
+        supplies its τ and operating window; each point carries the MEASURED negotiation status, so no
+        boundary is computed. Poles are detected by policy name; per-device ΔU is computed between the
+        hospital and patient poles when both are present.
+
+        Returns / saves ``{runs, devices, virtual_mids}`` — exactly what the dashboard consumes. `runs`
+        is ordered by negotiated count (hospital → patient). `virtual_mids` is empty here (all real);
+        it exists so a hand-built demo can flag mock stops.
+
+        Args:
+            run_paths (list[str]): One results directory per τ stop.
+            model_name (str): Label only.
+            save_path (str, optional): Where to write the payload JSON.
+        """
+        runs, hospital, patient = [], None, None
+        for path in run_paths:
+            md = cls._read_metadata(path)
+            ev = cls(path, start_hour=md['start_hour'], end_hour=md['end_hour'],
+                     time_unit=md['time_unit'], model_name=model_name)
+            points = ev._run_points()
+            policy = md.get('policy')
+            pole = 'hospital' if policy == 'hospital-side' else 'patient' if policy == 'patient-side' else None
+            label = ('hospital-side' if pole == 'hospital' else 'patient-side' if pole == 'patient'
+                     else f"τ=({md.get('tau_visit')}, {md.get('tau_stay')})")
+            runs.append({'label': label, 'tau_visit': md.get('tau_visit'), 'tau_stay': md.get('tau_stay'),
+                         'is_pole': pole, 'points': points, 'stats': cls._points_stats(points)})
+            if pole == 'hospital':
+                hospital = (path, md)
+            elif pole == 'patient':
+                patient = (path, md)
+
+        runs.sort(key=lambda r: -r['stats']['n_target'])   # hospital (most) -> patient (0)
+
+        devices = []
+        if hospital and patient:
+            hp, hmd = hospital
+            dev_ev = cls(hp, start_hour=hmd['start_hour'], end_hour=hmd['end_hour'],
+                         time_unit=hmd['time_unit'], model_name=model_name, counterpart_path=patient[0])
+            devices = dev_ev.device_delta_u()
+
+        payload = {'runs': runs, 'devices': devices, 'virtual_mids': []}
+
+        if verbose:
+            log('--------------Multi-run discrete dashboard--------------')
+            for r in runs:
+                s = r['stats']
+                log(f"{r['label']:<26} tau=({r['tau_visit']},{r['tau_stay']}) "
+                    f"target {s['n_target']}/{s['n_total']}  sumR {s['sum_R']}")
+        if save_path:
+            json_save_fast(save_path, payload)
+            log(f'Multi-run dashboard data saved to {colorstr("green", save_path)}')
+        return payload
+
+
     # ---- assembled dashboard payload ------------------------------------------
     def dashboard_data(self, save_path=None, verbose=True, tau_n=4):
         """
@@ -685,5 +819,6 @@ class FollowUpVisitEvaluator(Evaluator):
                 f'mean dU {dev["delta_u_mean"]:+.4f}, {dev["n_more_frontloaded"]} more front-loaded under hospital')
         itaus = payload.get('interpolation_taus')
         if itaus:
-            log(f'{colorstr("interpolation tau seeds"):<30} | visit_min {itaus.get("visit_min")}')
-            log(f'{"":<30} | stay_min  {itaus.get("stay_min")}')
+            log(f'{colorstr("interpolation tau seeds"):<30}')
+            log(f'    - visit_min {itaus.get("visit_min")}')
+            log(f'    - stay_min  {itaus.get("stay_min")}')
