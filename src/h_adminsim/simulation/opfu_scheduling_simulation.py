@@ -46,8 +46,8 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
 
     # Per-round wrappers that hand each negotiation agent the current round + the other party's last line
     STAFF_NEGOTIATION_TURN = (
-        "[Negotiation round {round}. If the patient is still refusing once you have reached your "
-        "forced-close round, arrange the suggesting schedule anyway and end your message with #FORCE_ACCEPT.]\n\n"
+        "[Negotiation round {round}. If your closing rules say this is where you stop negotiating, close the "
+        "conversation now and end your message with the exact control tag those rules name for that close.]\n\n"
         'This is the patient\'s response: "{utterance}"\n\n'
         "Reply now, staying strictly within all of your negotiation rules above."
     )
@@ -61,12 +61,15 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
     NEGOTIATION_CLOSING_LEAD = {
         'accepted': "Great — here's how I'll arrange it, then.",
         'forced': "Since getting your results back early matters for your care, I'll go ahead and arrange it this way.",
+        'kept': "Of course — I'll book it the way you asked, then.",
     }
 
-    # Negotiation outcome -> the patient's closing persona
+    # Negotiation outcome -> the patient's closing persona. 
+    # `auto` concedes nothing and `kept` books the patient's own preference after the staff gave up, so both close satisfied.
     NEGOTIATION_CLOSINGS = {
         'none': 'satisfied',
         'auto': 'satisfied',
+        'kept': 'satisfied',
         'accepted': 'conceded',
         'forced': 'imposed',
     }
@@ -255,7 +258,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             '_P': None,
             '_T': None,
             'negotiation_action': None,
-            'negotiation_outcome': 'none',   # 'accepted' | 'forced' | 'auto' | 'none' (success == accepted/forced)
+            'negotiation_outcome': 'none',   # 'accepted' | 'forced' | 'kept' | 'auto' | 'none' (booked _T on accepted/forced/auto)
             'negotiation_rounds': 0,         # number of staff persuasion pitches
         }
 
@@ -1009,7 +1012,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             patient_preference (str): The patient's stated preference for scheduling (e.g., 'throughput_max', 'visit_min', 'stay_min').
             negotiation_metrics (dict): Metrics computed by `_calculate_negotiation_metrics`, including `pci`, `tcl`, `ti`, and other relevant values.
             negotiation_round (int): 1-based index of the persuasion round about to be produced; passed to the
-                                     staff so it can honor the forced close after enough rounds of refusal.
+                                     staff so it can honor its policy's closing rule after enough rounds of refusal.
 
         Returns:
             Information: The staff utterance for this negotiation round.
@@ -1387,7 +1390,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                 negotiating_active = False
                 negotiation_done = False
                 negotiation_round = 0
-                negotiation_outcome = 'none'   # 'accepted' | 'forced' | 'auto' | 'none'
+                negotiation_outcome = 'none'   # 'accepted' | 'forced' | 'kept' | 'auto' | 'none'
                 negotiation_metrics = self._init_negotiation_metrics(gt_patient_condition.get('preference'))
 
                 # For the rejection scenario: the patient rejects what the staff actually arranged last time
@@ -1421,6 +1424,18 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                             negotiation_round=negotiation_round + 1,
                         )
                         negotiation_round += 1   # this pitch is a round
+
+                        if '#KEEP_PREFERENCE' in pitch.response:
+                            # Staff gave up: the patient holds their preference.
+                            negotiating_active = False
+                            negotiation_outcome = 'kept'
+                            pred_schedule = prediction['result']
+                            pitch.response = self.NEGOTIATION_CLOSING_LEAD[negotiation_outcome] + ' ' + self._render_staff_reply(
+                                {'type': 'tool', 'result': pred_schedule},
+                                'test_scheduling', gt_patient_condition, staff_known_data, natural_express,
+                            )
+                            self._record_staff_turn('test_scheduling', pitch)
+                            break
 
                         if '#FORCE_ACCEPT' in pitch.response or '#ACCEPT' in pitch.response:
                             # Negotiation closed: patient conceded ('accepted') or staff imposed it ('forced').
