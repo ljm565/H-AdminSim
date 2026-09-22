@@ -13,7 +13,6 @@ hospital_data:
         min: 2025-03-17      # ISO format: YYYY-MM-DD
         max: 2025-09-21      # ISO format: YYYY-MM-DD
     days: 7
-    doctor_schedule_days: 14        # Outpatient horizon (>= `days`). Doctors hold clinics this far ahead so a follow-up consultation still has a clinic day when the test results are ready near the end of the booking window. Tests, patients, and the simulation clock stay within `days`.
     interval_hour: 0.05
     start_hour:
         min: 9
@@ -27,7 +26,7 @@ hospital_data:
     doctor_per_department:
         min: 2
         max: 3
-    working_days:                   # The number of days a doctor can work during `doctor_schedule_days`, with a random number of days assigned to each doctor.
+    working_days:                   # Number of days each doctor works within `days`, randomly assigned. Scaled up by the same ratio when `doctor_schedule_extra_days_after` extends the window
         min: 3
         max: 4
     doctor_capacity_per_hour:
@@ -48,6 +47,8 @@ hospital_data:
             type: ['simple', 'with_history']    # Types of patient history.
             probs: [0.2, 0.8]                   # Types probability distribution.
     follow_up_visit:
+        doctor_schedule_extra_days_before: 7    # Clinic days added before `start_date`, holding each patient's prior first visit. Must exceed `booking_days_before_simulation` (simulation config)
+        doctor_schedule_extra_days_after: 7     # Clinic days added after `end_date`, so a late follow-up consultation still has a clinic day. Tests and the simulation clock stay within `days`
         n_machines_per_test:
             min: 1
             max: 3
