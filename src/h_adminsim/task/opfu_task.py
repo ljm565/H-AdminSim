@@ -1,5 +1,3 @@
-import os
-import json
 import random
 from decimal import getcontext
 from importlib import resources
@@ -12,14 +10,10 @@ from h_adminsim.task import OutpatientTask
 from h_adminsim.simulation import OPFUSchedulingSimulation
 from h_adminsim.tools.sanity_checker import SanityChecker
 from h_adminsim.registry import (
-    STATUS_CODES, 
     SCHEDULE_STATUS,
     OPFU_PREFERENCE_PHRASE_PATIENT,
 )
-from h_adminsim.registry.d_class import (
-    StaffNegotiationPolicy,
-    PatientNegotiationPolicy,
-)
+from h_adminsim.registry.d_class import StaffNegotiationPolicy
 from h_adminsim.utils import colorstr, log
 from h_adminsim.utils.mas_utils import *
 from h_adminsim.utils.fhir_utils import *

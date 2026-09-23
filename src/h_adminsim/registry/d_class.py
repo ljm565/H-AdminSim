@@ -54,7 +54,9 @@ class StaffNegotiationPolicy:
     The two extremes are decided directly by ``negotiation_action`` (not via 0/inf arithmetic, which
     breaks under Python float division and the ``NegotiationMetrics`` ``trigger_temperature > 0``
     guard): ``'patient-side'`` never negotiates (fully patient), ``'hospital-side'`` always negotiates
-    (fully hospital). Both still carry finite temperatures so ``NegotiationMetrics`` stays valid.
+    (fully hospital). Neither reads the trigger knobs, so both pin all three to 1.0 — see
+    ``_pin_trigger_knobs``. Tunable ``'negotiation'`` runs still divide by their own τ, so anything
+    comparing runs recomputes ``PCI * TCL`` rather than trusting the stored ``ti``.
 
     Fields:
         name: Policy identifier — ``'negotiation'`` (ti-thresholded), ``'patient-side'`` (never), or
@@ -62,9 +64,12 @@ class StaffNegotiationPolicy:
         negotiation_prompt_path: Staff persuasion system prompt used once a negotiation fires (empty
             for ``'patient-side'``, which never negotiates).
         tcl_temperature: Softmax temperature for TCL (hospital-fixed).
-        trigger_temperature_visit: τ dividing the trigger index for ``visit_min`` patients (hospital-fixed).
-        trigger_temperature_stay: τ dividing the trigger index for ``stay_min`` patients (hospital-fixed).
-        negotiation_trigger_threshold: Cutoff on ``ti`` for the ``'negotiation'`` policy — the strength knob.
+        trigger_temperature_visit: τ dividing the trigger index for ``visit_min`` patients
+            (hospital-fixed; pinned to 1.0 on the extremes, which ignore it).
+        trigger_temperature_stay: τ dividing the trigger index for ``stay_min`` patients
+            (hospital-fixed; pinned to 1.0 on the extremes, which ignore it).
+        negotiation_trigger_threshold: Cutoff on ``ti`` for the ``'negotiation'`` policy — the strength
+            knob (pinned to 1.0 on the extremes, which ignore it).
     """
     name: str = 'negotiation'
     negotiation_prompt_path: str = str(resources.files("h_adminsim.assets.prompts").joinpath("staff_negotiation_policy_common_system.txt"))
@@ -72,6 +77,7 @@ class StaffNegotiationPolicy:
     trigger_temperature_visit: float = 1.0
     trigger_temperature_stay: float = 1.0
     negotiation_trigger_threshold: float = 1.0
+    TRIGGER_KNOBS = ('trigger_temperature_visit', 'trigger_temperature_stay', 'negotiation_trigger_threshold')
 
     def __post_init__(self):
         if self.name not in ('negotiation', 'hospital-side', 'patient-side'):
@@ -80,11 +86,25 @@ class StaffNegotiationPolicy:
         # patient-side never negotiates, so no persuasion prompt is ever used.
         if self.name == 'patient-side':
             self.negotiation_prompt_path = ''
+            self._pin_trigger_knobs()
             log(f"Cleared negotiation prompt for '{self.name}' policy (it never negotiates).", level='warning')
-        
+
         elif self.name == 'hospital-side':
             self.negotiation_prompt_path = str(resources.files("h_adminsim.assets.prompts").joinpath("staff_negotiation_policy_hospital_system.txt"))
+            self._pin_trigger_knobs()
             log(f"Set negotiation prompt for '{self.name}' policy.", level='info')
+
+
+    def _pin_trigger_knobs(self):
+        """
+        Force the trigger knobs to 1.0 on the extremes, which decide without ever reading them.
+        """
+        overridden = {k: getattr(self, k) for k in self.TRIGGER_KNOBS if getattr(self, k) != 1.0}
+        for k in self.TRIGGER_KNOBS:
+            setattr(self, k, 1.0)
+        if overridden:
+            log(f"'{self.name}' policy ignores the trigger knobs; pinned to 1.0 so the recorded "
+                f"ti stays PCI*TCL (overrode {overridden}).", level='warning')
 
     
     def trigger_temperature_for(self, preference: str) -> float:
@@ -113,20 +133,3 @@ class StaffNegotiationPolicy:
         if self.name == 'hospital-side':
             return 'negotiate' if pci > 0 else 'keep'  # nothing to gain (pci == 0) -> no-op
         return 'negotiate' if ti >= self.negotiation_trigger_threshold else 'keep'
-
-
-
-@dataclass
-class PatientNegotiationPolicy:
-    """
-    A patient-side negotiation policy: how the patient responds when the staff attempts to negotiate
-    their follow-up test schedule toward ``throughput_max`` — i.e. how readily they concede their
-    stated preference (``visit_min`` / ``stay_min``) versus hold out for it.
-
-    Fields:
-        name: Identifier for the policy (the patient's disposition toward conceding).
-        negotiation_prompt_path: Path to the patient system prompt governing accept/refuse behavior
-            during a negotiation.
-    """
-    name: str
-    negotiation_prompt_path: str
