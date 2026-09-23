@@ -247,7 +247,7 @@ class Simulator:
         end_hour = environment._END_HOUR
 
         past_date, past_slot = None, None
-        cur_dt = str_to_datetime(environment._START_DATE)
+        cur_dt = str_to_datetime(environment._DOCTOR_SCHEDULE_START_DATE)
         end_dt = str_to_datetime(environment._END_DATE)
         while cur_dt <= end_dt:
             date = cur_dt.strftime('%Y-%m-%d')

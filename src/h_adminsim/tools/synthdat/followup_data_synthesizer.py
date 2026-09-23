@@ -86,7 +86,9 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                     desc='Synthesizing follow-up patient data (standalone)..', 
                     total=len(hospitals)
                 ):
-                    data = DataSynthesizer.define_hospital_info(self.config, hospital, department_info_path)
+                    data = DataSynthesizer.define_hospital_info(
+                        self.config, hospital, department_info_path, with_follow_up=True
+                    )
                     hospital_data = to_dict(data)
                     
                     # Make fixed schedule of tests

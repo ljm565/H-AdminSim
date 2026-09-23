@@ -21,8 +21,9 @@ from h_adminsim.utils.random_utils import (
 
 
 class FirstVisitDataSynthesizer(DataSynthesizer):
-    def __init__(self, config):
+    def __init__(self, config, with_follow_up: bool = False):
         super().__init__(config)
+        self.with_follow_up = with_follow_up
         getcontext().prec = 10
 
 
@@ -44,7 +45,9 @@ class FirstVisitDataSynthesizer(DataSynthesizer):
             all_data = list()
             hospitals = DataSynthesizer.hospital_list_generator(self.config.hospital_data.hospital_n)
             for i, hospital in tqdm(enumerate(hospitals), desc='Synthesizing data..', total=len(hospitals)):
-                data = DataSynthesizer.define_hospital_info(self.config, hospital, department_info_path)
+                data = DataSynthesizer.define_hospital_info(
+                    self.config, hospital, department_info_path, with_follow_up=self.with_follow_up
+                )
                 data = FirstVisitDataSynthesizer.generate_first_visit_patients(self.config, data)
                 json_save_fast(self.data_save_dir / f'hospital_{padded_int(i, len(str(self._n)))}.json', to_dict(data))
                 all_data.append(data)
@@ -82,7 +85,7 @@ class FirstVisitDataSynthesizer(DataSynthesizer):
 
         # Build scheduler
         scheduler = ScheduleAssigner(start_hour, end_hour, interval_hour)
-        booking_window_end = data.metadata.end_date     # Appointment window is limited to the hospital simulation date, not to doctor schedule end date
+        booking_window_start, booking_window_end = data.metadata.start_date, data.metadata.end_date     # Appointment window is limited to the hospital simulation date, not to doctor schedule end date
 
         # Config values
         preference_candidates = config.hospital_data.first_visit.preference.type
@@ -97,9 +100,9 @@ class FirstVisitDataSynthesizer(DataSynthesizer):
             duration = int(Decimal(str(1)) / Decimal(str(capacity_per_hour)) / Decimal(str(interval_hour)))
 
             for date, schedule_times in doc_data['schedule'].items():
-                if date > booking_window_end:
+                if date < booking_window_start or date > booking_window_end:
                     continue
-
+                
                 # Recompute schedule segments from stored schedule_times
                 schedule_segments_flat = []
                 for time_range in schedule_times:

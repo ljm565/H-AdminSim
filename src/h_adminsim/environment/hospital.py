@@ -46,6 +46,7 @@ class HospitalEnvironment:
         self.HOSPITAL_NAME = agent_test_data.get('metadata').get('hospital_name')
         self._START_DATE = agent_test_data.get('metadata').get('start_date')
         self._END_DATE = agent_test_data.get('metadata').get('end_date')
+        self._DOCTOR_SCHEDULE_START_DATE = agent_test_data.get('metadata').get('doctor_schedule_start_date')
         self._START_HOUR = agent_test_data.get('metadata').get('time').get('start_hour')
         self._END_HOUR = agent_test_data.get('metadata').get('time').get('end_hour')
         self._TIME_UNIT = agent_test_data.get('metadata').get('time').get('interval_hour')

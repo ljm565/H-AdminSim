@@ -36,17 +36,21 @@ class DataSynthesizer:
         
 
     @staticmethod
-    def define_hospital_info(config, 
+    def define_hospital_info(config,
                              hospital_name: str,
-                             department_info_path: Optional[str] = None) -> Information:
+                             department_info_path: Optional[str] = None,
+                             with_follow_up: bool = False) -> Information:
         """
         Define the synthetic hospital data, including its departments and doctors.
 
         Args:
             config: Configuration object containing hospital data settings.
             hospital_name (str): Name of the hospital to be defined.
-            department_info_path (Optional[str], optional): Path to a file containing department information. If provided, it will be used to load names. 
+            department_info_path (Optional[str], optional): Path to a file containing department information. If provided, it will be used to load names.
                                                             Defaults to None.
+            with_follow_up (bool, optional): Whether follow-up patients will be synthesized into this
+                                             hospital, which is the only case where doctors need clinic
+                                             days outside the simulation window. Defaults to False.
 
         Returns:
             Information: Synthetic data about the hospital.
@@ -61,14 +65,21 @@ class DataSynthesizer:
             days
         )
 
-        # Doctor schedule dates (independent to the hospital simulation dates)
-        doctor_schedule_days = int(config.hospital_data.get('doctor_schedule_days') or days)
-        if doctor_schedule_days < days:
-            raise AssertionError(colorstr('red', f'`doctor_schedule_days` ({doctor_schedule_days}) must be >= `days` ({days})'))
-        if config.hospital_data.working_days.max > doctor_schedule_days:
-            raise AssertionError(colorstr('red', f'`working_days.max` ({config.hospital_data.working_days.max}) '
-                                                 f'must be <= `doctor_schedule_days` ({doctor_schedule_days})'))
-        doctor_dates = generate_date_range(dates[0], doctor_schedule_days)
+        # If follow_up_visit simulation included
+        if with_follow_up:
+            before_day = config.hospital_data.follow_up_visit.doctor_schedule_extra_days_before
+            after_day = config.hospital_data.follow_up_visit.doctor_schedule_extra_days_after
+            if before_day < 0:
+                raise AssertionError(colorstr('red', f'`doctor_schedule_extra_days_before` ({before_day}) must be >= 0.'))
+            if after_day < 0:
+                raise AssertionError(colorstr('red', f'`doctor_schedule_extra_days_after` ({after_day}) must be >= 0.'))
+            doctor_start_date = datetime_to_str(str_to_datetime(dates[0]) - timedelta(days=before_day), "%Y-%m-%d")
+            doctor_schedule_days = generate_date_range(
+                doctor_start_date, int(days + before_day + after_day)
+            )
+        else:
+            doctor_schedule_days = [d for d in dates]
+
         interval_hour = float(config.hospital_data.interval_hour)
         start_hour = float(random.randint(config.hospital_data.start_hour.min, config.hospital_data.start_hour.max))
         end_hour = float(random.randint(config.hospital_data.end_hour.min, config.hospital_data.end_hour.max))
@@ -87,8 +98,8 @@ class DataSynthesizer:
             start_date=dates[0],
             end_date=dates[-1],
             days=days,
-            doctor_schedule_end_date=doctor_dates[-1],   # == end_date unless the outpatient horizon was extended
-            doctor_schedule_days=doctor_schedule_days,
+            doctor_schedule_start_date=doctor_schedule_days[0],
+            doctor_schedule_end_date=doctor_schedule_days[-1],
             department_num=department_n,
             doctor_num=doctor_n,
             time=Information(
@@ -118,10 +129,10 @@ class DataSynthesizer:
                 specialty, spe_code = generate_random_specialty(department, department_info_path)
                 capacity_per_hour = random.choice(doctor_capacity_per_hour_list)
                 working_days = random.randint(
-                    config.hospital_data.working_days.min,
-                    config.hospital_data.working_days.max
+                    round(config.hospital_data.working_days.min * (len(doctor_schedule_days) / len(dates))),
+                    round(config.hospital_data.working_days.max * (len(doctor_schedule_days) / len(dates)))
                 )
-                working_dates = sorted(random.sample(doctor_dates, working_days))
+                working_dates = sorted(random.sample(doctor_schedule_days, working_days))
                 doctor_info[doctor] = {
                     'department': department,
                     'specialty': {
@@ -139,8 +150,8 @@ class DataSynthesizer:
                     }],
                     'birthDate': generate_random_date()
                 }
-                # Generate doctor schedules according to the doctor_dates
-                for date in doctor_dates:
+                # Generate doctor schedules according to the doctor_schedule_days
+                for date in doctor_schedule_days:
                     # Working day case
                     if date in working_dates:
                         _, schedule_times = scheduler(

@@ -129,7 +129,7 @@ class DataGenerator:
         _task = Information()
         _task.update(tasks=set(task))
         if 'first_visit' in task:
-            fv_synthesizer = FirstVisitDataSynthesizer(self.config)
+            fv_synthesizer = FirstVisitDataSynthesizer(self.config, with_follow_up='follow_up_visit' in task)
             _task.update(
                 save_dir=fv_synthesizer.save_dir,
                 fv_synthesizer=fv_synthesizer,

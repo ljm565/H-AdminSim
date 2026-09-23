@@ -465,12 +465,10 @@ class DataConverter:
         test_data = data.get('test')
         country_code = data.get('metadata').get('country_code', 'KR')
         time_zone = data.get('metadata').get('timezone', None)
-        start_date = data.get('metadata').get('start_date', None)
-        end_date = data.get('metadata').get('end_date', start_date)
-        doctor_end_date = data.get('metadata').get('doctor_schedule_end_date') or end_date
-        start = get_iso_time(data.get('metadata')['time']['start_hour'], start_date, get_utc_offset(country_code, time_zone))
-        end = get_iso_time(data.get('metadata')['time']['end_hour'], end_date, get_utc_offset(country_code, time_zone))
-        doctor_end = get_iso_time(data.get('metadata')['time']['end_hour'], doctor_end_date, get_utc_offset(country_code, time_zone))
+        doctor_start_date = data.get('metadata').get('doctor_schedule_start_date')
+        doctor_end_date = data.get('metadata').get('doctor_schedule_end_date')
+        start = get_iso_time(data.get('metadata')['time']['start_hour'], doctor_start_date, get_utc_offset(country_code, time_zone))
+        end = get_iso_time(data.get('metadata')['time']['end_hour'], doctor_end_date, get_utc_offset(country_code, time_zone))
         schedules = list()
 
         # Physician information
@@ -486,7 +484,7 @@ class DataConverter:
                 'id': schedule_id,
                 'active': True,
                 'actor': [{'reference': f'Practitioner/{practitioner_id}'}],
-                'planningHorizon': {'start': start, 'end': doctor_end}
+                'planningHorizon': {'start': start, 'end': end}
             }
             schedules.append(schedule_obj)
 
