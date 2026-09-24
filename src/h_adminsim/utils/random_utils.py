@@ -464,18 +464,24 @@ def generate_random_occupation_unavailable(occupation: str,
         'type': None,
         'day': [],
         'half_day': None,
-        'explanation': explanation,
+        'explanation': explanation if unavailable_type is None else '',
     }
 
     if unavailable_type is None or random.random() > unavailable_prob:
         return unavailable
 
     # Init detail conditions
-    unavailable['type'] = unavailable_type
     scale = len(dates) / 7
     unavailable_day_range = [d * scale for d in unavailable_detail['day']]
-    unavailable_day_n = int(random.uniform(*unavailable_day_range))
-    unavailable['day'] = sorted(random.sample(dates, min(unavailable_day_n, len(dates))))
+    unavailable_day_n = min(int(random.uniform(*unavailable_day_range)), len(dates))
+
+    # A short date range can scale the day count down to zero; keep the record unconstrained in that case
+    if unavailable_day_n <= 0:
+        return unavailable
+
+    unavailable['type'] = unavailable_type
+    unavailable['day'] = sorted(random.sample(dates, unavailable_day_n))
+    unavailable['explanation'] = explanation
 
     if unavailable_type == 'half_day':
         unavailable[unavailable_type] = random.choice(unavailable_detail[unavailable_type])
