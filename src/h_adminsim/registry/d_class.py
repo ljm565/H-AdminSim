@@ -46,7 +46,7 @@ class StaffNegotiationPolicy:
     patient off their stated preference toward the hospital-preferred ``throughput_max`` schedule.
 
     For the tunable ``'negotiation'`` policy the staff negotiates a patient once their trigger index
-    ``ti = PCI * TCL / trigger_temperature`` (see ``NegotiationMetrics``) reaches
+    ``ti = GPC * TCL / trigger_temperature`` (see ``NegotiationMetrics``) reaches
     ``negotiation_trigger_threshold``. ``tcl_temperature`` and the per-preference
     ``trigger_temperature_visit`` / ``trigger_temperature_stay`` are hospital-fixed constants; strength
     is set by ``negotiation_trigger_threshold`` (higher = stricter, fewer negotiations).
@@ -56,7 +56,7 @@ class StaffNegotiationPolicy:
     guard): ``'patient-side'`` never negotiates (fully patient), ``'hospital-side'`` always negotiates
     (fully hospital). Neither reads the trigger knobs, so both pin all three to 1.0 — see
     ``_pin_trigger_knobs``. Tunable ``'negotiation'`` runs still divide by their own τ, so anything
-    comparing runs recomputes ``PCI * TCL`` rather than trusting the stored ``ti``.
+    comparing runs recomputes ``GPC * TCL`` rather than trusting the stored ``ti``.
 
     Fields:
         name: Policy identifier — ``'negotiation'`` (ti-thresholded), ``'patient-side'`` (never), or
@@ -104,7 +104,7 @@ class StaffNegotiationPolicy:
             setattr(self, k, 1.0)
         if overridden:
             log(f"'{self.name}' policy ignores the trigger knobs; pinned to 1.0 so the recorded "
-                f"ti stays PCI*TCL (overrode {overridden}).", level='warning')
+                f"ti stays GPC*TCL (overrode {overridden}).", level='warning')
 
     
     def trigger_temperature_for(self, preference: str) -> float:
@@ -112,24 +112,24 @@ class StaffNegotiationPolicy:
         return self.trigger_temperature_stay if preference == 'stay_min' else self.trigger_temperature_visit
 
     
-    def negotiation_action(self, pci: float, ti: float) -> str:
+    def negotiation_action(self, gpc: float, ti: float) -> str:
         """
         Decide how to handle a patient whose staff-proposed schedule conflicts with throughput_max.
 
         Returns one of:
             ``'keep'``      — leave the patient on their preferred schedule (no negotiation).
             ``'auto'``      — book throughput_max directly, without persuading: a free win where the
-                              patient concedes nothing (``G == 0`` -> ``pci == inf``) yet gets results sooner.
+                              patient concedes nothing (``G == 0`` -> ``gpc == inf``) yet gets results sooner.
             ``'negotiate'`` — run the persuasion sub-loop.
 
         Extremes short-circuit (``'patient-side'`` never negotiates, ``'hospital-side'`` always does when
         there is anything to gain); ``'negotiation'`` thresholds ``ti``.
         """
         # Free win: switching costs the patient nothing and only helps, so just book it — no persuasion.
-        if pci == float('inf') and self.name != 'patient-side':
+        if gpc == float('inf') and self.name != 'patient-side':
             return 'auto'
         if self.name == 'patient-side':
             return 'keep'
         if self.name == 'hospital-side':
-            return 'negotiate' if pci > 0 else 'keep'  # nothing to gain (pci == 0) -> no-op
+            return 'negotiate' if gpc > 0 else 'keep'  # nothing to gain (gpc == 0) -> no-op
         return 'negotiate' if ti >= self.negotiation_trigger_threshold else 'keep'

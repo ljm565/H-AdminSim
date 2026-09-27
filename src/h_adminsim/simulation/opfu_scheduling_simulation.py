@@ -201,7 +201,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
 
         Args:
             patient_preference (str): The patient's stated preference for scheduling (e.g., 'visit_min', 'stay_min').
-            negotiation_metrics (dict): Metrics computed by `_calculate_negotiation_metrics`, including `pci`, `tcl`, `ti`, and other relevant values.
+            negotiation_metrics (dict): Metrics computed by `_calculate_negotiation_metrics`, including `gpc`, `tcl`, `ti`, and other relevant values.
 
         Returns:
             Optional["SchedulingAdminStaffAgent"]: The negotiation agent, or None if no policy is set.
@@ -246,7 +246,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         # so a patient with no computed metrics still exports a consistent record.
         return {
             'preference': preference,
-            'pci': None,
+            'gpc': None,
             'tcl': None,
             'ti': None,
             'do_negotiate': False,
@@ -957,7 +957,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                                                     negotiation) stays attendable. Defaults to None.
 
         Returns:
-            dict: The negotiation metrics (`preference`, `pci`, `tcl`, `ti`, `do_negotiate`, ...).
+            dict: The negotiation metrics (`preference`, `gpc`, `tcl`, `ti`, `do_negotiate`, ...).
         """
         preference = preference or patient_preferred_schedule.get('preference_type')
 
@@ -975,7 +975,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         ).to_dict()
 
         # The policy makes the final call: 'keep' (book preferred), 'auto' (free win -> book throughput directly), or 'negotiate' (persuade).
-        action = self.negotiation_policy.negotiation_action(pci=metrics['pci'], ti=metrics['ti'])
+        action = self.negotiation_policy.negotiation_action(gpc=metrics['gpc'], ti=metrics['ti'])
         metrics['negotiation_action'] = action
         metrics['do_negotiate'] = (action == 'negotiate')
         _metrics = {k: v for k, v in metrics.items() if not k.startswith('_')}
@@ -1010,7 +1010,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
 
         Args:
             patient_preference (str): The patient's stated preference for scheduling (e.g., 'throughput_max', 'visit_min', 'stay_min').
-            negotiation_metrics (dict): Metrics computed by `_calculate_negotiation_metrics`, including `pci`, `tcl`, `ti`, and other relevant values.
+            negotiation_metrics (dict): Metrics computed by `_calculate_negotiation_metrics`, including `gpc`, `tcl`, `ti`, and other relevant values.
             negotiation_round (int): 1-based index of the persuasion round about to be produced; passed to the
                                      staff so it can honor its policy's closing rule after enough rounds of refusal.
 
@@ -1508,7 +1508,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                             continue
 
                         elif action == 'auto':
-                            # Free win (pci == inf): the patient concedes nothing, so skip persuasion
+                            # Free win (gpc == inf): the patient concedes nothing, so skip persuasion
                             negotiation_done = True
                             negotiation_outcome = 'auto'
                             pred_schedule = self._throughput_pred_from_metrics(
@@ -1582,7 +1582,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                             pred_schedule = prediction['result']
                             
                             # Export negotiation metrics for EVERY patient (even non-negotiated / non-eligible) for later hospital-utility analysis
-                            if self.negotiation_policy is not None and negotiation_metrics['pci'] is None:
+                            if self.negotiation_policy is not None and negotiation_metrics['gpc'] is None:
                                 negotiation_metrics = self._calculate_negotiation_metrics(
                                     patient_preferred_schedule=pred_schedule,
                                     filtered_test_device_information=filtered_test_device_information,

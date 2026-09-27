@@ -92,11 +92,7 @@ if __name__ == '__main__':
     parser.add_argument('-p', '--path', type=str, required=False, default=None,
                         help='Agent test results folder. For "dashboard" this is the hospital-side (tau=0) run. '
                              'Not used by "dashboard_multi" (use --runs).')
-    parser.add_argument(
-        '-t', '--type',
-        type=str,
-        required=True,
-        nargs='+',
+    parser.add_argument('-t', '--type', type=str, required=True, nargs='+',
         choices=['task', 'human', 'department', 'rounds', 'token', 'dashboard', 'tau', 'dashboard_multi'],
         help='Evaluations to run (you can specify multiple). "dashboard" computes the follow-up '
              'negotiation dashboard values; "tau" extracts per-preference interpolation tau seeds; '

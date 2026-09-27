@@ -365,12 +365,12 @@ class FollowUpVisitEvaluator(Evaluator):
     Beyond the shared accuracy/cost evaluation, this computes every value the negotiation-policy
     dashboard needs and can dump it as a single JSON. The policy spectrum has two poles supplied as two
     runs: `path` is the hospital-side (τ=0, always negotiate) run and `counterpart_path` is the
-    patient-side (τ=∞, never negotiate) run. Per-patient metrics (PCI/TCL/G/R/U/ti) are read straight
+    patient-side (τ=∞, never negotiate) run. Per-patient metrics (GPC/TCL/G/R/U/ti) are read straight
     from each prediction's stored ``negotiation_metrics``; the per-device ΔU is recomputed from the
     actual final bookings of both runs, so it is a real (non-counterfactual) systemic measure.
     """
     TASK = 'follow_up_visit_scheduling'
-    METRIC_KEYS = ('preference', 'pci', 'tcl', 'ti', 'G', 'R', 'U', 'U_pref', 'U_thr',
+    METRIC_KEYS = ('preference', 'gpc', 'tcl', 'ti', 'G', 'R', 'U', 'U_pref', 'U_thr',
                    'negotiation_action', 'negotiation_outcome', 'negotiation_rounds')
 
     def __init__(self, 
@@ -439,22 +439,22 @@ class FollowUpVisitEvaluator(Evaluator):
     @staticmethod
     def _ti(m):
         """
-        τ-invariant trigger index ``ti = PCI·TCL``, recomputed from the stored PCI and TCL rather than
-        read from the stored ``ti`` field. The stored ``ti`` is ``PCI·TCL / trigger_temperature``, so it
+        τ-invariant trigger index ``ti = GPC·TCL``, recomputed from the stored GPC and TCL rather than
+        read from the stored ``ti`` field. The stored ``ti`` is ``GPC·TCL / trigger_temperature``, so it
         is scaled per run/preference; recomputing keeps it comparable across runs (e.g. interpolation
-        runs with trigger_temperature != 1). None when PCI is inf (auto free win) or a value is missing.
+        runs with trigger_temperature != 1). None when GPC is inf (auto free win) or a value is missing.
         """
-        pci, tcl = m.get('pci'), m.get('tcl')
-        if pci is None or tcl is None:
+        gpc, tcl = m.get('gpc'), m.get('tcl')
+        if gpc is None or tcl is None:
             return None
-        return pci * tcl
+        return gpc * tcl
 
 
     def _metric_row(self, m):
         """Flatten a `negotiation_metrics` dict to the dashboard fields (+ derived flags)."""
         row = {k: m.get(k) for k in self.METRIC_KEYS}
-        row['ti'] = self._ti(m)                       # τ-invariant PCI·TCL (not the scaled stored ti)
-        row['pci_inf'] = (m.get('pci') is None)       # orjson serializes float('inf') as null
+        row['ti'] = self._ti(m)                       # τ-invariant GPC·TCL (not the scaled stored ti)
+        row['gpc_inf'] = (m.get('gpc') is None)       # orjson serializes float('inf') as null
         row['auto'] = (m.get('negotiation_action') == 'auto')
         return row
 
@@ -463,7 +463,7 @@ class FollowUpVisitEvaluator(Evaluator):
     def eligible_cohort(self, files=None, actions=('negotiate', 'auto')):
         """
         Negotiation-eligible cohort from a run: metrics whose policy action is `negotiate`/`auto`
-        (i.e. PCI > 0, something to gain). Defaults to the hospital-side run.
+        (i.e. GPC > 0, something to gain). Defaults to the hospital-side run.
         """
         files = self.files if files is None else files
         return [self._metric_row(m) for m in self._iter_metrics(files)
@@ -472,16 +472,16 @@ class FollowUpVisitEvaluator(Evaluator):
 
     def patient_eligible(self, files=None):
         """
-        Counterfactually eligible cohort (PCI > 0 or inf) from the patient-side run — used to show that
-        the same population lands at different PCI×TCL positions when nobody is negotiated.
+        Counterfactually eligible cohort (GPC > 0 or inf) from the patient-side run — used to show that
+        the same population lands at different GPCxTCL positions when nobody is negotiated.
         """
         files = self.counterpart_files if files is None else files
         out = []
         for m in self._iter_metrics(files):
-            pci = m.get('pci')
-            if pci is None or (pci and pci > 0):
-                out.append({'preference': m.get('preference'), 'pci': pci,
-                            'tcl': m.get('tcl'), 'ti': m.get('ti'), 'pci_inf': pci is None})
+            gpc = m.get('gpc')
+            if gpc is None or (gpc and gpc > 0):
+                out.append({'preference': m.get('preference'), 'gpc': gpc,
+                            'tcl': m.get('tcl'), 'ti': m.get('ti'), 'gpc_inf': gpc is None})
         return out
 
 
@@ -490,10 +490,10 @@ class FollowUpVisitEvaluator(Evaluator):
         Pick `tau_n` interior trigger-temperature (τ) candidates per preference for interpolating
         between the two poles (τ=0 hospital → τ=∞ patient).
 
-        Uses ``ti = PCI·TCL`` recomputed τ-invariantly (via `_ti`, not the scaled stored ``ti`` field),
+        Uses ``ti = GPC·TCL`` recomputed τ-invariantly (via `_ti`, not the scaled stored ``ti`` field),
         so it is valid for any run regardless of `trigger_temperature`. Setting the ``'negotiation'``
         policy's ``trigger_temperature`` to a value τ (with ``negotiation_trigger_threshold == 1``) makes
-        exactly the patients with ``PCI·TCL >= τ`` negotiate — equivalently one may keep
+        exactly the patients with ``GPC·TCL >= τ`` negotiate — equivalently one may keep
         ``trigger_temperature == 1`` and set ``negotiation_trigger_threshold`` to the same value. So per
         preference we sort the ti values ascending (visit_min / stay_min, ti > 0; the free-win ``auto``
         case has ti None and is excluded) and take evenly-ranked quantile points — giving cutoff
@@ -508,7 +508,7 @@ class FollowUpVisitEvaluator(Evaluator):
         """
         by_pref = {'visit_min': [], 'stay_min': []}
         for m in self._iter_metrics(self.files):
-            pref, ti = m.get('preference'), self._ti(m)   # ti = PCI·TCL (τ-invariant)
+            pref, ti = m.get('preference'), self._ti(m)   # ti = GPC·TCL (τ-invariant)
             if pref in by_pref and ti is not None and ti > 0:
                 by_pref[pref].append(round(float(ti), 6))
 
@@ -537,22 +537,67 @@ class FollowUpVisitEvaluator(Evaluator):
         return book
 
 
-    def _compactness(self, bookings, offset, nseg, total, start_hour):
+    def _device_availability(self):
         """
-        Mann-Whitney front-loading score of a device's bookings over the shared slot axis: the fraction
-        of (booked-before-free) slot pairs. 1.0 = all bookings precede all free slots (packed early),
-        0.0 = fully back-loaded, 0.5 = interleaved. None when the device has no booking.
+        `{device: {date: set(free segment indices)}}` — the slots a device could actually be booked into,
+        read from the run's own hospital data (`test[dept][].devices[dev].schedule`, which lists the
+        intervals already occupied by other patients).
+
+        This matters: a device is closed on some dates (its schedule holds one interval covering the whole
+        day) and on open dates a few hours are already taken. Treating those as free would invent slots
+        that never existed and distort the front-loading score, so fully-closed dates are dropped and
+        pre-occupied segments are removed.
+        """
+        parent = os.path.dirname(os.path.normpath(self.path))
+        nseg = round((self.end_hour - self.start_hour) / self.time_unit)
+        avail = {}
+        seen_sources = set()
+        for result_file in self.files:
+            hospital_id = os.path.basename(result_file).split('_agent_result')[0]
+            source = next((c for c in (os.path.join(parent, 'agent_data', f'{hospital_id}_agent.json'),
+                                       os.path.join(parent, 'data', f'{hospital_id}.json'))
+                           if os.path.isfile(c)), None)
+            if source is None or source in seen_sources:
+                continue
+            seen_sources.add(source)
+            data = json_load(source)
+            for tests in (data.get('test') or {}).values():
+                for test in tests:
+                    for device, info in (test.get('devices') or {}).items():
+                        per_date = avail.setdefault(device, {})
+                        for date, intervals in (info.get('schedule') or {}).items():
+                            occupied = set()
+                            for interval in (intervals or []):
+                                if not (isinstance(interval, (list, tuple)) and len(interval) >= 2):
+                                    continue
+                                a = max(0, math.floor((interval[0] - self.start_hour) / self.time_unit))
+                                b = min(nseg, math.ceil((interval[1] - self.start_hour) / self.time_unit))
+                                occupied.update(range(a, b))
+                            free = set(range(nseg)) - occupied
+                            if free:                    # skip dates the device is closed all day
+                                per_date[date] = free
+        return avail
+
+
+    def _compactness(self, bookings, offset, free_by_date, universe):
+        """
+        Mann-Whitney front-loading score of a device's bookings: the fraction of (booked-before-free)
+        slot pairs over the slots this device could actually be booked into (`universe`). 1.0 = every
+        booking precedes every remaining free slot (packed early), 0.0 = fully back-loaded,
+        0.5 = interleaved. None when the device has no booking inside the universe.
         """
         booked = set()
         for date, s, e in bookings:
             if date not in offset:
                 continue
-            a = max(0, math.floor((s - start_hour) / self.time_unit))
-            b = min(nseg, math.ceil((e - start_hour) / self.time_unit))
-            booked.update(offset[date] + i for i in range(a, b))
+            free_today = free_by_date[date]
+            a = max(0, math.floor((s - self.start_hour) / self.time_unit))
+            b = math.ceil((e - self.start_hour) / self.time_unit)
+            booked.update(offset[date] + i for i in range(a, b) if i in free_today)
+        booked &= universe
         if not booked:
             return None
-        free = set(range(total)) - booked
+        free = universe - booked
         if not free:
             return 1.0
         free_sorted = sorted(free)
@@ -562,8 +607,9 @@ class FollowUpVisitEvaluator(Evaluator):
 
     def device_delta_u(self):
         """
-        Per-device ΔU = compactness(hospital) − compactness(patient) on the actual final bookings, over a
-        shared date axis. Returns rows sorted by ΔU descending. Empty if no counterpart run is given.
+        Per-device ΔU = compactness(hospital) − compactness(patient) on the actual final bookings, scored
+        against each device's real availability (closed dates and other patients' slots excluded — see
+        `_device_availability`). Returns rows sorted by ΔU descending; empty without a counterpart run.
         """
         if not self.counterpart_files:
             log(colorstr('yellow', 'device_delta_u needs `counterpart_path` (patient-side run); skipping.'))
@@ -571,26 +617,28 @@ class FollowUpVisitEvaluator(Evaluator):
 
         hos = self._device_bookings(self.files)
         pat = self._device_bookings(self.counterpart_files)
+        availability = self._device_availability()
+        if not availability:
+            log(colorstr('yellow', 'No device schedule found next to the results; skipping device ΔU.'))
+            return []
 
-        # Resolve the operating window: explicit values win; otherwise infer from observed bookings
-        # (the true window is randomized per hospital, so a wrong fixed default would bias the metric).
-        starts = [s for book in (hos, pat) for v in book.values() for (_, s, _) in v]
-        ends = [e for book in (hos, pat) for v in book.values() for (_, _, e) in v]
-        start_hour = self.start_hour if self.start_hour is not None else (min(starts) if starts else 9.0)
-        end_hour = self.end_hour if self.end_hour is not None else (max(ends) if ends else 18.0)
-        self._used_window = (start_hour, end_hour)
-        inferred = ' [inferred from bookings]' if (self.start_hour is None or self.end_hour is None) else ''
-        log(f'device ΔU operating window: {start_hour}–{end_hour} (time_unit {self.time_unit}){inferred}')
-
-        nseg = round((end_hour - start_hour) / self.time_unit)
-        dates = sorted({d for book in (hos, pat) for v in book.values() for (d, _, _) in v})
-        offset = {d: i * nseg for i, d in enumerate(dates)}
-        total = len(dates) * nseg
+        self._used_window = (self.start_hour, self.end_hour)
+        nseg = round((self.end_hour - self.start_hour) / self.time_unit)
+        log(f'device ΔU window: {self.start_hour}–{self.end_hour} (time_unit {self.time_unit}), '
+            f'availability from device schedules ({len(availability)} devices)')
 
         rows = []
         for dev in sorted(set(hos) | set(pat)):
-            uh = self._compactness(hos.get(dev, []), offset, nseg, total, start_hour)
-            up = self._compactness(pat.get(dev, []), offset, nseg, total, start_hour)
+            free_by_date = availability.get(dev)
+            if not free_by_date:
+                continue
+            dates = sorted(free_by_date)                       # only the dates this device is open
+            offset = {d: i * nseg for i, d in enumerate(dates)}
+            universe = set()
+            for d in dates:
+                universe.update(offset[d] + s for s in free_by_date[d])
+            uh = self._compactness(hos.get(dev, []), offset, free_by_date, universe)
+            up = self._compactness(pat.get(dev, []), offset, free_by_date, universe)
             if uh is None or up is None:
                 continue
             rows.append({'dev': dev, 'uh': round(uh, 4), 'up': round(up, 4),
@@ -649,18 +697,18 @@ class FollowUpVisitEvaluator(Evaluator):
 
     def _run_points(self):
         """
-        This run's negotiation-eligible records (PCI > 0 or inf) as discrete-dashboard points, with the
+        This run's negotiation-eligible records (GPC > 0 or inf) as discrete-dashboard points, with the
         MEASURED target status (`negotiation_action` in negotiate/auto). Keeps non-targets (`keep`) too,
         so the scatter can show who was / was not negotiated at this run's τ.
         """
         points = []
         for m in self._iter_metrics(self.files):
-            pci = m.get('pci')
-            if not (pci is None or (pci and pci > 0)):
+            gpc = m.get('gpc')
+            if not (gpc is None or (gpc and gpc > 0)):
                 continue
             target = m.get('negotiation_action') in ('negotiate', 'auto')
             points.append({
-                'pci': pci, 'tcl': m.get('tcl'), 'preference': m.get('preference'), 'pci_inf': pci is None,
+                'gpc': gpc, 'tcl': m.get('tcl'), 'preference': m.get('preference'), 'gpc_inf': gpc is None,
                 'is_target': target,
                 'outcome': (m.get('negotiation_outcome') if target else 'keep'),
                 'R': m.get('R') or 0, 'G': m.get('G') or 0, 'U': m.get('U') or 0,
@@ -676,13 +724,14 @@ class FollowUpVisitEvaluator(Evaluator):
         tg = [p for p in points if p['is_target']]
         accepted = [p for p in tg if p['outcome'] == 'accepted']
         forced = [p for p in tg if p['outcome'] == 'forced']
-        concluded = accepted + forced
+        kept = [p for p in tg if p['outcome'] == 'kept']    # negotiated but patient held (refused)
+        concluded = accepted + forced + kept                # every negotiation that ran (auto excluded)
         gv = [p['G'] for p in tg if p['preference'] == 'visit_min']
         gs = [p['G'] for p in tg if p['preference'] == 'stay_min']
         rounds = [p['rounds'] for p in tg]
         return {
             'n_target': len(tg), 'n_total': len(points),
-            'accepted': len(accepted), 'forced': len(forced),
+            'accepted': len(accepted), 'forced': len(forced), 'kept': len(kept),
             'acceptance_rate': round(len(accepted) / len(concluded) * 100, 1) if concluded else None,
             'sum_R': round(sum(p['R'] for p in tg), 1),
             'mean_G_visit': round(cls._mean(gv), 2), 'mean_G_stay': round(cls._mean(gs), 2),

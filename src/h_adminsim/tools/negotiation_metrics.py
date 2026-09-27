@@ -28,7 +28,7 @@ class NegotiationMetrics:
     the throughput_max schedule ``T`` is recomputed as the counterfactual the hospital would
     push a negotiation toward. Every metric contrasts ``P`` against ``T`` (see each property):
 
-    - ``pci``  Preference Concession Index = R / G (result gain per unit concession).
+    - ``gpc``  Gain Per Concession = R / G (result gain per unit concession).
     - ``tcl``  Test Congestion Level over the window [current_time, max(te_pref, te_thr)].
     - ``G``    Preference concession to switch P -> T, in preference-native units.
     - ``R``    Result-time gain (hours) from switching P -> T.
@@ -66,7 +66,7 @@ class NegotiationMetrics:
             time_budget_s (float, optional): Wall-clock cap on the throughput_max backtracking search. Defaults to 10.0.
             tcl_temperature (float, optional): Softmax temperature for TCL (lower emphasizes the bottleneck test). Defaults to 1.0.
             trigger_temperature (float, optional): Temperature τ dividing the trigger index in the case of visit_min preference:
-                                                   `ti = PCI * TCL / τ`; a smaller τ raises `ti`, triggering
+                                                   `ti = GPC * TCL / τ`; a smaller τ raises `ti`, triggering
                                                    negotiation more readily (more aggressive). Must be > 0. Defaults to 1.0.
             negotiation_trigger_threshold (float, optional): Cutoff P* on the trigger index; the patient is
                                                              flagged for negotiation when `ti >= P*`. Higher is
@@ -83,7 +83,7 @@ class NegotiationMetrics:
         
         # Hyperparameters
         if trigger_temperature <= 0:
-            raise ValueError(colorstr('red', f'trigger_temperature must be > 0 (it divides the trigger index PCI*TCL), got {trigger_temperature}.'))
+            raise ValueError(colorstr('red', f'trigger_temperature must be > 0 (it divides the trigger index GPC*TCL), got {trigger_temperature}.'))
         self.tcl_temperature = tcl_temperature
         self.trigger_temperature = trigger_temperature
         self.negotiation_trigger_threshold = max(0.0, negotiation_trigger_threshold)
@@ -228,7 +228,7 @@ class NegotiationMetrics:
         return segs
 
 
-    # ---- Preference Concession Index (PCI) -----------------------------------
+    # ---- Gain Per Concession (GPC) -----------------------------------
     @cached_property
     def R(self) -> float:
         """
@@ -259,9 +259,9 @@ class NegotiationMetrics:
 
 
     @property
-    def pci(self) -> float:
+    def gpc(self) -> float:
         """
-        Preference Concession Index = R / G (result-hours gained per unit concession).
+        Gain Per Concession = R / G (result-hours gained per unit concession).
 
         Three regimes:
         - R == 0        -> 0.0  : no result-time gain, so negotiating buys nothing (regardless of G).
@@ -335,16 +335,16 @@ class NegotiationMetrics:
     @property
     def ti(self) -> float:
         """
-        Trigger Index `ti = PCI * TCL / trigger_temperature`: how worth negotiating this patient is,
-        combining concession-worthiness (PCI) with device congestion (TCL). The patient is flagged for
+        Trigger Index `ti = GPC * TCL / trigger_temperature`: how worth negotiating this patient is,
+        combining concession-worthiness (GPC) with device congestion (TCL). The patient is flagged for
         negotiation when `ti >= negotiation_trigger_threshold` (see `do_negotiate` in `to_dict`).
-        Inherits PCI's `inf` for a free dominant win (G == 0, R > 0), which always triggers.
+        Inherits GPC's `inf` for a free dominant win (G == 0, R > 0), which always triggers.
         """
         if self.preference in {'visit_min', 'stay_min'}:
-            return self.pci * self.tcl / self.trigger_temperature
+            return self.gpc * self.tcl / self.trigger_temperature
         else:
-            log(f"NegotiationMetrics.ti used fallback for preference `{self.preference}`; returning PCI*TCL without trigger temperature.", level='warning')
-            return self.pci * self.tcl
+            log(f"NegotiationMetrics.ti used fallback for preference `{self.preference}`; returning GPC*TCL without trigger temperature.", level='warning')
+            return self.gpc * self.tcl
 
 
     # ---- Device Utility (U) --------------------------------------------------
@@ -471,7 +471,7 @@ class NegotiationMetrics:
         """
         return {
             'preference': self.preference,
-            'pci': self.pci,
+            'gpc': self.gpc,
             'tcl': self.tcl,
             'ti': self.ti,
             'do_negotiate': self.ti >= self.negotiation_trigger_threshold,
