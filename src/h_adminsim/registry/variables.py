@@ -42,3 +42,8 @@ DEPARTMENT_NORMALIZATION = {
     'pulmonology': 'pulmonary',
 }
 OCCUPATION = None
+DISTANCE_VISIT_MIN_WEIGHT = {
+    'near': 0.0,
+    'medium': 0.3,
+    'far': 0.6,
+}

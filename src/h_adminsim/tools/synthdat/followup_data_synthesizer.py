@@ -15,7 +15,7 @@ from h_adminsim.utils.common_utils import *
 from h_adminsim.utils.filesys_utils import *
 from h_adminsim.utils.random_utils import (
     generate_random_prob,
-    generate_random_occupation_preference,
+    generate_random_test_preference,
     generate_random_occupation_unavailable,
 )
 
@@ -508,7 +508,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                 continue
             duration = int(Decimal(str(1)) / Decimal(str(doctor_info[doctor]['capacity_per_hour'])) / Decimal(str(interval_hour)))
         
-            primary_preference = generate_random_occupation_preference(occupation, preference_candidates)
+            primary_preference = generate_random_test_preference(distance, occupation, preference_candidates)
             preference_rank = DataSynthesizer.second_preference_generator(primary_preference, preference_candidates)
             unavailable = generate_random_occupation_unavailable(occupation, dates)
 

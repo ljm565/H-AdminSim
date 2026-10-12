@@ -385,22 +385,35 @@ def generate_random_occupation(occupation_file_path: Optional[str] = None) -> st
 
 
 
-def generate_random_occupation_preference(occupation: str,
-                                          preference_candidates: list[str],
-                                          occupation_file_path: Optional[str] = None) -> str:
+def generate_random_test_preference(distance: str,
+                                    occupation: str,
+                                    preference_candidates: list[str],
+                                    occupation_file_path: Optional[str] = None) -> str:
     """
-    Generate a first-priority test scheduling preference based on occupation data.
+    Generate a first-priority test scheduling preference based on distance and occupation data.
+    The occupation-based distribution is mixed with a `visit_min` one-hot distribution, where the
+    mixing weight grows with distance (see `registry.DISTANCE_VISIT_MIN_WEIGHT`):
+        - near: occupation only
+        - medium: partially shifted toward `visit_min`
+        - far: strongly shifted toward `visit_min`, weakening the occupation effect
 
     Args:
+        distance (str): Distance from the patient's home to the hospital (near, medium, or far).
         occupation (str): Occupation name to look up.
         preference_candidates (list[str]): Candidate preference types.
         occupation_file_path (Optional[str], optional): Path to the JSON file containing occupation data.
                                                         If not provided, a default path is used.
                                                         Defaults to None.
 
+    Raises:
+        ValueError: If the distance is not one of the supported values.
+
     Returns:
         str: First-priority test scheduling preference.
     """
+    if distance not in registry.DISTANCE_VISIT_MIN_WEIGHT:
+        raise ValueError(colorstr("red", f"Unsupported distance: {distance}"))
+
     if occupation_file_path == None:
         occupation_file_path = str(resources.files("h_adminsim.assets.patient").joinpath("occupation.json"))
 
@@ -411,25 +424,23 @@ def generate_random_occupation_preference(occupation: str,
     preferred_type = occupation_pref['type']
     preferred_prob = occupation_pref['prob']
 
-    # If the preferred type is not specified, randomly select from the preference candidates
-    if preferred_type is None:
-        return generate_random_code_with_prob(
-            preference_candidates,
-            [1 / len(preference_candidates)] * len(preference_candidates)
-        )
-
-    # If the probability is specified, return it with the given probability
-    if preferred_prob is None or random.random() <= preferred_prob:
-        return preferred_type
-
+    # Occupation-based distribution over the preference candidates
     other_candidates = [p for p in preference_candidates if p != preferred_type]
-    if not other_candidates:
-        return preferred_type
-    
-    return generate_random_code_with_prob(
-        other_candidates,
-        [1 / len(other_candidates)] * len(other_candidates)
-    )
+    if preferred_type is None or preferred_type not in preference_candidates:
+        # If the preferred type is not specified, uniform over the preference candidates
+        occupation_probs = [1 / len(preference_candidates)] * len(preference_candidates)
+    elif preferred_prob is None or not other_candidates:
+        occupation_probs = [1.0 if p == preferred_type else 0.0 for p in preference_candidates]
+    else:
+        occupation_probs = [preferred_prob if p == preferred_type else (1 - preferred_prob) / len(other_candidates)
+                            for p in preference_candidates]
+
+    # Shift the distribution toward `visit_min` as the distance increases
+    visit_min_weight = registry.DISTANCE_VISIT_MIN_WEIGHT[distance] if 'visit_min' in preference_candidates else 0.0
+    probs = [(1 - visit_min_weight) * prob + (visit_min_weight if p == 'visit_min' else 0.0)
+             for p, prob in zip(preference_candidates, occupation_probs)]
+
+    return generate_random_code_with_prob(preference_candidates, probs)
 
 
 def generate_random_occupation_unavailable(occupation: str,
