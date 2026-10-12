@@ -101,6 +101,20 @@ class SchedulingAdminStaffAgent(BaseAgent):
                 "How does this test plan sound: {schedule_summary}?",
             ]
         )
+        self.same_fu_schedule_suggestion = kwargs.get(
+            'same_fu_schedule_suggestion',
+            "This is the same test schedule as suggested before: {schedule_summary}"
+        )
+        self.natural_same_fu_schedule_suggestion = kwargs.get(
+            'natural_same_fu_schedule_suggestion',
+            [
+                "It turns out the best fit for that is the same schedule I suggested earlier: {schedule_summary}. Shall I keep it?",
+                "Given that preference, the arrangement actually stays the same as before: {schedule_summary}. Is that okay?",
+                "I checked again, and the schedule that matches what you want is the one we already discussed: {schedule_summary}. Would that be fine?",
+                "That actually leads to the same schedule I mentioned earlier: {schedule_summary}. Shall we go with it?",
+                "Even with that in mind, the best option remains the same as before: {schedule_summary}. Does that work for you?",
+            ]
+        )
 
 
     def _init_prompt(self, 

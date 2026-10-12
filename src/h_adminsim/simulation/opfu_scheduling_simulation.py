@@ -268,7 +268,8 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                             reply_type: str,
                             gt_patient_condition: Optional[dict] = None,
                             staff_known_data: Optional[dict] = None,
-                            natural_express: bool = True) -> str:
+                            natural_express: bool = True,
+                            prev_suggested_schedule: Optional[dict] = None) -> str:
         """
         Turn a structured staff scheduling result into a natural-language utterance.
 
@@ -278,6 +279,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             gt_patient_condition (dict): Ground-truth condition for this turn; supplies the GT required-test codes used to flag tests that could not be scheduled.
             staff_known_data (dict): Patient information known to the staff agent; supplies the follow-up doctor.
             natural_express (bool, optional): Whether to phrase a schedule proposal naturally instead of dumping the raw schedule dict. Defaults to True.
+            prev_suggested_schedule (dict, optional): The previous schedule suggestion made by the staff agent. Defaults to None.
 
         Returns:
             str: The staff utterance to show the patient.
@@ -386,7 +388,24 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                         parts.append(f"(follow-up with {fu_doctor} cannot be booked at this time)")
                 
                 schedule_summary = "; ".join(parts)
-                
+
+                # Same schedule as the previous (rejected) suggestion -> say so instead of re-proposing it
+                is_same_as_prev = prev_suggested_schedule is not None and \
+                    self._schedule_signature(pred_schedule) == self._schedule_signature(prev_suggested_schedule)
+                if is_same_as_prev:
+                    try:
+                        if natural_express:
+                            _format = random.choice(self.scheduling_agent.natural_same_fu_schedule_suggestion) \
+                                if isinstance(self.scheduling_agent.natural_same_fu_schedule_suggestion, list) \
+                                    else self.scheduling_agent.natural_same_fu_schedule_suggestion
+                            return _format.format(schedule_summary=schedule_summary)
+                        else:
+                            return self.scheduling_agent.same_fu_schedule_suggestion.format(
+                                schedule_summary=schedule_summary
+                            )
+                    except:
+                        return 'Same test schedules as before: ' + schedule_summary
+
                 # Response formatting for test guidance
                 try:
                     if natural_express:
@@ -400,6 +419,30 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                         )
                 except:
                     return 'Your test schedules: ' + schedule_summary
+
+
+    @staticmethod
+    def _schedule_signature(schedule: dict) -> tuple:
+        """
+        Build a comparable key from the patient-visible parts of a schedule (test slots and follow-up slot).
+        Scheduler outputs differ in bookkeeping keys (e.g., `preference_type`, `status`), so whole-dict equality is not usable.
+
+        Args:
+            schedule (dict): The scheduler output containing `test_schedule` and optionally `fu_schedule`.
+
+        Returns:
+            tuple: Order-independent signature of the test slots and the follow-up slot.
+        """
+        tests = tuple(sorted(
+            (t['code'], t['date'], round(float(t['start']), 4), round(float(t['end']), 4))
+            for t in schedule['test_schedule']
+        ))
+        fu_slot = schedule.get('fu_schedule')
+        fu = tuple(sorted(
+            (doctor, s['date'], round(float(s['start']), 4), round(float(s['end']), 4))
+            for doctor, s in (fu_slot.items() if isinstance(fu_slot, dict) else [])
+        ))
+        return tests, fu
 
 
     @staticmethod
@@ -1351,6 +1394,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         filtered_doctor_information = None
         filtered_test_device_information = None
         required_test_codes = None
+        _prev_suggested_schedule = None
         tool_calling_agent = self.scheduling_agent.build_agent(
             rule=self.rules, 
             doctor_info=None,
@@ -1373,7 +1417,10 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                 callback=staff_token_callback,
                 **merged_staff_kwargs
             )
-            reply = self._render_staff_reply(prediction, 'test_scheduling', gt_patient_condition, staff_known_data, natural_express)
+            reply = self._render_staff_reply(
+                prediction, 'test_scheduling', gt_patient_condition, 
+                staff_known_data, natural_express, _prev_suggested_schedule
+            )
             return reply, prediction
 
         # Start conversation
@@ -1432,7 +1479,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                             pred_schedule = prediction['result']
                             pitch.response = self.NEGOTIATION_CLOSING_LEAD[negotiation_outcome] + ' ' + self._render_staff_reply(
                                 {'type': 'tool', 'result': pred_schedule},
-                                'test_scheduling', gt_patient_condition, staff_known_data, natural_express,
+                                'test_scheduling', gt_patient_condition, staff_known_data, natural_express, _prev_suggested_schedule,
                             )
                             self._record_staff_turn('test_scheduling', pitch)
                             break
@@ -1447,7 +1494,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                             )
                             pitch.response = self.NEGOTIATION_CLOSING_LEAD[negotiation_outcome] + ' ' + self._render_staff_reply(
                                 {'type': 'tool', 'result': pred_schedule},
-                                'test_scheduling', gt_patient_condition, staff_known_data, natural_express,
+                                'test_scheduling', gt_patient_condition, staff_known_data, natural_express, _prev_suggested_schedule,
                             )
                             self._record_staff_turn('test_scheduling', pitch)
                             break
@@ -1517,7 +1564,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                             )
                             reply = self._render_staff_reply(
                                 {'type': 'tool', 'result': pred_schedule},
-                                'test_scheduling', gt_patient_condition, staff_known_data, natural_express,
+                                'test_scheduling', gt_patient_condition, staff_known_data, natural_express, _prev_suggested_schedule,
                             )
                             self._record_staff_turn('test_scheduling', Information(response=reply, agent=self._chief_agent_name))
                             break
@@ -1629,6 +1676,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                         (gt_data[i + 1]['preference'] != 'indifferent')     # `indifferent` preference conflicts with rejection logic semantically
                 if random.random() < preference_reject_prob and next_pref_differs and len(pred_schedule['test_visit_dates']) > 1:
                     preference_reject_prob *= self.preference_rejection_prob_decay
+                    _prev_suggested_schedule = deepcopy(pred_schedule)
                 ## Non-rejection case
                 else:
                     self._closing_patient_turn(
