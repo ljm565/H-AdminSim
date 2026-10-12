@@ -387,7 +387,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
     
 
     @staticmethod
-    def generate_followup_patients(config, hospital_data: dict, max_consecutive_failures: int = 3) -> dict:
+    def generate_followup_patients(config, hospital_data: dict, max_consecutive_failures: int = 10) -> dict:
         """
         Generate follow-up patient profiles and merge them into hospital data.
 
@@ -399,7 +399,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
             hospital_data (dict): Existing hospital data containing
                                    metadata, department, doctor, and patient dicts.
             max_consecutive_failures (int): Maximum number of consecutive failed attempts to generate
-                                            a valid test combination before stopping the loop. Defaults to 3.
+                                            a valid test combination before stopping the loop. Defaults to 10.
                                
 
         Returns:
