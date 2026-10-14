@@ -163,6 +163,9 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                 device_n = random.randint(fu_config.n_machines_per_test.min, fu_config.n_machines_per_test.max)
                 _test['device_n'] = device_n
                 _test['devices'] = dict()
+
+                # Fixed bookings occupy one exam's duration each, instead of scattered single segments
+                block_size = max(1, math.ceil(Decimal(str(_test['duration_hour'])) / Decimal(str(interval_hour))))
                 for i in range(device_n):
                     device_name = f"{_test['code']}-{i}"
                     _test['devices'][device_name] = dict()
@@ -170,14 +173,14 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                     for date in dates:
                         # Randomly close the whole day for this device (coverage=1.0 => zero vacancy)
                         if random.random() < day_closed_prob:
-                            coverage = 1.0
-                        else:
-                            coverage = generate_random_prob(
-                                fu_config.test_has_schedule_prob,
-                                fu_config.test_fixed_schedule_ratio.min,
-                                fu_config.test_fixed_schedule_ratio.max,
-                            )
-                        test_schedule[date] = scheduler(coverage)[1]
+                            test_schedule[date] = scheduler(1.0)[1]     # One full-day interval marks the closed day
+                            continue
+                        coverage = generate_random_prob(
+                            fu_config.test_has_schedule_prob,
+                            fu_config.test_fixed_schedule_ratio.min,
+                            fu_config.test_fixed_schedule_ratio.max,
+                        )
+                        test_schedule[date] = scheduler(coverage, block_size=block_size)[1]
                     _test['devices'][device_name]['schedule'] = test_schedule
         
         # Pick out scheduling dependencies based on the current test information
@@ -387,7 +390,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
     
 
     @staticmethod
-    def generate_followup_patients(config, hospital_data: dict, max_consecutive_failures: int = 10) -> dict:
+    def generate_followup_patients(config, hospital_data: dict) -> dict:
         """
         Generate follow-up patient profiles and merge them into hospital data.
 
@@ -398,9 +401,6 @@ class FollowUpDataSynthesizer(DataSynthesizer):
             config: Configuration object with hospital_data.follow_up_visit settings.
             hospital_data (dict): Existing hospital data containing
                                    metadata, department, doctor, and patient dicts.
-            max_consecutive_failures (int): Maximum number of consecutive failed attempts to generate
-                                            a valid test combination before stopping the loop. Defaults to 10.
-                               
 
         Returns:
             dict: Hospital data with follow-up patients merged into the patient dict.
@@ -426,6 +426,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         cross_dept_prob = fu_config.cross_department_test_prob
         include_consultation = fu_config.get('include_consultation', True)
         preference_candidates = fu_config.preference.type
+        test_combination_max_failures = fu_config.test_per_patient.trial
 
         # Collect vacant test schedules
         vacant_test_schedules = {}
@@ -501,7 +502,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
             
             # Make random test combination
             combination, vacant_test_schedules = FollowUpDataSynthesizer._generate_test_combination(
-                config, department, prev_end_iso, code_to_test, vacant_test_schedules, cross_dept_prob, max_consecutive_failures
+                config, department, prev_end_iso, code_to_test, vacant_test_schedules, cross_dept_prob, test_combination_max_failures
             )
             if not combination:
                 log(f"Skipping follow-up for patient {patient}: no valid test combination could be built", level='warning')
