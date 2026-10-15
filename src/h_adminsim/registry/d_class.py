@@ -211,6 +211,14 @@ class ResultGainNegotiationPolicy(StaffNegotiationPolicy):
     trigger_temperature_visit: float = 1.0
     trigger_temperature_stay: float = 1.0
 
+    def __post_init__(self):
+        super().__post_init__()
+
+        # τ divides the trigger index, so it must be positive (checked here, before any patient is simulated)
+        for knob in ('trigger_temperature_visit', 'trigger_temperature_stay'):
+            if getattr(self, knob) <= 0:
+                raise ValueError(colorstr("red", f"`{knob}` must be > 0 (it divides the trigger index GPC*TCL), got {getattr(self, knob)}."))
+
 
     def trigger_temperature_for(self, preference: str) -> float:
         """τ for the given preference: ``stay_min`` uses the stay temperature, everything else visit."""
