@@ -1,6 +1,7 @@
 import os
 import random
 import numpy as np
+from dataclasses import fields
 from datetime import timedelta
 from typing import Any, Optional
 from decimal import Decimal, getcontext
@@ -492,10 +493,11 @@ class Simulator:
 
     def _collect_metadata(self, environment) -> dict:
         """
-        Run metadata for the result files: the device operating window and, for the follow-up
-        negotiation policy, its per-preference trigger temperatures τ. Poles carry τ = None
-        (`hospital-side` always negotiates, `patient-side` never — τ is irrelevant there); only the
-        tunable `'negotiation'` policy records real τ values.
+        Run metadata for the result files: the device operating window and the follow-up negotiation
+        policy actually used — its name plus every numeric knob (`tcl_temperature`, both trigger
+        temperatures τ, `negotiation_trigger_threshold`), so a run is reproducible from its result alone.
+        The poles (`hospital-side`, `patient-side`) record their pinned knob values (1.0); readers tell
+        them apart by `policy`, not by τ.
 
         Every value is cast back to a built-in scalar, since config-sourced numbers are `ruamel.yaml`
         scalars that `orjson` cannot serialize.
@@ -505,16 +507,18 @@ class Simulator:
             'end_hour': environment._END_HOUR,
             'time_unit': environment._TIME_UNIT,
             'policy': None,
-            'tau_visit': None,
-            'tau_stay': None,
         }
         task = self.task.get('follow_up_visit_scheduling')
         staff_policy = getattr(task, 'staff_policy', None)
         if staff_policy is not None:
-            metadata['policy'] = staff_policy.name
-            if staff_policy.name == 'negotiation':
-                metadata['tau_visit'] = staff_policy.trigger_temperature_visit
-                metadata['tau_stay'] = staff_policy.trigger_temperature_stay
+            metadata['policy'] = {
+                'name': staff_policy.name
+            }
+
+            # Every numeric knob of the policy (the prompt path is derived from the name, so it is skipped)
+            for field in fields(staff_policy):
+                if field.name not in ('name', 'negotiation_prompt_path'):
+                    metadata['policy'][field.name] = Simulator._to_builtin_scalar(getattr(staff_policy, field.name))
         return {k: Simulator._to_builtin_scalar(v) for k, v in metadata.items()}
 
 

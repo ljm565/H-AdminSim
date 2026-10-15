@@ -90,6 +90,11 @@ def simulate(config, args, single_file=None):
         task[_task.name] = _task
     if 'follow_up_visit_scheduling' in args.type:
         use_vllm = False if any(m in config.task_model.lower() for m in ['gpt', 'gemini']) else True
+        negotiation_config = config.schedule_task.negotiation
+        negotiation_params = negotiation_config.get(negotiation_config.policy)
+        if negotiation_params is None:
+            raise ValueError(colorstr('red', f"Unknown negotiation policy `{negotiation_config.policy}`; "
+                                             f"choose one of {[k for k in negotiation_config if k != 'policy']}"))
         _task = OutpatientFollowUpScheduling(
             patient_model=config.task_model,
             admin_staff_mas=staff_mas,
@@ -98,7 +103,7 @@ def simulate(config, args, single_file=None):
             fhir_integration=config.integration_with_fhir,
             scheduling_strategy=config.schedule_task.scheduling_strategy,
             patient_vllm_endpoint=config.vllm_url if use_vllm else None,
-            negotiation_params=config.schedule_task.negotiation,
+            negotiation_params=negotiation_params,
         )
         task[_task.name] = _task
 

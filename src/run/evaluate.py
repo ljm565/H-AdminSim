@@ -16,7 +16,7 @@ def read_run_metadata(results_path):
     was saved with metadata (re-run, or backfill older results).
 
     Returns:
-        dict: `{start_hour, end_hour, time_unit, policy, tau_visit, tau_stay}`.
+        dict: `{start_hour, end_hour, time_unit, policy: {name, <knobs>}}` (older runs: `policy` name + `tau_visit`, `tau_stay`).
     """
     result_files = get_files(results_path, '_result.json')
     if not result_files:
@@ -51,8 +51,9 @@ def main(args):
     # follow-up (OPFU negotiation): dashboard values and/or interpolation tau seeds
     if any(t in args.type for t in ('dashboard', 'tau')):
         md = read_run_metadata(args.path)
+        tau_visit, tau_stay = FollowUpVisitEvaluator.metadata_tau(md)
         log(f"Run metadata: window {md['start_hour']}-{md['end_hour']} (time_unit {md['time_unit']}), "
-            f"policy {md.get('policy')}, tau ({md.get('tau_visit')}, {md.get('tau_stay')})")
+            f"policy {FollowUpVisitEvaluator.metadata_policy(md).get('name')}, tau ({tau_visit}, {tau_stay})")
         fu = FollowUpVisitEvaluator(
             path=args.path,
             start_hour=md['start_hour'],

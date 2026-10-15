@@ -695,6 +695,34 @@ class FollowUpVisitEvaluator(Evaluator):
         return md
 
 
+    @staticmethod
+    def metadata_policy(md: dict) -> dict:
+        """
+        The run's negotiation policy from its `_metadata` as `{'name', <knobs>...}` (empty when the run
+        has no follow-up task). Older results stored `policy` as the bare name with `tau_visit` /
+        `tau_stay` beside it; those are mapped onto the same shape.
+        """
+        policy = md.get('policy')
+        if isinstance(policy, dict):
+            return policy
+        if policy is None:
+            return {}
+        return {'name': policy,
+                'trigger_temperature_visit': md.get('tau_visit'),
+                'trigger_temperature_stay': md.get('tau_stay')}
+
+
+    @classmethod
+    def metadata_tau(cls, md: dict) -> tuple:
+        """
+        `(tau_visit, tau_stay)` of a run from its `_metadata`; `(None, None)` for the poles, which never read τ.
+        """
+        policy = cls.metadata_policy(md)
+        if policy.get('name') in ('hospital-side', 'patient-side'):
+            return None, None
+        return policy.get('trigger_temperature_visit'), policy.get('trigger_temperature_stay')
+
+
     def _run_points(self):
         """
         This run's negotiation-eligible records (GPC > 0 or inf) as discrete-dashboard points, with the
@@ -766,11 +794,12 @@ class FollowUpVisitEvaluator(Evaluator):
             ev = cls(path, start_hour=md['start_hour'], end_hour=md['end_hour'],
                      time_unit=md['time_unit'], model_name=model_name)
             points = ev._run_points()
-            policy = md.get('policy')
+            policy = cls.metadata_policy(md).get('name')
             pole = 'hospital' if policy == 'hospital-side' else 'patient' if policy == 'patient-side' else None
+            tau_visit, tau_stay = cls.metadata_tau(md)
             label = ('hospital-side' if pole == 'hospital' else 'patient-side' if pole == 'patient'
-                     else f"τ=({md.get('tau_visit')}, {md.get('tau_stay')})")
-            runs.append({'label': label, 'tau_visit': md.get('tau_visit'), 'tau_stay': md.get('tau_stay'),
+                     else f"τ=({tau_visit}, {tau_stay})")
+            runs.append({'label': label, 'tau_visit': tau_visit, 'tau_stay': tau_stay,
                          'is_pole': pole, 'points': points, 'stats': cls._points_stats(points)})
             if pole == 'hospital':
                 hospital = (path, md)
