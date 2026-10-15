@@ -13,7 +13,6 @@ from h_adminsim.registry import (
     SCHEDULE_STATUS,
     OPFU_PREFERENCE_PHRASE_PATIENT,
 )
-from h_adminsim.registry.d_class import StaffNegotiationPolicy
 from h_adminsim.utils import colorstr, log
 from h_adminsim.utils.mas_utils import *
 from h_adminsim.utils.fhir_utils import *
@@ -38,7 +37,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                  scheduling_strategy: str = 'tool_calling',
                  max_retries: int = 8,
                  patient_vllm_endpoint: Optional[str] = None,
-                 negotiation_params: dict = {}):
+                 negotiation_params: Optional[dict] = None):
         super().__init__()
 
         # Initialize variables
@@ -56,10 +55,8 @@ class OutpatientFollowUpScheduling(OutpatientTask):
         self.preference_rejection_prob = preference_rejection_prob
         self.preference_rejection_prob_decay = preference_rejection_prob_decay
 
-        # Initialize the negotiation metrics for each preference
-        self.staff_policy = StaffNegotiationPolicy(
-            **{k: v for k, v in negotiation_params.items() if not (k == 'name' and v is None)}
-        )
+        # Initialize the staff negotiation policy (its `type` picks the trigger index; None never negotiates)
+        self.staff_policy = build_negotiation_policy(negotiation_params)
 
         # Others
         self.fhir_integration = fhir_integration

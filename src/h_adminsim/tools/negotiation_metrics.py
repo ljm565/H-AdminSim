@@ -12,7 +12,6 @@ from h_adminsim.utils.common_utils import (
     str_to_datetime,
     convert_time_to_segment,
 )
-from h_adminsim.utils import colorstr, log
 
 if TYPE_CHECKING:
     from h_adminsim.tools.scheduling_rule import SchedulingRule
@@ -35,7 +34,9 @@ class NegotiationMetrics:
     - ``U``    Per-patient availability proxy (front-loading gain P -> T).
 
     Slot-level quantities (``tcl``, ``U``) are read off the same ``filtered_test_device_information``
-    the scheduler used, so they reflect the device state just before this booking commits.
+    the scheduler used, so they reflect the device state just before this booking commits. Whether to
+    negotiate is not decided here: the staff negotiation policy turns these metrics into its own
+    trigger index (see ``StaffNegotiationPolicy.trigger_index``).
     """
 
     def __init__(self,
@@ -46,9 +47,7 @@ class NegotiationMetrics:
                  environment: "HospitalEnvironment",
                  unavailable: Optional[dict] = None,
                  time_budget_s: float = 10.0,
-                 tcl_temperature: float = 1.0,
-                 trigger_temperature: float = 1.0,
-                 negotiation_trigger_threshold: float = 1.0):
+                 tcl_temperature: float = 1.0):
         """
         Args:
             preference (str): The booking's scheduling preference ('visit_min', 'stay_min',
@@ -65,12 +64,6 @@ class NegotiationMetrics:
                                                     negotiation actually books the patient into. Defaults to None.
             time_budget_s (float, optional): Wall-clock cap on the throughput_max backtracking search. Defaults to 10.0.
             tcl_temperature (float, optional): Softmax temperature for TCL (lower emphasizes the bottleneck test). Defaults to 1.0.
-            trigger_temperature (float, optional): Temperature τ dividing the trigger index in the case of visit_min preference:
-                                                   `ti = GPC * TCL / τ`; a smaller τ raises `ti`, triggering
-                                                   negotiation more readily (more aggressive). Must be > 0. Defaults to 1.0.
-            negotiation_trigger_threshold (float, optional): Cutoff P* on the trigger index; the patient is
-                                                             flagged for negotiation when `ti >= P*`. Higher is
-                                                             stricter (fewer negotiations); clamped to >= 0. Defaults to 1.0.
         """
         self.preference = preference
         self._P = achieved_schedule
@@ -82,11 +75,7 @@ class NegotiationMetrics:
         self._avail_cache = {}
         
         # Hyperparameters
-        if trigger_temperature <= 0:
-            raise ValueError(colorstr('red', f'trigger_temperature must be > 0 (it divides the trigger index GPC*TCL), got {trigger_temperature}.'))
         self.tcl_temperature = tcl_temperature
-        self.trigger_temperature = trigger_temperature
-        self.negotiation_trigger_threshold = max(0.0, negotiation_trigger_threshold)
 
         # Same time discretization the scheduler used.
         self._start_hour = rule._START_HOUR
@@ -331,22 +320,6 @@ class NegotiationMetrics:
         return self._softmax_weighted_mean(loads, self.tcl_temperature) if loads else 0.0
     
 
-    # ---- Trigger Index (TI) --------------------------------------------------
-    @property
-    def ti(self) -> float:
-        """
-        Trigger Index `ti = GPC * TCL / trigger_temperature`: how worth negotiating this patient is,
-        combining concession-worthiness (GPC) with device congestion (TCL). The patient is flagged for
-        negotiation when `ti >= negotiation_trigger_threshold` (see `do_negotiate` in `to_dict`).
-        Inherits GPC's `inf` for a free dominant win (G == 0, R > 0), which always triggers.
-        """
-        if self.preference in {'visit_min', 'stay_min'}:
-            return self.gpc * self.tcl / self.trigger_temperature
-        else:
-            log(f"NegotiationMetrics.ti used fallback for preference `{self.preference}`; returning GPC*TCL without trigger temperature.", level='warning')
-            return self.gpc * self.tcl
-
-
     # ---- Device Utility (U) --------------------------------------------------
     def _patient_slots(self, schedule: dict) -> dict:
         """
@@ -466,15 +439,14 @@ class NegotiationMetrics:
     # ---- export --------------------------------------------------------------
     def to_dict(self) -> dict:
         """
-        All metrics (plus preference) as a plain dict. 
-        Negotiation friction is tracked by the simulation as `negotiation_rounds`, not here.
+        All metrics (plus preference) as a plain dict. The trigger index `ti` and the negotiation
+        decision are added by the caller from the staff policy; negotiation friction is tracked by the
+        simulation as `negotiation_rounds`.
         """
         return {
             'preference': self.preference,
             'gpc': self.gpc,
             'tcl': self.tcl,
-            'ti': self.ti,
-            'do_negotiate': self.ti >= self.negotiation_trigger_threshold,
             'G': self.G,
             'R': self.R,
             'U': self.U,

@@ -4,6 +4,7 @@ import numpy as np
 from dataclasses import fields
 from datetime import timedelta
 from typing import Any, Optional
+from collections.abc import Mapping
 from decimal import Decimal, getcontext
 
 from h_adminsim.task import OutpatientTask
@@ -468,17 +469,18 @@ class Simulator:
     @staticmethod
     def _to_builtin_scalar(value: Any) -> Any:
         """
-        Cast a scalar down to its plain built-in type so `orjson` can serialize it.
+        Recursively cast a value down to plain built-in types so `orjson` can serialize it.
 
         Values read from the YAML config arrive as `ruamel.yaml` scalars (e.g. `ScalarFloat`), which
-        subclass `float`/`int`/`str`. `orjson` refuses `float` subclasses, so a τ taken straight from
-        the config blows up the result save — after the file has already been truncated.
+        subclass `float`/`int`/`str`, inside config containers (`Munch`, `CommentedMap`/`CommentedSeq`).
+        `orjson` refuses `float` subclasses, so a τ taken straight from the config blows up the result
+        save — after the file has already been truncated. Containers are rebuilt as `dict` / `list`.
 
         Args:
-            value (Any): Scalar to normalize; non-scalars are returned untouched.
+            value (Any): Scalar or container to normalize; other objects are returned untouched.
 
         Returns:
-            Any: The value as a built-in `bool`/`int`/`float`/`str`, or unchanged.
+            Any: The value with every scalar as a built-in `bool`/`int`/`float`/`str`.
         """
         if isinstance(value, bool):     # Must precede int: bool is an int subclass
             return bool(value)
@@ -488,19 +490,23 @@ class Simulator:
             return float(value)
         if isinstance(value, str):
             return str(value)
+        if isinstance(value, Mapping):
+            return {Simulator._to_builtin_scalar(k): Simulator._to_builtin_scalar(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple, set)):
+            return [Simulator._to_builtin_scalar(v) for v in value]
         return value
 
 
     def _collect_metadata(self, environment) -> dict:
         """
         Run metadata for the result files: the device operating window and the follow-up negotiation
-        policy actually used — its name plus every numeric knob (`tcl_temperature`, both trigger
-        temperatures τ, `negotiation_trigger_threshold`), so a run is reproducible from its result alone.
-        The poles (`hospital-side`, `patient-side`) record their pinned knob values (1.0); readers tell
-        them apart by `policy`, not by τ.
+        policy actually used — its type and mode plus every field of that policy type (e.g. the τ knobs
+        of `result_gain`, the test selector and value weights of `device_value`), so a run is reproducible from
+        its result alone. The poles (`hospital-side`, `patient-side`) record their pinned knob values
+        (1.0); readers tell them apart by `policy.mode`, not by τ.
 
-        Every value is cast back to a built-in scalar, since config-sourced numbers are `ruamel.yaml`
-        scalars that `orjson` cannot serialize.
+        Every value is cast back to built-in types, since config-sourced values are `ruamel.yaml`
+        scalars and containers that `orjson` cannot serialize.
         """
         metadata = {
             'start_hour': environment._START_HOUR,
@@ -511,15 +517,13 @@ class Simulator:
         task = self.task.get('follow_up_visit_scheduling')
         staff_policy = getattr(task, 'staff_policy', None)
         if staff_policy is not None:
-            metadata['policy'] = {
-                'name': staff_policy.name
-            }
+            metadata['policy'] = {'type': staff_policy.type, 'mode': staff_policy.mode}
 
-            # Every numeric knob of the policy (the prompt path is derived from the name, so it is skipped)
+            # Every field of the policy type (the prompt path is derived from the mode, so it is skipped)
             for field in fields(staff_policy):
-                if field.name not in ('name', 'negotiation_prompt_path'):
-                    metadata['policy'][field.name] = Simulator._to_builtin_scalar(getattr(staff_policy, field.name))
-        return {k: Simulator._to_builtin_scalar(v) for k, v in metadata.items()}
+                if field.name not in ('mode', 'negotiation_prompt_path'):
+                    metadata['policy'][field.name] = getattr(staff_policy, field.name)
+        return Simulator._to_builtin_scalar(metadata)
 
 
     @staticmethod

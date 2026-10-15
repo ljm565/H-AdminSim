@@ -481,7 +481,7 @@ class FollowUpVisitEvaluator(Evaluator):
             gpc = m.get('gpc')
             if gpc is None or (gpc and gpc > 0):
                 out.append({'preference': m.get('preference'), 'gpc': gpc,
-                            'tcl': m.get('tcl'), 'ti': m.get('ti'), 'gpc_inf': gpc is None})
+                            'tcl': m.get('tcl'), 'ti': self._ti(m), 'gpc_inf': gpc is None})
         return out
 
 
@@ -698,18 +698,10 @@ class FollowUpVisitEvaluator(Evaluator):
     @staticmethod
     def metadata_policy(md: dict) -> dict:
         """
-        The run's negotiation policy from its `_metadata` as `{'name', <knobs>...}` (empty when the run
-        has no follow-up task). Older results stored `policy` as the bare name with `tau_visit` /
-        `tau_stay` beside it; those are mapped onto the same shape.
+        The run's negotiation policy from its `_metadata` as `{'type', 'mode', <knobs>...}` (empty when
+        the run has no follow-up task), `mode` being `'threshold'`, `'hospital-side'`, or `'patient-side'`.
         """
-        policy = md.get('policy')
-        if isinstance(policy, dict):
-            return policy
-        if policy is None:
-            return {}
-        return {'name': policy,
-                'trigger_temperature_visit': md.get('tau_visit'),
-                'trigger_temperature_stay': md.get('tau_stay')}
+        return md.get('policy') or {}
 
 
     @classmethod
@@ -718,7 +710,7 @@ class FollowUpVisitEvaluator(Evaluator):
         `(tau_visit, tau_stay)` of a run from its `_metadata`; `(None, None)` for the poles, which never read τ.
         """
         policy = cls.metadata_policy(md)
-        if policy.get('name') in ('hospital-side', 'patient-side'):
+        if policy.get('mode') in ('hospital-side', 'patient-side'):
             return None, None
         return policy.get('trigger_temperature_visit'), policy.get('trigger_temperature_stay')
 
@@ -794,7 +786,7 @@ class FollowUpVisitEvaluator(Evaluator):
             ev = cls(path, start_hour=md['start_hour'], end_hour=md['end_hour'],
                      time_unit=md['time_unit'], model_name=model_name)
             points = ev._run_points()
-            policy = cls.metadata_policy(md).get('name')
+            policy = cls.metadata_policy(md).get('mode')
             pole = 'hospital' if policy == 'hospital-side' else 'patient' if policy == 'patient-side' else None
             tau_visit, tau_stay = cls.metadata_tau(md)
             label = ('hospital-side' if pole == 'hospital' else 'patient-side' if pole == 'patient'

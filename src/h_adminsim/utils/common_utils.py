@@ -18,7 +18,13 @@ from openai import (
 )
 
 from h_adminsim import registry
-from h_adminsim.registry import Hospital, ConversationState
+from h_adminsim.registry import (
+    Hospital,
+    ConversationState,
+    StaffNegotiationPolicy,
+    ResultGainNegotiationPolicy,
+    NEGOTIATION_POLICY_TYPES,
+)
 from h_adminsim.utils import Information, log, colorstr
 
 
@@ -1094,3 +1100,31 @@ def replace_none_value(config: Any) -> Any:
     if isinstance(config, tuple):
         return tuple(replace_none_value(value) for value in config)
     return None if isinstance(config, str) and config == 'None' else config
+
+
+
+def build_negotiation_policy(params: Optional[dict] = None) -> StaffNegotiationPolicy:
+    """
+    Build the negotiation policy described by one config block.
+
+    Args:
+        params (Optional[dict], optional): The policy block, e.g. ``{'type': 'result_gain', 'mode': 'threshold', ...}``.
+            ``type`` (required) picks the class; an omitted ``mode`` falls back to the class default
+            ``'threshold'``. None means no negotiation is configured, which builds a ``'result_gain'``
+            policy in ``'patient-side'`` mode (never negotiates). Defaults to None.
+
+    Raises:
+        ValueError: If ``type`` is not one of the registered policy types.
+
+    Returns:
+        StaffNegotiationPolicy: The policy instance.
+    """
+    if params is None:
+        return ResultGainNegotiationPolicy(mode='patient-side')
+
+    params = dict(params)
+    policy_type = params.pop('type', None)
+    if policy_type not in NEGOTIATION_POLICY_TYPES:
+        raise ValueError(colorstr("red", f"Unknown negotiation policy type `{policy_type}`; "
+                                         f"choose one of {list(NEGOTIATION_POLICY_TYPES)}"))
+    return NEGOTIATION_POLICY_TYPES[policy_type](**params)

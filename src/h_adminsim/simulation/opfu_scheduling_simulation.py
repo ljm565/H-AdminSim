@@ -984,8 +984,8 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         schedule and let the staff policy decide whether to negotiate.
 
         Metrics are computed on `patient_preferred_schedule` versus the throughput_max counterfactual;
-        the policy sets `do_negotiate` (the two extremes short-circuit, while the 'negotiation' policy
-        thresholds `ti`). The caller decides whether to run the persuasion turn from `do_negotiate`.
+        the policy adds its trigger index `ti` (threshold mode only; None on the extremes, which never
+        read it) and sets `do_negotiate`. The caller decides whether to run the persuasion turn from it.
 
         Args:
             patient_preferred_schedule (dict): The preference-based test schedule the staff proposed
@@ -1004,7 +1004,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         """
         preference = preference or patient_preferred_schedule.get('preference_type')
 
-        # tcl_temperature and the per-preference trigger_temperature are hospital-fixed on the policy.
+        # The hospital-fixed constants (e.g. tcl_temperature) come from the policy.
         metrics = NegotiationMetrics(
             preference=preference,
             achieved_schedule=self._copy_schedule_for_metrics(patient_preferred_schedule),
@@ -1012,15 +1012,11 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             rule=self.rules,
             environment=self.environment,
             unavailable=unavailable,
-            tcl_temperature=self.negotiation_policy.tcl_temperature,
-            trigger_temperature=self.negotiation_policy.trigger_temperature_for(preference),
-            negotiation_trigger_threshold=self.negotiation_policy.negotiation_trigger_threshold,
+            **self.negotiation_policy.metrics_kwargs(preference),
         ).to_dict()
 
-        # The policy makes the final call: 'keep' (book preferred), 'auto' (free win -> book throughput directly), or 'negotiate' (persuade).
-        action = self.negotiation_policy.negotiation_action(gpc=metrics['gpc'], ti=metrics['ti'])
-        metrics['negotiation_action'] = action
-        metrics['do_negotiate'] = (action == 'negotiate')
+        # The policy owns the trigger index, then makes the final call: 'keep' (book preferred), 'auto' (free win -> book throughput directly), or 'negotiate' (persuade).
+        metrics.update(self.negotiation_policy.decide(metrics))
         _metrics = {k: v for k, v in metrics.items() if not k.startswith('_')}
         log(colorstr('cyan', f'[negotiation_metrics] {_metrics}'))
         ############### TMP ###############
