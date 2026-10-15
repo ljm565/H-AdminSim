@@ -1019,9 +1019,9 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         metrics.update(self.negotiation_policy.decide(metrics))
         _metrics = {k: v for k, v in metrics.items() if not k.startswith('_')}
         log(colorstr('cyan', f'[negotiation_metrics] {_metrics}'))
-        ############### TMP ###############
-        log(colorstr('cyan', f'{metrics["_T"]}'))
-        log(colorstr('cyan', f'{metrics["_P"]}'))
+        # ############### TMP ###############
+        # log(colorstr('cyan', f'{metrics["_T"]}'))
+        # log(colorstr('cyan', f'{metrics["_P"]}'))
         return metrics
     
 
