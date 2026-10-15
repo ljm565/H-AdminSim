@@ -6,9 +6,16 @@ from collections import defaultdict
 from collections.abc import MutableMapping, MutableSequence
 from decimal import Decimal, getcontext
 from datetime import datetime, timedelta
-from google.genai.errors import ServerError
+from google.genai.errors import ServerError, ClientError
 from typing import Optional, Union, Tuple, Any
-from openai import InternalServerError, BadRequestError
+from openai import (
+    APIConnectionError,
+    AuthenticationError,
+    BadRequestError,
+    InternalServerError,
+    PermissionDeniedError,
+    RateLimitError,
+)
 
 from h_adminsim import registry
 from h_adminsim.registry import Hospital, ConversationState
@@ -850,6 +857,33 @@ def run_with_retry(func, *args, max_retries=8, **kwargs):
             )
             time.sleep(wait_time)
             retry_count += 1
+
+
+
+def is_fatal_api_error(e: Exception) -> bool:
+    """
+    Whether `e` is an LLM API infrastructure failure that should stop the run rather than
+    count as a simulation failure.
+
+    Args:
+        e (Exception): The exception to classify.
+
+    Returns:
+        bool: True for quota / auth / connection / exhausted-retry server errors (OpenAI, vLLM, Gemini).
+    """
+    FATAL_API_ERRORS = (
+        RateLimitError,         # OpenAI / vLLM 429, including exhausted quota
+        AuthenticationError,
+        PermissionDeniedError,
+        APIConnectionError,     # Also covers APITimeoutError
+        InternalServerError,    # Only reaches the caller after `run_with_retry` gave up
+        ServerError,            # Same, for Gemini
+    )
+    GENAI_FATAL_CODES = {401, 403, 429}
+    
+    if isinstance(e, FATAL_API_ERRORS):
+        return True
+    return isinstance(e, ClientError) and getattr(e, 'code', None) in GENAI_FATAL_CODES
 
 
 

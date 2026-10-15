@@ -17,7 +17,13 @@ from h_adminsim.tools.sanity_checker import SanityChecker
 from h_adminsim.simulation.op_simulation import OPSimulation
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.prompt_utils import load_prompt
-from h_adminsim.utils.common_utils import init_result_dict, preprocess_dialog, run_with_retry, staff_role
+from h_adminsim.utils.common_utils import (
+    staff_role,
+    run_with_retry,
+    init_result_dict,
+    preprocess_dialog,
+    is_fatal_api_error,
+)
 
 if TYPE_CHECKING:
     from h_adminsim.tools import SchedulingRule
@@ -831,7 +837,16 @@ class OPSchedulingSimulation(OPSimulation, ABC):
 
         Returns:
             dict: The result dictionary to return from the simulation.
+
+        Raises:
+            Exception: `e` itself when it is an LLM API infrastructure failure (see `is_fatal_api_error`),
+                       so the run stops and the caller saves the partial results for resumption.
         """
+        # API infrastructure failure: abort the run instead of recording it against the agents.
+        if is_fatal_api_error(e):
+            log(f'Fatal LLM API error, aborting the simulation: {e}', level='error')
+            raise e
+
         # The loop already recorded the outcome; only the dialogue is missing.
         if dialog_only and isinstance(e, dialog_only):
             result_dict['dialog'].append(preprocess_dialog(self.dialog_history[key]))
