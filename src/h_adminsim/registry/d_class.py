@@ -233,7 +233,10 @@ class ResultGainNegotiationPolicy(StaffNegotiationPolicy):
     def trigger_index(self, metrics: dict) -> float:
         """
         ``GPC * TCL / τ``; preferences without a τ (``throughput_max`` / ``indifferent``) use ``GPC * TCL``.
+        A free win (``gpc == inf``) is ``inf`` regardless of TCL, so an idle device (TCL 0) cannot turn it into NaN.
         """
+        if metrics['gpc'] == float('inf'):
+            return float('inf')
         if metrics['preference'] in {'visit_min', 'stay_min'}:
             return metrics['gpc'] * metrics['tcl'] / self.trigger_temperature_for(metrics['preference'])
         return metrics['gpc'] * metrics['tcl']

@@ -1,9 +1,10 @@
+import math
 import time
 import pytz
 import random
 from sconf import Config
 from collections import defaultdict
-from collections.abc import MutableMapping, MutableSequence
+from collections.abc import Mapping, MutableMapping, MutableSequence
 from decimal import Decimal, getcontext
 from datetime import datetime, timedelta
 from google.genai.errors import ServerError, ClientError
@@ -1100,6 +1101,61 @@ def replace_none_value(config: Any) -> Any:
     if isinstance(config, tuple):
         return tuple(replace_none_value(value) for value in config)
     return None if isinstance(config, str) and config == 'None' else config
+
+
+
+def to_builtin_scalar(value: Any) -> Any:
+    """
+    Recursively cast a value down to plain built-in types so `orjson` can serialize it.
+
+    Values read from the YAML config arrive as `ruamel.yaml` scalars (e.g. `ScalarFloat`), which
+    subclass `float`/`int`/`str`, inside config containers (`Munch`, `CommentedMap`/`CommentedSeq`).
+    `orjson` refuses `float` subclasses, so a τ taken straight from the config blows up the result
+    save — after the file has already been truncated. Containers are rebuilt as `dict` / `list`.
+
+    Args:
+        value (Any): Scalar or container to normalize; other objects are returned untouched.
+
+    Returns:
+        Any: The value with every scalar as a built-in `bool`/`int`/`float`/`str`.
+    """
+    if isinstance(value, bool):     # Must precede int: bool is an int subclass
+        return bool(value)
+    if isinstance(value, int):
+        return int(value)
+    if isinstance(value, float):
+        return float(value)
+    if isinstance(value, str):
+        return str(value)
+    if isinstance(value, Mapping):
+        return {to_builtin_scalar(k): to_builtin_scalar(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [to_builtin_scalar(v) for v in value]
+    return value
+
+
+
+def encode_non_finite(value: Any) -> Any:
+    """
+    Recursively copy `value` with every infinite float written as the string `'inf'` / `'-inf'`.
+
+    `orjson` serializes `inf` as `null`, which would make a free-win GPC / trigger index (`inf`)
+    indistinguishable from a value that was never computed (`None`). Apply it to the copy being
+    saved only, so in-memory values that are compared against `float('inf')` stay real floats.
+
+    Args:
+        value (Any): Structure to save (dicts, lists, scalars).
+
+    Returns:
+        Any: A copy safe to save, with infinities as strings.
+    """
+    if isinstance(value, float) and math.isinf(value):
+        return 'inf' if value > 0 else '-inf'
+    if isinstance(value, dict):
+        return {k: encode_non_finite(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [encode_non_finite(v) for v in value]
+    return value
 
 
 

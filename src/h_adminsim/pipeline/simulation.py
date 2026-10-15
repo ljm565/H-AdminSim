@@ -3,8 +3,7 @@ import random
 import numpy as np
 from dataclasses import fields
 from datetime import timedelta
-from typing import Any, Optional
-from collections.abc import Mapping
+from typing import Optional
 from decimal import Decimal, getcontext
 
 from h_adminsim.task import OutpatientTask
@@ -15,7 +14,13 @@ from h_adminsim.task.fhir_manager import FHIRManager
 from h_adminsim.tools import DataConverter
 from h_adminsim.environment.hospital import HospitalEnvironment
 from h_adminsim.utils.filesys_utils import json_load, json_save_fast, get_files
-from h_adminsim.utils.common_utils import compare_iso_time, get_iso_time, str_to_datetime
+from h_adminsim.utils.common_utils import (
+    get_iso_time,
+    str_to_datetime,
+    compare_iso_time,
+    to_builtin_scalar,
+    encode_non_finite,
+)
 
 
 
@@ -448,6 +453,7 @@ class Simulator:
                              result rather than re-deriving it. The `_` prefix keeps evaluators (which
                              iterate task keys) from treating it as a task.
         """
+        agent_results = encode_non_finite(agent_results)
         columnar = {**agent_results, '_metadata': metadata} if metadata is not None else agent_results
         json_save_fast(save_path, columnar)
 
@@ -464,37 +470,6 @@ class Simulator:
             grouped['_metadata'] = metadata
         root, ext = os.path.splitext(save_path)
         json_save_fast(f"{root}_grouped{ext}", grouped)
-
-
-    @staticmethod
-    def _to_builtin_scalar(value: Any) -> Any:
-        """
-        Recursively cast a value down to plain built-in types so `orjson` can serialize it.
-
-        Values read from the YAML config arrive as `ruamel.yaml` scalars (e.g. `ScalarFloat`), which
-        subclass `float`/`int`/`str`, inside config containers (`Munch`, `CommentedMap`/`CommentedSeq`).
-        `orjson` refuses `float` subclasses, so a τ taken straight from the config blows up the result
-        save — after the file has already been truncated. Containers are rebuilt as `dict` / `list`.
-
-        Args:
-            value (Any): Scalar or container to normalize; other objects are returned untouched.
-
-        Returns:
-            Any: The value with every scalar as a built-in `bool`/`int`/`float`/`str`.
-        """
-        if isinstance(value, bool):     # Must precede int: bool is an int subclass
-            return bool(value)
-        if isinstance(value, int):
-            return int(value)
-        if isinstance(value, float):
-            return float(value)
-        if isinstance(value, str):
-            return str(value)
-        if isinstance(value, Mapping):
-            return {Simulator._to_builtin_scalar(k): Simulator._to_builtin_scalar(v) for k, v in value.items()}
-        if isinstance(value, (list, tuple, set)):
-            return [Simulator._to_builtin_scalar(v) for v in value]
-        return value
 
 
     def _collect_metadata(self, environment) -> dict:
@@ -523,7 +498,7 @@ class Simulator:
             for field in fields(staff_policy):
                 if field.name not in ('mode', 'negotiation_prompt_path'):
                     metadata['policy'][field.name] = getattr(staff_policy, field.name)
-        return Simulator._to_builtin_scalar(metadata)
+        return to_builtin_scalar(metadata)
 
 
     @staticmethod

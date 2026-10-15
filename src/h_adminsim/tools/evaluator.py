@@ -6,6 +6,7 @@ from bisect import bisect_right
 from collections import Counter
 
 from h_adminsim.utils import log, colorstr
+from h_adminsim.utils.common_utils import encode_non_finite
 from h_adminsim.utils.filesys_utils import get_files, json_load, json_save_fast
 from h_adminsim.utils.image_preprocess_utils import draw_fail_donut_subplots
 
@@ -429,24 +430,38 @@ class FollowUpVisitEvaluator(Evaluator):
 
 
     def _iter_metrics(self, files):
-        """Yield each prediction's stored `negotiation_metrics` dict."""
+        """
+        Yield each prediction's stored `negotiation_metrics` dict, with the `'inf'` / `'-inf'` strings the
+        simulator writes for infinities (JSON has none) restored to floats — so a free win reads back as
+        `gpc == inf`, while None stays "not computed".
+        """
+        restore = {'inf': float('inf'), '-inf': float('-inf')}
         for fp in self._iter_preds(files):
             m = fp.get('negotiation_metrics')
             if isinstance(m, dict):
-                yield m
+                yield {k: (restore[v] if isinstance(v, str) and v in restore else v) for k, v in m.items()}
 
 
     @staticmethod
-    def _ti(m):
+    def _is_inf(x) -> bool:
+        """Whether `x` is an infinite number (a free win's GPC / trigger index)."""
+        return isinstance(x, (int, float)) and math.isinf(x)
+
+
+    @classmethod
+    def _ti(cls, m):
         """
         τ-invariant trigger index ``ti = GPC·TCL``, recomputed from the stored GPC and TCL rather than
         read from the stored ``ti`` field. The stored ``ti`` is ``GPC·TCL / trigger_temperature``, so it
         is scaled per run/preference; recomputing keeps it comparable across runs (e.g. interpolation
-        runs with trigger_temperature != 1). None when GPC is inf (auto free win) or a value is missing.
+        runs with trigger_temperature != 1). ``inf`` for a free win (regardless of TCL, as the policy
+        computes it); None when a value is missing.
         """
         gpc, tcl = m.get('gpc'), m.get('tcl')
         if gpc is None or tcl is None:
             return None
+        if cls._is_inf(gpc):
+            return gpc
         return gpc * tcl
 
 
@@ -454,7 +469,7 @@ class FollowUpVisitEvaluator(Evaluator):
         """Flatten a `negotiation_metrics` dict to the dashboard fields (+ derived flags)."""
         row = {k: m.get(k) for k in self.METRIC_KEYS}
         row['ti'] = self._ti(m)                       # τ-invariant GPC·TCL (not the scaled stored ti)
-        row['gpc_inf'] = (m.get('gpc') is None)       # orjson serializes float('inf') as null
+        row['gpc_inf'] = self._is_inf(m.get('gpc'))
         row['auto'] = (m.get('negotiation_action') == 'auto')
         return row
 
@@ -479,9 +494,9 @@ class FollowUpVisitEvaluator(Evaluator):
         out = []
         for m in self._iter_metrics(files):
             gpc = m.get('gpc')
-            if gpc is None or (gpc and gpc > 0):
+            if gpc is not None and gpc > 0:           # inf (free win) included
                 out.append({'preference': m.get('preference'), 'gpc': gpc,
-                            'tcl': m.get('tcl'), 'ti': self._ti(m), 'gpc_inf': gpc is None})
+                            'tcl': m.get('tcl'), 'ti': self._ti(m), 'gpc_inf': self._is_inf(gpc)})
         return out
 
 
@@ -496,7 +511,7 @@ class FollowUpVisitEvaluator(Evaluator):
         exactly the patients with ``GPC·TCL >= τ`` negotiate — equivalently one may keep
         ``trigger_temperature == 1`` and set ``negotiation_trigger_threshold`` to the same value. So per
         preference we sort the ti values ascending (visit_min / stay_min, ti > 0; the free-win ``auto``
-        case has ti None and is excluded) and take evenly-ranked quantile points — giving cutoff
+        case has ti inf and is excluded) and take evenly-ranked quantile points — giving cutoff
         candidates that split the cohort into roughly equal bands. `auto` free wins always negotiate
         regardless of the cutoff, so they are not thresholds.
 
@@ -509,7 +524,7 @@ class FollowUpVisitEvaluator(Evaluator):
         by_pref = {'visit_min': [], 'stay_min': []}
         for m in self._iter_metrics(self.files):
             pref, ti = m.get('preference'), self._ti(m)   # ti = GPC·TCL (τ-invariant)
-            if pref in by_pref and ti is not None and ti > 0:
+            if pref in by_pref and ti is not None and 0 < ti < float('inf'):
                 by_pref[pref].append(round(float(ti), 6))
 
         division = tau_n + 1
@@ -724,11 +739,11 @@ class FollowUpVisitEvaluator(Evaluator):
         points = []
         for m in self._iter_metrics(self.files):
             gpc = m.get('gpc')
-            if not (gpc is None or (gpc and gpc > 0)):
+            if gpc is None or gpc <= 0:               # inf (free win) included
                 continue
             target = m.get('negotiation_action') in ('negotiate', 'auto')
             points.append({
-                'gpc': gpc, 'tcl': m.get('tcl'), 'preference': m.get('preference'), 'gpc_inf': gpc is None,
+                'gpc': gpc, 'tcl': m.get('tcl'), 'preference': m.get('preference'), 'gpc_inf': self._is_inf(gpc),
                 'is_target': target,
                 'outcome': (m.get('negotiation_outcome') if target else 'keep'),
                 'R': m.get('R') or 0, 'G': m.get('G') or 0, 'U': m.get('U') or 0,
@@ -816,7 +831,7 @@ class FollowUpVisitEvaluator(Evaluator):
                 log(f"{r['label']:<26} tau=({r['tau_visit']},{r['tau_stay']}) "
                     f"target {s['n_target']}/{s['n_total']}  sumR {s['sum_R']}")
         if save_path:
-            json_save_fast(save_path, payload)
+            json_save_fast(save_path, encode_non_finite(payload))     # free-win GPC / ti saved as 'inf', not null
             log(f'Multi-run dashboard data saved to {colorstr("green", save_path)}')
         return payload
 
@@ -859,7 +874,7 @@ class FollowUpVisitEvaluator(Evaluator):
         if verbose:
             self._report(payload)
         if save_path:
-            json_save_fast(save_path, payload)
+            json_save_fast(save_path, encode_non_finite(payload))     # free-win GPC / ti saved as 'inf', not null
             log(f'Dashboard data saved to {colorstr("green", save_path)}')
         return payload
 
