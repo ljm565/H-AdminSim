@@ -288,7 +288,11 @@ class SchedulingAdminStaffAgent(BaseAgent):
         elif 'gpt' in self.model.lower():
             llm = ChatOpenAI(
                 model_name=self.model, 
-                temperature=0 if not 'gpt-5' in self.model.lower() else 1
+                temperature=0 if not 'gpt-5' in self.model.lower() else 1,
+                api_key=self.client.client.api_key,
+                base_url=str(self.client.client.base_url),
+                timeout=120,
+                max_retries=3,
             )
             agent = create_openai_tools_agent(
                 llm=llm,
@@ -301,6 +305,8 @@ class SchedulingAdminStaffAgent(BaseAgent):
                 model=self.model,
                 temperature=0,
                 base_url=f"{self.client.vllm_endpoint}/v1",
+                timeout=120,
+                max_retries=3,
             )
             agent = create_openai_tools_agent(
                 llm=llm,
