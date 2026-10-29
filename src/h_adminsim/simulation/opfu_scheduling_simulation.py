@@ -106,7 +106,8 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         self.sanity_checker = sanity_checker
         self.rules = SchedulingRule(metadata, department_data, self.environment, self.fhir_integration)
         self.negotiation_policy = negotiation_policy
-        self._negotiation_agent = None   # standalone persuasion agent, built lazily on first negotiation
+        self.capacity_protection = negotiation_policy.capacity_protection if negotiation_policy else None  # urgent capacity protection, applied per patient (None disables)
+        self._negotiation_agent = None   # standalone persuasion agent, built lazily on first negotiation        
 
     
     def _rejection_prompt_fields(self,
@@ -653,7 +654,8 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         (via the shared `render_availability_tables`), instead of a verbose JSON dump of occupied
         intervals. One table per (test, device). This is only the reasoning-fallback prompt's
         rendering — the underlying `filtered_test_device_information` (used by post-processing /
-        sanity) is unchanged.
+        sanity) is unchanged. Dates of a test held back by the urgent capacity protection are shown
+        fully booked, so the fallback never proposes a slot the sanity checker would reject.
 
         Args:
             filtered_test_device_information (dict): `{'test': {code: {'duration_hour', 'devices': {device: {'schedule': {date: [...]}}}}}}`.
@@ -661,13 +663,59 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         Returns:
             str: Markdown tables of free windows, or a placeholder when there are no devices.
         """
+        blocked = self.rules.protection_blocked
+
+        def bookable(code: str, schedule: dict) -> dict:
+            return {date: [[self._START_HOUR, self._END_HOUR]] if (code, date) in blocked else slots
+                    for date, slots in schedule.items()}
+
         items = [
             (f"Device `{device}` — supports test `{code}` (duration {info.get('duration_hour')}h)",
-             dinfo.get('schedule') or {})
+             bookable(code, dinfo.get('schedule') or {}))
             for code, info in (filtered_test_device_information.get('test') or {}).items()
             for device, dinfo in (info.get('devices') or {}).items()
         ]
         return render_availability_tables(items, self._START_HOUR, self._END_HOUR)
+
+
+    def _capacity_protection_record(self,
+                                    preference_type: str,
+                                    test_codes: list,
+                                    test_device_information: Optional[dict],
+                                    unavailable: Optional[dict]) -> Optional[dict]:
+        """
+        Per-booking record of the urgent capacity protection, stored on the prediction for evaluation.
+
+        `blocked` lists the (test, date) pairs of this patient's tests that were held back from them. When any
+        were, `unprotected` is the schedule the same objective would have produced with nothing held back, so the
+        protection's cost to this (normal) patient can be measured booking by booking.
+
+        Args:
+            preference_type (str): Objective the booked schedule was built with (`throughput_max` after a negotiation).
+            test_codes (list): The patient's required test codes.
+            test_device_information (Optional[dict]): Test device schedules (None under FHIR).
+            unavailable (Optional[dict]): The patient's test-time unavailability.
+
+        Returns:
+            Optional[dict]: `{'blocked': [[code, date], ...], 'unprotected': {...} | None}`, or None without protection.
+        """
+        if self.capacity_protection is None:
+            return None
+
+        blocked = sorted([code, date] for code, date in self.rules.protection_blocked if code in test_codes)
+        record = {'blocked': blocked, 'unprotected': None}
+        if blocked:
+            filtered_test_device_information = self.environment.get_test_device_schedule(
+                test_device_information=test_device_information,
+                test_code=list(test_codes),
+                fhir_integration=self.fhir_integration and test_device_information is None,
+            )
+            with self.rules.capacity_protection_lifted():
+                unprotected = self.rules.schedule_tests(
+                    preference_type, filtered_test_device_information, list(test_codes), 10, unavailable=unavailable,
+                )
+            record['unprotected'] = {k: unprotected[k] for k in ('all_results_ready_at', 'test_visit_dates', 'idle_waiting_time', 'unscheduled')}
+        return record
 
 
     def _get_rescheduled_test_result(self,
@@ -692,6 +740,9 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             assert doctor_information is not None, colorstr("red", f"Doctor information must be provided if you don't use FHIR.")
 
         required_test_codes = [t['code'] for t in known_condition.get('test') or []]
+
+        # The booking's own urgency decides its protected dates; its current hours are about to be freed
+        self.rules.apply_capacity_protection(self.capacity_protection, known_condition.get('urgency'), exclude=known_condition)
         filtered_doctor_information = self.environment.get_doctor_schedule(
             doctor_information=doctor_information,
             department=known_condition['department'],
@@ -783,6 +834,12 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         if not improved:
             return None
 
+        # Protection record of the new booking, taken before the old booking's slots are freed (as in its search)
+        protection_record = self._capacity_protection_record(
+            new_schedule.get('preference_type') or preference,
+            [t['code'] for t in original_tests], test_device_information, original_schedule.get('unavailable'),
+        )
+
         # Free the old booking, then build the new follow-up prediction (booking is done by the caller)
         self.rules.cancel_test_schedule(idx, doctor_information, test_device_information, original_schedule)
         fu_slot = new_schedule['fu_schedule']
@@ -799,11 +856,13 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             'schedule': [fu_schedule['start'], fu_schedule['end']] if fu_schedule else None,
             'patient_intention': original_schedule.get('patient_intention'),
             'preference': original_schedule.get('preference'),
+            'urgency': original_schedule.get('urgency'),
             'preferred_doctor': original_schedule.get('preferred_doctor'),
             'valid_from': original_schedule.get('valid_from'),
             'unavailable': original_schedule.get('unavailable'),
             'test': new_schedule['test_schedule'],
             'idle_waiting_time': new_schedule['idle_waiting_time'],
+            'capacity_protection': protection_record,
             'last_updated_time': self.environment.current_time,
         }
         return final_schedule
@@ -1400,6 +1459,9 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         merged_patient_kwargs = {**patient_kwargs, **kwargs}
         merged_staff_kwargs = {**staff_kwargs, **kwargs}
 
+        # Urgent capacity protection for this patient (hospital time is fixed until the booking)
+        self.rules.apply_capacity_protection(self.capacity_protection, gt_data[0].get('urgency'))
+
         # Staff turn closure: captures all of `scheduling`'s simulation-side arguments
         def staff_turn(user_prompt: str) -> Tuple[str, dict]:
             staff_known_data.update({'patient_intention': user_prompt})
@@ -1721,6 +1783,11 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                 for item in pred_schedule['test_schedule']:
                     item['schedule'] = [item.pop('start'), item.pop('end')]
 
+                # What the urgent capacity protection held back from this booking (and what it would have been without)
+                protection_record = self._capacity_protection_record(
+                    booked_preference, [t['code'] for t in gt_data[i]['test']], test_device_information, gt_data[i].get('unavailable'),
+                )
+
                 final_schedule = {
                     'visit_type': 'follow_up_visit',
                     'patient': staff_known_data['patient_fv']['patient'],
@@ -1730,12 +1797,14 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                     'schedule': [fu_schedule['start'], fu_schedule['end']] if fu_schedule else None,
                     'patient_intention': staff_known_data['patient_intention'],
                     'preference': 'throughput_max' if negotiation_done else gt_data[i].get('preference'),
+                    'urgency': gt_data[i].get('urgency'),   # read back by the urgent capacity protection and evaluation
                     'preferred_doctor': gt_data[i].get('preferred_doctor'),
                     'valid_from': gt_data[i].get('valid_from'),
                     'unavailable': gt_data[i].get('unavailable'),   # kept so later re-runs honor the same constraint
                     'test': pred_schedule['test_schedule'],
                     'idle_waiting_time': pred_schedule['idle_waiting_time'],
                     'negotiation_metrics': negotiation_metrics,
+                    'capacity_protection': protection_record,
                     'last_updated_time': self.environment.current_time
                 }
                 result_dict['pred'] = [final_schedule]

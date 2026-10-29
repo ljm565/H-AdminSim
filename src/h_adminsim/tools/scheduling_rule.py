@@ -2,6 +2,7 @@ import time
 from copy import deepcopy
 from decimal import Decimal
 from collections import defaultdict
+from contextlib import contextmanager
 from langchain.tools import tool
 from langchain.agents import AgentExecutor
 from typing import Union, Optional, TYPE_CHECKING
@@ -14,6 +15,7 @@ from h_adminsim.utils.fhir_utils import *
 from h_adminsim.utils.common_utils import *
 
 if TYPE_CHECKING:
+    from h_adminsim.registry import CapacityProtection
     from h_adminsim.environment.hospital import HospitalEnvironment
 
 
@@ -35,6 +37,67 @@ class SchedulingRule:
         self._END_HOUR = self._metadata.get('time').get('end_hour')
         self._TIME_UNIT = self._metadata.get('time').get('interval_hour')
         self.fhir_integration = fhir_integration
+        self._protection_blocked = set()    # (test_code, date) the current patient may not book (see `apply_capacity_protection`)
+
+
+    def apply_capacity_protection(self,
+                                  protection: Optional["CapacityProtection"],
+                                  urgency: Optional[str],
+                                  exclude: Optional[dict] = None) -> set:
+        """
+        Set the (test, date) pairs the current patient may not book under the urgent capacity protection.
+
+        Held as rule state so every scheduler call made for this patient — the staff's scheduling tools, the
+        negotiation counterfactual, the sanity checker's optimum and the rescheduling pipeline — sees the same
+        feasible set. A `normal` patient is blocked from a protected date of a test once the hours already booked
+        there (fixed bookings and patients of any urgency) plus this test's duration would exceed the booking
+        limit, i.e. would leave less than the protected share free; `urgent` patients (and runs without
+        protection) are never blocked. (test, date) pairs with no capacity at all (closed days) are skipped, as
+        nobody can book them.
+
+        Args:
+            protection (Optional[CapacityProtection]): The protection, or None when disabled.
+            urgency (Optional[str]): The patient's urgency (`urgent` / `normal`).
+            exclude (Optional[dict], optional): The patient's own booking being rescheduled, whose hours are
+                                                not counted against the limit. Defaults to None.
+
+        Returns:
+            set: The blocked `(test_code, date)` pairs.
+        """
+        self._protection_blocked = set()
+        if protection is None or urgency != 'normal':
+            return self._protection_blocked
+
+        now = str_to_datetime(self.environment.current_time)
+        used = self.environment.booked_test_hours(exclude=exclude)
+        for (code, date), capacity_hours in self.environment.test_capacity.items():
+            if capacity_hours <= 0:
+                continue
+            opening = str_to_datetime(get_iso_time(self._START_HOUR, date, utc_offset=self._utc_offset))
+            if not protection.is_protected((opening - now).total_seconds() / 3600):
+                continue
+            if used.get((code, date), 0.0) + self.environment.test_duration[code] > protection.normal_limit(capacity_hours) + 1e-9:
+                self._protection_blocked.add((code, date))
+        return self._protection_blocked
+
+
+    @property
+    def protection_blocked(self) -> set:
+        """(test_code, date) pairs the current patient may not book under the urgent capacity protection."""
+        return self._protection_blocked
+
+
+    @contextmanager
+    def capacity_protection_lifted(self):
+        """
+        Temporarily schedule as if no capacity were protected (e.g. to measure what the protection cost a patient),
+        restoring the current patient's blocked pairs afterwards.
+        """
+        saved, self._protection_blocked = self._protection_blocked, set()
+        try:
+            yield
+        finally:
+            self._protection_blocked = saved
 
 
     def physician_filter(self, 
@@ -411,6 +474,8 @@ class SchedulingRule:
             test_info (dict): One entry from `filtered_test_device_information['test'][code]`.
             after_iso (str): Earliest acceptable ISO start time considering priority and depends_on conditions.
             forbidden_dates (set): Dates blocked by an already-placed test in `avoid_same_day`.
+                                   Dates of this test held back by the urgent capacity protection
+                                   (`apply_capacity_protection`) are skipped as well.
             extra_busy (Optional[dict]): `{device_name: {date: [[start_hr, end_hr], ...]}}` of slots booked earlier in this call. Defaults to None.
             patient_busy (Optional[dict]): `{date: [[start_hr, end_hr], ...]}` of intervals during which the patient is already occupied by previously-placed tests. 
                                            Applied to every device (a patient cannot be at two devices at once). Defaults to None.
@@ -443,6 +508,10 @@ class SchedulingRule:
 
             for date in sorted(set(device_schedule.keys())):
                 if date in forbidden_dates:
+                    continue
+
+                # Urgent capacity protection: this date of the test is held back from the current (normal) patient
+                if (test_info.get('code'), date) in self._protection_blocked:
                     continue
 
                 # The patient cannot attend: drop the date entirely, or block the half-day they cannot make.

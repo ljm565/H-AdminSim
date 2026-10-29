@@ -518,6 +518,10 @@ class OutpatientFollowUpScheduling(OutpatientTask):
         department = fv_patient_info['department']
         required_test_list = gt['required_tests']
 
+        # Urgency of the diagnosed disease (known to the hospital)
+        symptom = test_data['constraint']['symptom']
+        urgency = symptom.get('urgency')
+
         # Assuming the test was determined by the doctor
         fv_patient_info['test'] = required_test_list
         if self.fhir_integration:
@@ -537,6 +541,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                 'attending_physician': attending_physician,
                 'test': required_test_list,
                 'preference': preference,
+                'urgency': urgency,
                 'occupation': gt['occupation'],
                 'distance': gt['distance'],
                 'unavailable': gt['unavailable'],

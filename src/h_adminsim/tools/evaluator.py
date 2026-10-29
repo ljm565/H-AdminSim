@@ -2,8 +2,9 @@ import os
 import math
 import numpy as np
 from typing import Optional
+from datetime import datetime
 from bisect import bisect_right
-from collections import Counter
+from collections import Counter, defaultdict
 
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.common_utils import encode_non_finite
@@ -834,6 +835,183 @@ class FollowUpVisitEvaluator(Evaluator):
             json_save_fast(save_path, encode_non_finite(payload))     # free-win GPC / ti saved as 'inf', not null
             log(f'Multi-run dashboard data saved to {colorstr("green", save_path)}')
         return payload
+
+
+    # ---- urgent capacity protection ------------------------------------------
+    def _booking_rows(self):
+        """
+        `(gt, final pred, status)` of every follow-up row of this run. `gt` is the patient condition dict for a
+        regular booking and a plain string for system rows (e.g. automatic waiting-list rescheduling).
+        """
+        for file in self.files:
+            value = json_load(file).get(self.TASK) or {}
+            for gt, pred, status in zip(value.get('gt', []), value.get('pred', []), value.get('status', [])):
+                yield gt, self._final_pred(pred), self._final_pred(status)
+
+
+    def _test_capacity(self):
+        """
+        `{(test_code, date): free_hours}` before any follow-up booking (total capacity minus fixed bookings), from
+        the run's own hospital data. Closed days carry no capacity. Note the protection's booking limit is based on
+        the total capacity instead (`HospitalEnvironment.test_capacity`).
+        """
+        parent = os.path.dirname(os.path.normpath(self.path))
+        capacity = defaultdict(float)
+        for result_file in self.files:
+            hospital_id = os.path.basename(result_file).split('_agent_result')[0]
+            source = os.path.join(parent, 'agent_data', f'{hospital_id}_agent.json')
+            if not os.path.isfile(source):
+                continue
+            data = json_load(source)
+            for tests in (data.get('test') or {}).values():
+                for test in tests:
+                    for info in (test.get('devices') or {}).values():
+                        for date, intervals in (info.get('schedule') or {}).items():
+                            free = (self.end_hour - self.start_hour) - sum(e - s for s, e in intervals)
+                            if free > 0:
+                                capacity[(test['code'], date)] += free
+        return capacity
+
+
+    @staticmethod
+    def _hours_between(later: str, earlier: str) -> float:
+        return (datetime.fromisoformat(later) - datetime.fromisoformat(earlier)).total_seconds() / 3600
+
+
+    @classmethod
+    def _wait_stats(cls, hours: list) -> dict:
+        """Median / mean / p90 of booking -> all-results-ready hours."""
+        if not hours:
+            return {'n': 0, 'median_h': None, 'mean_h': None, 'p90_h': None}
+        return {'n': len(hours), 'median_h': round(float(np.median(hours)), 1), 'mean_h': round(float(np.mean(hours)), 1),
+                'p90_h': round(float(np.percentile(hours, 90)), 1)}
+
+
+    def protection_summary(self, early_days: int = 3) -> dict:
+        """
+        Hospital-side outcome of the urgent capacity protection for this run, split by urgency.
+
+        - `urgent` / `normal`: regular bookings (patient-condition rows only), with booking -> all-results-ready hours
+          (booking time = the prediction's `last_updated_time`), failure count and partial bookings (fewer tests
+          than prescribed). Measured at booking, so a later cancellation or reschedule does not change it.
+        - `normal_cost`: normal bookings that had a date of their tests held back (`capacity_protection.blocked`),
+          and how many hours later their results came than the unprotected schedule of the same objective.
+        - `capacity`: utilization of the start-of-simulation test capacity by the final (non-cancelled) bookings,
+          over all dates and over the first `early_days` test dates, plus the urgent share of the early bookings —
+          the slots the protection is meant to keep for urgent patients.
+
+        Args:
+            early_days (int, optional): Number of first test dates counted as early capacity. Defaults to 3.
+
+        Returns:
+            dict: `{'urgent', 'normal', 'normal_cost', 'capacity'}`.
+        """
+        waits, failed, partial = defaultdict(list), Counter(), Counter()
+        affected, cost_hours, cost_days = 0, [], []
+        booked, booked_urgent = defaultdict(float), defaultdict(float)
+
+        for gt, pred, status in self._booking_rows():
+            ok = status is True and isinstance(pred, dict)
+
+            # Final occupancy: every live booking, including system reschedules
+            if ok and pred.get('status') != 'cancelled':
+                for t in pred.get('test') or []:
+                    if t.get('schedule') and t.get('status') != 'cancelled':
+                        hours = t['schedule'][1] - t['schedule'][0]
+                        booked[(t['code'], t['date'])] += hours
+                        if pred.get('urgency') == 'urgent':
+                            booked_urgent[(t['code'], t['date'])] += hours
+
+            if not isinstance(gt, dict):
+                continue
+            urgency = gt.get('urgency')
+            if not ok:
+                failed[urgency] += 1
+                continue
+
+            tests = [t for t in pred.get('test') or [] if t.get('result_ready_at')]
+            if len(pred.get('test') or []) < len(gt.get('test') or []):
+                partial[urgency] += 1
+            if tests and pred.get('last_updated_time'):
+                ready = max(tests, key=lambda t: datetime.fromisoformat(t['result_ready_at']))['result_ready_at']
+                waits[urgency].append(self._hours_between(ready, pred['last_updated_time']))
+
+                # What the protection cost this booking against its unprotected counterfactual
+                record = pred.get('capacity_protection') or {}
+                if record.get('blocked'):
+                    affected += 1
+                    unprotected = record.get('unprotected') or {}
+                    if unprotected.get('all_results_ready_at'):
+                        cost_hours.append(self._hours_between(ready, unprotected['all_results_ready_at']))
+                        cost_days.append(len({t['date'] for t in tests}) - len(unprotected.get('test_visit_dates') or []))
+
+        summary = {
+            urgency: {**self._wait_stats(waits[urgency]), 'failed': failed[urgency], 'partial': partial[urgency]}
+            for urgency in ('urgent', 'normal')
+        }
+        summary['normal_cost'] = {
+            'affected': affected,
+            'mean_delay_h': round(float(np.mean(cost_hours)), 1) if cost_hours else None,
+            'median_delay_h': round(float(np.median(cost_hours)), 1) if cost_hours else None,
+            'delayed': sum(1 for h in cost_hours if h > 1e-6),
+            'mean_extra_visit_days': round(float(np.mean(cost_days)), 2) if cost_days else None,
+        }
+
+        capacity = self._test_capacity()
+        early_dates = set(sorted({d for _, d in capacity})[:early_days])
+        early = [k for k in capacity if k[1] in early_dates]
+        early_booked = sum(booked[k] for k in early)
+        summary['capacity'] = {
+            'utilization_all': round(sum(booked[k] for k in capacity) / sum(capacity.values()), 4) if capacity else None,
+            'utilization_early': round(early_booked / sum(capacity[k] for k in early), 4) if early else None,
+            'urgent_share_early': round(sum(booked_urgent[k] for k in early) / early_booked, 4) if early_booked else None,
+            'early_dates': sorted(early_dates),
+        }
+        return summary
+
+
+    @classmethod
+    def protection_report(cls, run_paths, save_path=None, early_days=3, verbose=True):
+        """
+        Compare the urgent capacity protection across runs (e.g. `ratio` 0 / disabled as the baseline, then 0.1,
+        0.2, ...). Each folder's `_metadata` supplies its operating window and the policy's `capacity_protection`;
+        runs are ordered by protection ratio (disabled first).
+
+        Args:
+            run_paths (list[str]): One results directory per run.
+            save_path (str, optional): Where to write the report JSON.
+            early_days (int, optional): Number of first test dates counted as early capacity. Defaults to 3.
+
+        Returns:
+            list[dict]: One `{'label', 'capacity_protection', 'policy', **protection_summary}` per run.
+        """
+        report = []
+        for path in run_paths:
+            md = cls._read_metadata(path)
+            ev = cls(path, start_hour=md['start_hour'], end_hour=md['end_hour'], time_unit=md['time_unit'], model_name='n/a')
+            policy = cls.metadata_policy(md)
+            protection = policy.get('capacity_protection')
+            label = f"ratio={protection['ratio']}" if protection else 'no protection'
+            report.append({'label': label, 'capacity_protection': protection,
+                           'policy': {k: v for k, v in policy.items() if k != 'capacity_protection'},
+                           **ev.protection_summary(early_days)})
+        report.sort(key=lambda r: (r['capacity_protection'] or {}).get('ratio', 0.0))
+
+        if verbose:
+            log('--------------Urgent capacity protection--------------')
+            for r in report:
+                u, n, c, cap = r['urgent'], r['normal'], r['normal_cost'], r['capacity']
+                log(f"{r['label']:<16} urgent  {u['n']:>5} wait median {u['median_h']}h mean {u['mean_h']}h p90 {u['p90_h']}h "
+                    f"(failed {u['failed']}, partial {u['partial']})")
+                log(f"{'':<16} normal  {n['n']:>5} wait median {n['median_h']}h mean {n['mean_h']}h p90 {n['p90_h']}h "
+                    f"(failed {n['failed']}, partial {n['partial']})")
+                log(f"{'':<16} normal affected {c['affected']} (delayed {c['delayed']}, mean +{c['mean_delay_h']}h, "
+                    f"extra visit days {c['mean_extra_visit_days']}) | utilization all {cap['utilization_all']}, "
+                    f"early {cap['utilization_early']} (urgent share {cap['urgent_share_early']})")
+        if save_path:
+            json_save_fast(save_path, report)
+            log(f'Protection report saved to {colorstr("green", save_path)}')
+        return report
 
 
     # ---- assembled dashboard payload ------------------------------------------

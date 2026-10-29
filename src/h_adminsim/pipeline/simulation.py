@@ -1,10 +1,10 @@
 import os
 import random
 import numpy as np
-from dataclasses import fields
 from datetime import timedelta
 from typing import Optional
 from decimal import Decimal, getcontext
+from dataclasses import fields, asdict, is_dataclass
 
 from h_adminsim.task import OutpatientTask
 from h_adminsim.task.opfv_task import *
@@ -497,7 +497,8 @@ class Simulator:
             # Every field of the policy type (the prompt path is derived from the mode, so it is skipped)
             for field in fields(staff_policy):
                 if field.name not in ('mode', 'negotiation_prompt_path'):
-                    metadata['policy'][field.name] = getattr(staff_policy, field.name)
+                    value = getattr(staff_policy, field.name)
+                    metadata['policy'][field.name] = asdict(value) if is_dataclass(value) else value
         return to_builtin_scalar(metadata)
 
 

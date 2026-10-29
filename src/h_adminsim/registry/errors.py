@@ -41,6 +41,7 @@ STATUS_CODES = {
         'dependency': 'test_schedule: dependency violated',
         'avoid_same_day': 'test_schedule: avoid_same_day violated',
         'unavailable': "test_schedule: scheduled when the patient is unavailable",
+        'protection': "test_schedule: booked capacity held back for urgent patients",
         'preference': {
             'throughput_max': 'test_schedule: not earliest result-ready time',
             'visit_min': 'test_schedule: not minimum visit-date count',

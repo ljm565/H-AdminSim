@@ -1,8 +1,9 @@
 import time
 import random
 from copy import deepcopy
-from decimal import getcontext
 from datetime import timedelta
+from collections import defaultdict
+from decimal import Decimal, getcontext
 from typing import Union, Tuple, Optional
 
 from h_adminsim.registry import SCHEDULE_STATUS
@@ -62,7 +63,10 @@ class HospitalEnvironment:
             utc_offset=self._utc_offset
         )
         self.avg_gap = self.__calculate_max_time_increment()
-        
+
+        # Total capacity and fixed (pre-booked) hours per (test, date)
+        self.test_capacity, self._test_fixed_booked, self.test_duration = self.__calculate_test_capacity(agent_test_data.get('test') or {})
+
         # Misc.
         self.patient_schedules = list()
         self.waiting_list = list()
@@ -90,6 +94,62 @@ class HospitalEnvironment:
         total_hours = (tr - st).total_seconds() / 3600
         avg_gap = total_hours / self._PATIENT_NUM
         return avg_gap
+
+
+    def __calculate_test_capacity(self, test_information: dict) -> Tuple[dict, dict, dict]:
+        """
+        Total working hours and fixed (pre-booked) hours of every test per date, pooled over its devices.
+        Fixed device schedules are bookings of patients outside the simulation, except a device-date covered
+        entirely, which marks a closed day and contributes to neither.
+
+        Args:
+            test_information (dict): Static test data `{department: [test_dict, ...]}` holding fixed device schedules.
+
+        Returns:
+            Tuple[dict, dict, dict]: `{(test_code, date): capacity_hours}`, `{(test_code, date): fixed_booked_hours}`
+                                     (as `Decimal`) and `{test_code: duration_hour}`.
+        """
+        capacity, fixed, duration = defaultdict(Decimal), defaultdict(Decimal), {}
+        day_hours = Decimal(str(self._END_HOUR)) - Decimal(str(self._START_HOUR))
+        for tests in test_information.values():
+            for test in tests:
+                duration[test['code']] = test['duration_hour']
+                for device_info in test.get('devices', {}).values():
+                    for date, schedules in device_info.get('schedule', {}).items():
+                        busy = sum((Decimal(str(e)) - Decimal(str(s)) for s, e in schedules), Decimal(0))
+                        if busy >= day_hours:
+                            capacity[(test['code'], date)] += 0     # Closed day: keep the key with zero capacity
+                            continue
+                        capacity[(test['code'], date)] += day_hours
+                        fixed[(test['code'], date)] += busy
+        return {k: float(v) for k, v in capacity.items()}, dict(fixed), duration
+
+
+    def booked_test_hours(self, exclude: Optional[dict] = None) -> dict:
+        """
+        Test hours already booked per (test, date): the fixed bookings plus follow-up patients of any urgency —
+        the usage the urgent capacity protection compares against its booking limit (nested protection: urgent
+        bookings use up the same capacity). Follow-up bookings are read from `patient_schedules`, so
+        cancellations, reschedules and resumes are reflected without separate bookkeeping.
+
+        Args:
+            exclude (Optional[dict], optional): A booking to leave out (the one being rescheduled, whose slots are
+                                                about to be freed). Defaults to None.
+
+        Returns:
+            dict: `{(test_code, date): booked_hours}`.
+        """
+        used = defaultdict(Decimal, self._test_fixed_booked)
+        for schedule in self.patient_schedules:
+            if schedule is exclude or schedule.get('visit_type') != 'follow_up_visit':
+                continue
+            if schedule.get('status') == SCHEDULE_STATUS['cancelled']:
+                continue
+            for test in schedule.get('test') or []:
+                if test.get('status') == SCHEDULE_STATUS['cancelled'] or not test.get('schedule'):
+                    continue
+                used[(test['code'], test['date'])] += Decimal(str(test['schedule'][1])) - Decimal(str(test['schedule'][0]))
+        return {k: float(v) for k, v in used.items()}
 
 
     def get_general_doctor_info_from_fhir(self, use_cache: bool = True) -> dict:

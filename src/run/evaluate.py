@@ -85,6 +85,15 @@ def main(args):
         )
         log('')
 
+    # urgent capacity protection: one results folder per protection ratio (a run without protection as the baseline)
+    if 'protection' in args.type:
+        FollowUpVisitEvaluator.protection_report(
+            run_paths=args.runs,
+            save_path=args.out or 'protection_report.json',
+            early_days=args.early_days,
+        )
+        log('')
+
 
 
 
@@ -94,10 +103,11 @@ if __name__ == '__main__':
                         help='Agent test results folder. For "dashboard" this is the hospital-side (tau=0) run. '
                              'Not used by "dashboard_multi" (use --runs).')
     parser.add_argument('-t', '--type', type=str, required=True, nargs='+',
-        choices=['task', 'human', 'department', 'rounds', 'token', 'dashboard', 'tau', 'dashboard_multi'],
+        choices=['task', 'human', 'department', 'rounds', 'token', 'dashboard', 'tau', 'dashboard_multi', 'protection'],
         help='Evaluations to run (you can specify multiple). "dashboard" computes the follow-up '
              'negotiation dashboard values; "tau" extracts per-preference interpolation tau seeds; '
-             '"dashboard_multi" assembles the discrete multi-run dashboard from several run folders.'
+             '"dashboard_multi" assembles the discrete multi-run dashboard from several run folders; '
+             '"protection" compares the urgent capacity protection across run folders (--runs).'
     )
     parser.add_argument('--model', type=str, required=False, default=None,
                         help='Model name (required for "token" and "dashboard")')
@@ -109,17 +119,21 @@ if __name__ == '__main__':
     parser.add_argument('--tau_n', type=int, required=False, default=4,
                         help='[tau/dashboard] Number of interior tau seeds to extract per preference (default: 4)')
     parser.add_argument('--runs', type=str, nargs='+', required=False, default=None,
-                        help='[dashboard_multi] Results folders, one per τ stop (hospital, interpolation runs, patient).')
+                        help='[dashboard_multi] Results folders, one per τ stop (hospital, interpolation runs, patient). '
+                             '[protection] Results folders, one per protection ratio.')
+    parser.add_argument('--early_days', type=int, required=False, default=3,
+                        help='[protection] Number of first test dates counted as early capacity (default: 3)')
     args = parser.parse_args()
 
     if 'dashboard' in args.type and not args.model:
         parser.error('--model is required when running "dashboard"')
     if 'token' in args.type and not args.model:
         parser.error('--model is required when running "token"')
-    if 'dashboard_multi' in args.type and not args.runs:
-        parser.error('--runs is required when running "dashboard_multi"')
-    # every mode except dashboard_multi needs a single -p/--path
-    if any(t != 'dashboard_multi' for t in args.type) and not args.path:
+    for multi_run in ('dashboard_multi', 'protection'):
+        if multi_run in args.type and not args.runs:
+            parser.error(f'--runs is required when running "{multi_run}"')
+    # every mode except the multi-run ones needs a single -p/--path
+    if any(t not in ('dashboard_multi', 'protection') for t in args.type) and not args.path:
         parser.error('-p/--path is required')
 
     main(args)

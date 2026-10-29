@@ -64,6 +64,8 @@ class StaffNegotiationPolicy:
             for ``'patient-side'``, which never negotiates).
         negotiation_trigger_threshold: Cutoff on ``ti`` for the ``'threshold'`` mode — the strength
             knob (higher = stricter, fewer negotiations; pinned to 1.0 on the extremes).
+        capacity_protection: Urgent capacity protection run alongside the policy (in every mode), or None
+            when disabled. It restricts which slots `normal` patients may book, independent of negotiation.
     """
     type: ClassVar[str] = ''
     MODES: ClassVar[tuple] = ('threshold', 'hospital-side', 'patient-side')
@@ -72,6 +74,7 @@ class StaffNegotiationPolicy:
     mode: str = 'threshold'
     negotiation_prompt_path: str = str(resources.files("h_adminsim.assets.prompts").joinpath("staff_negotiation_policy_common_system.txt"))
     negotiation_trigger_threshold: float = 1.0
+    capacity_protection: Optional[CapacityProtection] = None
 
 
     def __post_init__(self):
@@ -242,4 +245,50 @@ class ResultGainNegotiationPolicy(StaffNegotiationPolicy):
         return metrics['gpc'] * metrics['tcl']
 
 
-NEGOTIATION_POLICY_TYPES = {cls.type: cls for cls in (ResultGainNegotiationPolicy)}
+NEGOTIATION_POLICY_TYPES = {cls.type: cls for cls in (ResultGainNegotiationPolicy,)}
+
+
+
+@dataclass
+class CapacityProtection:
+    """
+    Airline-style capacity protection of follow-up tests for `urgent` patients (two-class booking limit).
+
+    Each test (all of its devices pooled) keeps a `ratio` share of its total capacity on a date (working hours
+    of its open devices) for `urgent` patients: a `normal` patient may book the test on that date only while
+    the hours already booked there (fixed bookings and patients of any urgency) plus the new test stay within
+    `(1 - ratio)` of that capacity, i.e. the booking leaves at least the protected share free. `urgent`
+    patients may use every free slot, so their bookings also consume the protected share (nested protection).
+
+    Only dates opening within `horizon_days` of the current time are protected, and a date is released to
+    everyone once it opens within `release_hours`, so held-back capacity that urgent demand did not take is
+    not wasted.
+
+    Fields:
+        ratio: Share of each (test, date) total capacity held back for `urgent` patients, in [0, 1).
+        horizon_days: Protect dates opening within this many days of the current time.
+        release_hours: Release a date to `normal` patients once it opens within this many hours.
+    """
+    ratio: float = 0.2
+    horizon_days: float = 3.0
+    release_hours: float = 24.0
+
+    def __post_init__(self):
+        if not 0 <= self.ratio < 1:
+            raise ValueError(colorstr("red", f"`ratio` must be in [0, 1), got {self.ratio}."))
+        if self.horizon_days <= 0:
+            raise ValueError(colorstr("red", f"`horizon_days` must be > 0, got {self.horizon_days}."))
+        if not 0 <= self.release_hours < self.horizon_days * 24:
+            raise ValueError(colorstr("red", f"`release_hours` must be in [0, horizon_days * 24), got {self.release_hours}."))
+
+
+    def is_protected(self, lead_hours: float) -> bool:
+        """
+        Whether a date whose opening is `lead_hours` away from now is still held back for `urgent` patients.
+        """
+        return self.release_hours <= lead_hours < self.horizon_days * 24
+
+
+    def normal_limit(self, capacity_hours: float) -> float:
+        """Total booked hours of a (test, date) up to which `normal` patients may still book."""
+        return (1 - self.ratio) * capacity_hours
