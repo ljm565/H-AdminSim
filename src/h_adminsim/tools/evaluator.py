@@ -158,7 +158,7 @@ class Evaluator:
 
                 if task not in aggregated_results:
                     aggregated_results[task] = {'token': []}
-                aggregated_results[task]['token'].extend(value['token'])
+                aggregated_results[task]['token'].extend(value.get('token', []))
 
         pricing = self.model_pricing[model_name]
         agent_keys = ["patient_token", "admin_staff_token", "supervisor_token"]
@@ -194,8 +194,12 @@ class Evaluator:
                 sim_cost["total"] = sim_total
                 sim_costs.append(sim_cost)
 
+            if not sim_costs:
+                log(f"No token usage found for '{task}'; skipping token cost calculation.", level='warning')
+                continue
+
             n = len(sim_costs)
-            avg = {k: sum(s[k] for s in sim_costs) / n for k in agent_keys + ["total"]}
+            avg ={k: sum(s[k] for s in sim_costs) / n for k in agent_keys + ["total"]}
 
             log(f"{task} (n={n})", color=True)
             for agent_key in agent_keys:
@@ -209,8 +213,7 @@ class Evaluator:
                 log(f"    avg_input_tokens    : {avg_input:.1f}")
                 log(f"    avg_output_tokens   : {avg_output:.1f}")
                 log(f"    avg_reasoning_tokens: {avg_reasoning:.1f}")
-
-                print(f"{avg_cost:.6f} & {avg_input:.1f} & {avg_reasoning:.1f} & {avg_output:.1f}")
+                log("")
 
             log(f"total            : ${avg['total']:.6f}")
 
@@ -323,12 +326,18 @@ class FirstVisitEvaluator(Evaluator):
 
         for file in self.files:
             data = json_load(file)
+            if 'first_visit_intake' not in data:
+                continue
             aggregated_results['first_visit_intake']['gt'].extend(data['first_visit_intake']['gt'])
             aggregated_results['first_visit_intake']['pred'].extend(data['first_visit_intake']['pred'])
             aggregated_results['first_visit_intake']['status'].extend(data['first_visit_intake']['status'])
 
         gt = aggregated_results['first_visit_intake']['gt']
         pred = aggregated_results['first_visit_intake']['pred']
+        if not gt:
+            log("No 'first_visit_intake' results found; skipping department evaluation.", level='warning')
+            return
+
         status = [all(s.values()) for s in aggregated_results['first_visit_intake']['status']]
         total_n, dept_err_n = len(gt), 0
         for g, p, s in zip(gt, pred, status):
@@ -350,9 +359,15 @@ class FirstVisitEvaluator(Evaluator):
         counts = list()
         for file in self.files:
             data = json_load(file)
+            if 'first_visit_intake' not in data:
+                continue
             dialogs = data['first_visit_intake']['dialog']
             for dialog in dialogs:
                 counts.append(dialog.count('Staff: ')-1)
+
+        if not counts:
+            log("No 'first_visit_intake' results found; skipping average rounds calculation.", level='warning')
+            return
 
         mean, stdv = np.mean(counts), np.std(counts)
         log('-----------------Average Rounds-----------------')
