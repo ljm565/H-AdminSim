@@ -1,9 +1,9 @@
 import os
 import math
 import numpy as np
-from typing import Optional
 from datetime import datetime
 from bisect import bisect_right
+from typing import Optional, Tuple
 from collections import Counter, defaultdict
 
 from h_adminsim.utils import log, colorstr
@@ -391,36 +391,107 @@ class FollowUpVisitEvaluator(Evaluator):
                    'negotiation_action', 'negotiation_outcome', 'negotiation_rounds')
 
     def __init__(self, 
-                 path: str, 
-                 start_hour: float,
-                 end_hour: float,
-                 time_unit: float,
-                 model_name: str,
-                 counterpart_path: Optional[str] = None):
+                 hospital_side_path: str, 
+                 model_name: Optional[str] = None,
+                 patient_side_path: Optional[str] = None,
+                 interpolated_paths: Optional[list[str]] = None):
         """
         Args:
-            path (str): Hospital-side (τ=0) results directory.
-            start_hour (float): Device operating start hour. Required — it is randomized per hospital, so
-                                pass the run's own value (`metadata.time.start_hour` in the hospital data);
-                                `run/evaluate.py` loads it from there automatically.
-            end_hour (float): Device operating end hour. Required (see `start_hour`;
-                              `metadata.time.end_hour`).
-            time_unit (float): Slot granularity in hours (`metadata.time.interval_hour`). Required.
-                               start_hour/end_hour/time_unit define the timetable grid used to rebuild
-                               each device's bookings for the ΔU compactness metric.
-            model_name (str): Model label stored in the dashboard meta block. Required.
-            counterpart_path (str, optional): Patient-side (τ=∞) results directory. Required for the
-                                              patient pole and per-device ΔU; the hospital-only values
-                                              are still produced without it.
+            hospital_side_path (str): Hospital-side (τ=0) results directory.
+            model_name (Optional[str], optional): Model label stored in the dashboard meta block. Defaults to None.
+            patient_side_path (Optional[str], optional): Patient-side (τ=∞) results directory. Required for the
+                                                         patient pole and per-device ΔU; the hospital-only values
+                                                         are still produced without it. Defaults to None.
+            interpolated_paths (Optional[list[str]], optional): List of interpolated results directories. Defaults to None.
         """
-        super().__init__(path, False)
-        self.counterpart_path = counterpart_path
-        self.counterpart_files = get_files(counterpart_path, '_result.json') if counterpart_path else []
-        self.start_hour = None if start_hour is None else float(start_hour)
-        self.end_hour = None if end_hour is None else float(end_hour)
-        self.time_unit = float(time_unit)
+        super().__init__(hospital_side_path, False)
+        self.hospital_file, _hospital_md = self._read_data(hospital_side_path)
+        mds = [_hospital_md]
+        
+        # If patient-side path is provided
+        if patient_side_path:
+            self.patient_file, _patient_md = self._read_data(patient_side_path)
+            mds.append(_patient_md)
+        else:
+            self.patient_file, _patient_md = None, None
+
+        # Interpolated runs, kept in the given order (hospital side -> patient side)
+        self.interpolated_files, self.interpolated_mds = [], []
+        for path in interpolated_paths or []:
+            interpolated_file, interpolated_md = self._read_data(path)
+            self.interpolated_files.append(interpolated_file)
+            self.interpolated_mds.append(interpolated_md)
+        mds.extend(self.interpolated_mds)
+
+        # Sanity check: all runs must have the same operating window and time_unit
+        self._sanity_check(*mds)
+
+        # Store the operating window and time_unit from the metadata
+        self.start_hour = float(_hospital_md['start_hour'])
+        self.end_hour = float(_hospital_md['end_hour'])
+        self.time_unit = float(_hospital_md['time_unit'])
         self.model_name = model_name
         self._used_window = None   # resolved (start, end) actually used for ΔU
+
+        log(f"Run metadata: window {self.start_hour}-{self.end_hour} (time_unit {self.time_unit})")
+
+
+    @staticmethod
+    def _read_data(path: str) -> Tuple[str, dict]:
+        """
+        Read the `_metadata` block the simulator stored in the result file — the operating window
+        (start/end hour, time_unit) and the negotiation policy / trigger temperatures τ. Assumes the run
+        was saved with metadata (re-run, or backfill older results).
+
+        Args:
+            path (str): Path to a run's results directory.
+
+        Returns:
+            Tuple[str, dict]: The result file path and the `_metadata` dict.
+        
+        Raises:
+            FileNotFoundError: If no `*_result.json` file is found under `path`.
+            ValueError: If the `_metadata` block is missing in the result file.
+        """
+        result_files = sorted(get_files(path, '_result.json'))
+        
+        if not result_files:
+            raise FileNotFoundError(f"No '*_result.json' under {path}")
+        
+        if len(result_files) > 1:
+            log(f"Warning: multiple '*_result.json' files under {path}; using the first one: {result_files[0]}", level='warning')
+        
+        result_file = result_files[0]
+        md = json_load(result_file).get('_metadata')
+        
+        if not md:
+            raise ValueError(f"No '_metadata' in {result_file} — re-run the simulation or backfill it.")
+        
+        return result_file, md
+    
+
+    @staticmethod
+    def _sanity_check(*args):
+        """
+        Check that the runs are compatible: every `_metadata` key except `policy` (operating window, time_unit, ...)
+        must have the same value across all runs.
+
+        Args:
+            *args (dict): `_metadata` dicts of the runs to compare.
+
+        Raises:
+            ValueError: If any non-policy metadata value differs between runs.
+        """
+        if len(args) < 2:
+            return
+
+        keys = sorted(set().union(*args) - {'policy'})
+        mismatches = {k: [md.get(k) for md in args] for k in keys}
+        mismatches = {k: v for k, v in mismatches.items() if any(x != v[0] for x in v[1:])}
+
+        if mismatches:
+            detail = ', '.join(f"{k}: {v}" for k, v in mismatches.items())
+            raise ValueError(f"Incompatible run metadata (policy excluded) — {detail}")
 
 
     # ---- record iteration -----------------------------------------------------
@@ -473,9 +544,7 @@ class FollowUpVisitEvaluator(Evaluator):
         runs with trigger_temperature != 1). ``inf`` for a free win (regardless of TCL, as the policy
         computes it); None when a value is missing.
         """
-        gpc, tcl = m.get('gpc'), m.get('tcl')
-        if gpc is None or tcl is None:
-            return None
+        gpc, tcl = m['gpc'], m['tcl']
         if cls._is_inf(gpc):
             return gpc
         return gpc * tcl
@@ -538,7 +607,7 @@ class FollowUpVisitEvaluator(Evaluator):
             dict[str, list[float]]: ``{'visit_min': [...], 'stay_min': [...]}`` with up to `tau_n` τ each.
         """
         by_pref = {'visit_min': [], 'stay_min': []}
-        for m in self._iter_metrics(self.files):
+        for m in self._iter_metrics([self.hospital_file]):
             pref, ti = m.get('preference'), self._ti(m)   # ti = GPC·TCL (τ-invariant)
             if pref in by_pref and ti is not None and 0 < ti < float('inf'):
                 by_pref[pref].append(round(float(ti), 6))
@@ -552,6 +621,11 @@ class FollowUpVisitEvaluator(Evaluator):
                 continue
             idx = sorted({min(len(vals) - 1, round(len(vals) * i / division)) for i in range(1, division)})
             result[pref] = [vals[k] for k in idx]
+        
+        log(f'--------------Interpolation tau seeds (tau_n={tau_n})--------------')
+        for pref, vals in result.items():
+                log(f'{pref:<12} ({len(vals)}): {vals}')
+
         return result
 
 
