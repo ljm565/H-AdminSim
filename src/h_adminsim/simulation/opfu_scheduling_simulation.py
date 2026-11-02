@@ -697,13 +697,15 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             unavailable (Optional[dict]): The patient's test-time unavailability.
 
         Returns:
-            Optional[dict]: `{'blocked': [[code, date], ...], 'unprotected': {...} | None}`, or None without protection.
+            Optional[dict]: `{'blocked': [[code, date], ...], 'objective': preference_type, 'unprotected': {...} | None}`,
+                            or None without protection. `unprotected.tests` keeps each placed test's date and result
+                            time, so evaluation can compare it with a partial booking on the same tests.
         """
         if self.capacity_protection is None:
             return None
 
         blocked = sorted([code, date] for code, date in self.rules.protection_blocked if code in test_codes)
-        record = {'blocked': blocked, 'unprotected': None}
+        record = {'blocked': blocked, 'objective': preference_type, 'unprotected': None}
         if blocked:
             filtered_test_device_information = self.environment.get_test_device_schedule(
                 test_device_information=test_device_information,
@@ -714,7 +716,11 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                 unprotected = self.rules.schedule_tests(
                     preference_type, filtered_test_device_information, list(test_codes), 10, unavailable=unavailable,
                 )
-            record['unprotected'] = {k: unprotected[k] for k in ('all_results_ready_at', 'test_visit_dates', 'idle_waiting_time', 'unscheduled')}
+            record['unprotected'] = {
+                **{k: unprotected[k] for k in ('all_results_ready_at', 'test_visit_dates', 'idle_waiting_time', 'unscheduled')},
+                'tests': {code: {'date': a['date'], 'result_ready_at': a['result_ready_at']}
+                          for code, a in unprotected['test_schedule'].items()},
+            }
         return record
 
 

@@ -91,6 +91,7 @@ def main(args):
             run_paths=args.runs,
             save_path=args.out or 'protection_report.json',
             early_days=args.early_days,
+            first_within_hours=args.first_within_hours,
         )
         log('')
 
@@ -121,8 +122,10 @@ if __name__ == '__main__':
     parser.add_argument('--runs', type=str, nargs='+', required=False, default=None,
                         help='[dashboard_multi] Results folders, one per τ stop (hospital, interpolation runs, patient). '
                              '[protection] Results folders, one per protection ratio.')
-    parser.add_argument('--early_days', type=int, required=False, default=3,
-                        help='[protection] Number of first test dates counted as early capacity (default: 3)')
+    parser.add_argument('--early_days', type=int, required=False, default=None,
+                        help='[protection] Number of first test dates in the fixed early view (default: ceil(horizon_days))')
+    parser.add_argument('--first_within_hours', type=float, required=False, default=None,
+                        help='[protection] Horizon of the first-test access share (default: horizon_days * 24)')
     args = parser.parse_args()
 
     if 'dashboard' in args.type and not args.model:
