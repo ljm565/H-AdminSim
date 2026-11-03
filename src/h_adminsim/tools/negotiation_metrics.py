@@ -3,7 +3,7 @@ from bisect import bisect_right
 from collections import defaultdict
 from functools import cached_property
 from decimal import Decimal, getcontext
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, Tuple, TYPE_CHECKING
 
 from h_adminsim.utils.common_utils import (
     iso_to_date,
@@ -16,6 +16,25 @@ from h_adminsim.utils.common_utils import (
 if TYPE_CHECKING:
     from h_adminsim.tools.scheduling_rule import SchedulingRule
     from h_adminsim.environment.hospital import HospitalEnvironment
+
+
+
+def frontload_pairs(booked: set, free: set) -> Tuple[int, int]:
+    """
+    Mann-Whitney pair counts behind the front-loading score: for each booked slot, the free slots that come
+    after it on a single flattened slot axis. `good / total` is the score (1.0 = every booking precedes every
+    free slot, 0.0 = fully back-loaded); keeping the two counts lets callers pool them across devices.
+
+    Args:
+        booked (set): Booked slot indices on the axis.
+        free (set): Free slot indices on the same axis (disjoint from `booked`).
+
+    Returns:
+        Tuple[int, int]: `(good, total)` — (booked, later-free) pairs and all `len(booked) * len(free)` pairs.
+    """
+    free_sorted = sorted(free)
+    good = sum(len(free_sorted) - bisect_right(free_sorted, b) for b in booked)
+    return good, len(booked) * len(free)
 
 
 
@@ -392,9 +411,9 @@ class NegotiationMetrics:
                 continue
 
             # Mann-Whitney: for each booking, count free slots that come AFTER it.
-            free_sorted = sorted(free)
-            tot_good += sum(len(free_sorted) - bisect_right(free_sorted, b) for b in booked)
-            tot_max += len(booked) * len(free)
+            good, total = frontload_pairs(booked, free)
+            tot_good += good
+            tot_max += total
 
         return (tot_good / tot_max) if tot_max else 0.0
 
