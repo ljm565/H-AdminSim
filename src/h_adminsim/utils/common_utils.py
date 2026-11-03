@@ -491,7 +491,7 @@ def convert_time_to_segment(start: float,
     assert interval > 0, colorstr("red", "Interval must be greater than 0")
     
     getcontext().prec = 10
-    num_segments = int((end - start) / interval)
+    num_segments = int((Decimal(str(end)) - Decimal(str(start))) / Decimal(str(interval)))
 
     if time_range == None:
         return list(range(num_segments))
@@ -532,7 +532,7 @@ def convert_segment_to_time(start: float,
     assert interval > 0, colorstr("red", "Interval must be greater than 0")
 
     getcontext().prec = 10
-    max_segments = int((end - start) / interval) - 1
+    max_segments = int((Decimal(str(end)) - Decimal(str(start))) / Decimal(str(interval))) - 1
     
     # Sanity checking
     for s in segments:
