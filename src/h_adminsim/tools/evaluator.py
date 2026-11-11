@@ -1,15 +1,15 @@
 import os
 import math
 import numpy as np
-from datetime import datetime
-from bisect import bisect_right
-from typing import Optional, Tuple
+from decimal import Decimal, getcontext
+from typing import Optional, Tuple, Union
 from collections import Counter, defaultdict
 
 from h_adminsim.utils import log, colorstr
-from h_adminsim.utils.common_utils import get_iso_time, encode_non_finite
-from h_adminsim.utils.filesys_utils import get_files, json_load, json_save_fast
+from h_adminsim.utils.common_utils import *
+from h_adminsim.tools.negotiation_metrics import frontload_pairs
 from h_adminsim.utils.image_preprocess_utils import draw_fail_donut_subplots
+from h_adminsim.utils.filesys_utils import get_files, json_load, json_save_fast
 
 
 
@@ -374,40 +374,338 @@ class FirstVisitEvaluator(Evaluator):
         log(f'Average Rounds: {mean:.2f} ± {stdv:.2f}')
 
 
-
-class FollowUpVisitEvaluator(Evaluator):
+class NegotiationRecordMixin:
     """
-    Follow-up-visit (OPFU test scheduling + negotiation) evaluation.
-
-    Beyond the shared accuracy/cost evaluation, this computes every value the negotiation-policy
-    dashboard needs and can dump it as a single JSON. The policy spectrum has two poles supplied as two
-    runs: `path` is the hospital-side (τ=0, always negotiate) run and `counterpart_path` is the
-    patient-side (τ=∞, never negotiate) run. Per-patient metrics (GPC/TCL/G/R/U/ti) are read straight
-    from each prediction's stored ``negotiation_metrics``; the per-device ΔU is recomputed from the
-    actual final bookings of both runs, so it is a real (non-counterfactual) systemic measure.
+    Read and interpret the follow-up task's stored records across any list of result files, so the same helpers
+    serve every run (hospital-side, interpolated, patient-side, protection runs): each patient's final prediction,
+    its ``negotiation_metrics`` (cohorts and their statistics), and its ``capacity_protection`` record (the
+    protection's cost against the unprotected counterfactual), plus the generic wait / cost statistics and the
+    run's start-of-simulation test capacity. Holds no run state; the files (and the operating window, where
+    needed) are always passed in.
     """
     TASK = 'follow_up_visit_scheduling'
     METRIC_KEYS = ('preference', 'gpc', 'tcl', 'ti', 'G', 'R', 'U', 'U_pref', 'U_thr',
                    'negotiation_action', 'negotiation_outcome', 'negotiation_rounds')
+    # Unit of `_protection_cost`'s `native` cost per scheduling objective (the quantity that objective minimizes)
+    PROTECTION_COST_UNITS = {'throughput_max': 'result_delay_h', 'visit_min': 'extra_visit_days', 'stay_min': 'extra_idle_wait_h'}
 
-    def __init__(self, 
-                 hospital_side_path: str, 
+
+    @classmethod
+    def _booking_rows(cls, files):
+        """
+        `(gt, final pred, status)` of every follow-up row of this run. `gt` is the patient condition dict for a
+        regular booking and a plain string for system rows (e.g. automatic waiting-list rescheduling).
+        """
+        for file in files:
+            value = json_load(file).get(cls.TASK) or {}
+            for gt, pred, status in zip(value.get('gt', []), value.get('pred', []), value.get('status', [])):
+                yield gt, cls._final_pred(pred), cls._final_pred(status)
+
+
+    @staticmethod
+    def _final_pred(pred):
+        """A prediction is a dict, or a list of retries; take the last (booked) attempt."""
+        if isinstance(pred, list):
+            return pred[-1] if pred else None
+        return pred
+
+
+    @classmethod
+    def _iter_preds(cls, files):
+        """Yield each patient's final prediction dict for the follow-up task across `files` (failed rows skipped)."""
+        for _, fp, _ in cls._booking_rows(files):
+            if isinstance(fp, dict):
+                yield fp
+
+
+    @classmethod
+    def _iter_metrics(cls, files):
+        """
+        Yield each prediction's stored `negotiation_metrics` dict, with the `'inf'` / `'-inf'` strings the
+        simulator writes for infinities (JSON has none) restored to floats — so a free win reads back as
+        `gpc == inf`, while None stays "not computed".
+        """
+        restore = {'inf': float('inf'), '-inf': float('-inf')}
+        for fp in cls._iter_preds(files):
+            m = fp.get('negotiation_metrics')
+            if isinstance(m, dict):
+                yield {k: (restore[v] if isinstance(v, str) and v in restore else v) for k, v in m.items()}
+
+
+    @staticmethod
+    def _is_inf(x) -> bool:
+        """Whether `x` is an infinite number (a free win's GPC / trigger index)."""
+        return isinstance(x, (int, float)) and math.isinf(x)
+
+    
+    @staticmethod
+    def _mean(xs):
+        xs = [x for x in xs if x is not None]
+        return sum(xs) / len(xs) if xs else 0.0
+    
+
+    @classmethod
+    def _ti(cls, m):
+        """
+        τ-invariant trigger index ``ti = GPC·TCL``, recomputed from the stored GPC and TCL rather than
+        read from the stored ``ti`` field. The stored ``ti`` is ``GPC·TCL / trigger_temperature``, so it
+        is scaled per run/preference; recomputing keeps it comparable across runs (e.g. interpolation
+        runs with trigger_temperature != 1). ``inf`` for a free win (regardless of TCL, as the policy
+        computes it). Both values are required — a record missing either raises, so a malformed
+        result surfaces instead of being skipped.
+        """
+        gpc, tcl = m['gpc'], m['tcl']
+        if cls._is_inf(gpc):
+            return gpc
+        return gpc * tcl
+
+
+    @classmethod
+    def _metric_row(cls, m):
+        """Flatten a `negotiation_metrics` dict to the dashboard fields (+ derived flags)."""
+        row = {k: m.get(k) for k in cls.METRIC_KEYS}
+        row['ti'] = cls._ti(m)                        # τ-invariant GPC·TCL (not the scaled stored ti)
+        row['gpc_inf'] = cls._is_inf(m.get('gpc'))
+        row['auto'] = (m.get('negotiation_action') == 'auto')
+        return row
+    
+
+    @staticmethod
+    def _wait_stats(hours: list) -> dict:
+        """Count / median / mean / p90 of a list of waiting hours (n=0 and None stats when the list is empty)."""
+        if not hours:
+            return {'n': 0, 'median_h': None, 'mean_h': None, 'p90_h': None}
+        return {
+            'n': len(hours), 
+            'median_h': round(float(np.median(hours)), 1), 
+            'mean_h': round(float(np.mean(hours)), 1),
+            'p90_h': round(float(np.percentile(hours, 90)), 1)
+        }
+    
+
+    @staticmethod
+    def _cost_stats(costs: list) -> dict:
+        """Count / worse count, and mean / median over all compared bookings and over the worse ones only."""
+        worse = [c for c in costs if c > 1e-6]
+        return {
+            'n': len(costs), 'worse': len(worse), 'better': sum(1 for c in costs if c < -1e-6),
+            'mean_all': round(float(np.mean(costs)), 2) if costs else None,
+            'mean_worse': round(float(np.mean(worse)), 2) if worse else None,
+            'median_worse': round(float(np.median(worse)), 2) if worse else None,
+        }
+    
+
+    @classmethod
+    def _cohort_stats(cls, cohort):
+        """
+        Aggregate the tile/trade-off statistics of a run's eligible cohort (`eligible_cohort`) over the patients
+        the policy targeted (`is_target`) — all of them on the hospital side, a subset at a threshold τ, none on
+        the patient side. Outcome counts and friction cover every target. R / G / U are reported for three groups,
+        each as `{'targeted': ..., 'switched': ..., 'unswitched': ...}`: `targeted` is every target (what the policy
+        proposed, before refusals filter it), `switched` the targets that took the throughput_max schedule
+        (accepted / forced / auto) — what was realized — and `unswitched` the rest (kept), whose proposal was refused.
+        """
+        targets = [d for d in cohort if d['is_target']]
+        accepted = [d for d in targets if d['negotiation_outcome'] == 'accepted']
+        forced = [d for d in targets if d['negotiation_outcome'] == 'forced']
+        kept = [d for d in targets if d['negotiation_outcome'] == 'kept']    # negotiated but the patient refused
+        auto = [d for d in targets if d['negotiation_outcome'] == 'auto']
+        concluded = accepted + forced + kept                                  # every negotiation that ran (auto excluded)
+        switched = accepted + forced + auto                                   # booked the throughput_max schedule, so R is realized
+        rounds = [d['negotiation_rounds'] or 0 for d in targets]
+
+        groups = {'targeted': targets, 'switched': switched, 'unswitched': kept}   # unswitched = targeted - switched
+        mean_of = lambda key, pref=None: {
+            name: round(cls._mean([d[key] for d in rows if pref is None or d['preference'] == pref]), 3)
+            for name, rows in groups.items()
+        }
+        return {
+            'n_eligible': len(cohort),
+            'n_target': len(targets),
+            'accepted': len(accepted),
+            'forced': len(forced),
+            'kept': len(kept),
+            'auto': len(auto),
+            'concluded': len(concluded),
+            'acceptance_rate': round(len(accepted) / len(concluded) * 100, 2) if concluded else None,
+            'switched': len(switched),
+            'unswitched': len(kept),
+            'sum_R': {name: round(sum(d['R'] for d in rows), 2) for name, rows in groups.items()},
+            'mean_R': mean_of('R'),
+            'mean_G_visit': mean_of('G', 'visit_min'),
+            'mean_G_stay': mean_of('G', 'stay_min'),
+            'mean_U': mean_of('U'),
+            'mean_U_pref': mean_of('U_pref'),
+            'mean_U_thr': mean_of('U_thr'),
+            'friction_total': sum(rounds),
+            'friction_mean': round(cls._mean(rounds), 2),
+            'rounds_dist': {str(k): v for k, v in sorted(Counter(rounds).items())},   # str keys for JSON
+        }
+
+
+    @classmethod
+    def _device_bookings(cls, files):
+        """`{device: [(date, start, end), ...]}` from every test booking in a run."""
+        book = {}
+        for fp in cls._iter_preds(files):
+            for t in (fp.get('test') or []):
+                dev, date, sch = t.get('device'), t.get('date'), t.get('schedule')
+                if not (dev and date and sch):
+                    continue
+                book.setdefault(dev, []).append((date, float(sch[0]), float(sch[1])))
+        return book
+
+    
+    @classmethod
+    def eligible_cohort(cls, files: Union[list[str], str]):
+        """
+        Negotiation-eligible cohort from any run: patients with something to gain (GPC > 0, free win
+        included), whatever the run's policy did with them. `is_target` marks the ones the policy actually
+        targeted (`negotiate`/`auto`) — every eligible patient on the hospital side, a subset at a
+        threshold τ, none on the patient side.
+        """
+        if isinstance(files, str):
+            files = [files]
+        rows = []
+        for m in cls._iter_metrics(files):
+            if m['gpc'] > 0:                          # inf (free win) included
+                row = cls._metric_row(m)
+                row['is_target'] = m['negotiation_action'] in ('negotiate', 'auto')
+                rows.append(row)
+        return rows
+    
+
+    @staticmethod
+    def _protection_cost(pred: dict, tests: list, record: dict) -> Optional[dict]:
+        """
+        What the protection cost one booking against its unprotected counterfactual — the schedule the same objective
+        would have booked with nothing held back — compared on the tests both schedules placed.
+
+        Args:
+            pred (dict): The booked prediction (its `idle_waiting_time` is read for a `stay_min` booking).
+            tests (list): The booking's live tests, i.e. the schedule actually booked under the protection.
+            record (dict): The booking's `capacity_protection` record with `objective` and `unprotected` (which
+                           carries per-test placements in `tests`); only called for a booking the protection blocked.
+
+        Returns:
+            Optional[dict]: `{'objective', 'native', 'result_delay_h', 'extra_visit_days'}` (native = the cost in the
+                            unit of the objective the booking was built with), or None when the two cannot be
+                            compared — the schedules share no placed test, or a `stay_min` booking's two schedules do
+                            not place the same tests (its idle wait spans the whole test set).
+        """
+        unprotected = record['unprotected']
+        if not unprotected.get('all_results_ready_at'):
+            return None
+        objective = record['objective']
+
+        # The schedule actually booked under the protection vs the one the same objective would have booked without it
+        protected_test_schedule = {t['code']: t for t in tests}
+        unprotected_test_schedule = unprotected['tests']
+        common = set(protected_test_schedule) & set(unprotected_test_schedule)
+        if not common:
+            return None
+        complete = common == set(protected_test_schedule) == set(unprotected_test_schedule)
+        protected_ready = max((protected_test_schedule[c]['result_ready_at'] for c in common), key=str_to_datetime)
+        unprotected_ready = max((unprotected_test_schedule[c]['result_ready_at'] for c in common), key=str_to_datetime)
+        extra_days = len({protected_test_schedule[c]['date'] for c in common}) \
+                        - len({unprotected_test_schedule[c]['date'] for c in common})
+
+        cost = {
+            'objective': objective,
+            'result_delay_h': hours_between(protected_ready, unprotected_ready),
+            'extra_visit_days': extra_days
+        }
+        if objective == 'stay_min':
+            # Idle wait depends on every same-day neighbour, so it is only comparable on the full test set
+            if not complete:
+                return None
+            cost['native'] = pred['idle_waiting_time'] - unprotected['idle_waiting_time']
+        else:
+            cost['native'] = cost['extra_visit_days'] if objective == 'visit_min' else cost['result_delay_h']
+        return cost
+    
+
+    @staticmethod
+    def _test_capacity(start_hour: float, end_hour: float, result_file: str) -> dict:
+        """
+        `{(test_code, date): free_hours}` before any follow-up booking (total capacity minus fixed bookings), pooled
+        over the test's devices, from the hospital data of the run (`<dataset>/agent_data/<hospital>_agent.json`).
+        Closed days carry no capacity. Note the protection's booking limit is based on the total capacity instead
+        (`HospitalEnvironment.test_capacity`).
+
+        Args:
+            start_hour (float): Opening hour of the operating window.
+            end_hour (float): Closing hour of the operating window; a device-date's capacity is `end_hour - start_hour`
+                              minus its fixed bookings, and a date booked for the whole window is closed.
+            result_file (str): The run's result file (`<dataset>/<run>/<hospital>_agent_result.json`).
+
+        Returns:
+            dict: `{(test_code, date): Decimal free hours}` — exact sums, so a closed day is exactly zero.
+
+        Raises:
+            FileNotFoundError: If the run's hospital data is not found.
+        """
+        parent = os.path.dirname(os.path.dirname(os.path.abspath(result_file)))
+        hospital_id = os.path.basename(result_file).split('_agent_result')[0]
+        source = os.path.join(parent, 'agent_data', f'{hospital_id}_agent.json')
+        if not os.path.isfile(source):
+            raise FileNotFoundError(f"No hospital data for {result_file}: {source}")
+
+        day_hours = Decimal(str(end_hour)) - Decimal(str(start_hour))
+        capacity = defaultdict(Decimal)
+        for tests in (json_load(source).get('test') or {}).values():
+            for test in tests:
+                for info in (test.get('devices') or {}).values():
+                    for date, intervals in (info.get('schedule') or {}).items():
+                        busy = sum((Decimal(str(e)) - Decimal(str(s)) for s, e in intervals), Decimal(0))
+                        if busy < day_hours:
+                            capacity[(test['code'], date)] += day_hours - busy
+        return capacity
+
+
+
+class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
+    """
+    Follow-up-visit (OPFU test scheduling + negotiation) evaluation.
+    """
+    def __init__(self,
+                 hospital_side_path: Optional[str] = None,
                  model_name: Optional[str] = None,
                  patient_side_path: Optional[str] = None,
-                 interpolated_paths: Optional[list[str]] = None):
+                 interpolated_paths: Optional[list[str]] = None,
+                 protection_paths: Optional[list[str]] = None):
         """
         Args:
-            hospital_side_path (str): Hospital-side (τ=0) results directory.
+            hospital_side_path (Optional[str], optional): Hospital-side (τ=0) results directory. Required for the
+                                                          dashboard and the τ seeds; may be omitted when only the
+                                                          protection runs are evaluated. Defaults to None.
             model_name (Optional[str], optional): Model label stored in the dashboard meta block. Defaults to None.
             patient_side_path (Optional[str], optional): Patient-side (τ=∞) results directory. Required for the
                                                          patient pole and per-device ΔU; the hospital-only values
                                                          are still produced without it. Defaults to None.
             interpolated_paths (Optional[list[str]], optional): List of interpolated results directories. Defaults to None.
+            protection_paths (Optional[list[str]], optional): Results directories compared by the urgent capacity
+                                                              protection, in any order (each run's mode and ratio come
+                                                              from its `_metadata`). Defaults to None.
+
+        Raises:
+            ValueError: If neither `hospital_side_path` nor `protection_paths` is given.
         """
-        super().__init__(hospital_side_path, False)
-        self.hospital_file, _hospital_md = self._read_data(hospital_side_path)
-        mds = [_hospital_md]
-        
+        getcontext().prec = 10
+
+        if not hospital_side_path and not protection_paths:
+            raise ValueError('FollowUpVisitEvaluator needs `hospital_side_path` or `protection_paths`.')
+
+        # The base evaluator's single run (`self.path` / `self.files`): the hospital side, else the first protection run
+        super().__init__(hospital_side_path or protection_paths[0], False)
+
+        # If hospital-side path is provided
+        if hospital_side_path:
+            self.hospital_file, _hospital_md = self._read_data(hospital_side_path)
+            mds = [_hospital_md]
+        else:
+            self.hospital_file, mds = None, []
+
         # If patient-side path is provided
         if patient_side_path:
             self.patient_file, _patient_md = self._read_data(patient_side_path)
@@ -423,15 +721,26 @@ class FollowUpVisitEvaluator(Evaluator):
             self.interpolated_mds.append(interpolated_md)
         mds.extend(self.interpolated_mds)
 
-        # Sanity check: all runs must have the same operating window and time_unit
+        # Every run in dashboard order: hospital side -> interpolated runs as given -> patient side (when provided)
+        self.all_files = ([self.hospital_file] if self.hospital_file else []) + self.interpolated_files \
+                         + ([self.patient_file] if self.patient_file else [])
+
+        # Protection runs, in the given order (`protection_report` groups them by mode and ratio itself)
+        self.protection_files, self.protection_mds = [], []
+        for path in protection_paths or []:
+            protection_file, protection_md = self._read_data(path)
+            self.protection_files.append(protection_file)
+            self.protection_mds.append(protection_md)
+        mds.extend(self.protection_mds)
+
+        # Sanity check: all runs (dashboard and protection) must share the same operating window and time_unit
         self._sanity_check(*mds)
 
-        # Store the operating window and time_unit from the metadata
-        self.start_hour = float(_hospital_md['start_hour'])
-        self.end_hour = float(_hospital_md['end_hour'])
-        self.time_unit = float(_hospital_md['time_unit'])
+        # Store the operating window and time_unit from the metadata (identical across runs after the check)
+        self.start_hour = float(mds[0]['start_hour'])
+        self.end_hour = float(mds[0]['end_hour'])
+        self.time_unit = float(mds[0]['time_unit'])
         self.model_name = model_name
-        self._used_window = None   # resolved (start, end) actually used for ΔU
 
         log(f"Run metadata: window {self.start_hour}-{self.end_hour} (time_unit {self.time_unit})")
 
@@ -492,97 +801,124 @@ class FollowUpVisitEvaluator(Evaluator):
         if mismatches:
             detail = ', '.join(f"{k}: {v}" for k, v in mismatches.items())
             raise ValueError(f"Incompatible run metadata (policy excluded) — {detail}")
+        
+    
+    def _device_delta_u(self):
+        """
+        Per-device ΔU of every run against the baseline: compactness(run) - compactness(baseline) on the actual final
+        bookings, scored against each device's real availability (closed dates and other patients' slots excluded —
+        see `_initial_vacant_slots`). The runs are `self.all_files` (hospital side -> interpolated runs as given ->
+        patient side), and each row's `u` / `du` / `n` lists follow that order. The baseline is the last run — the
+        patient side, or the last interpolated run without one — so its own `du` is 0 (None when it never booked the
+        device), anchoring the curve. Rows are sorted by the hospital-side ΔU descending.
 
+        Returns:
+            dict: `{'runs': [result file, ...], 'baseline': result file or None, 'rows': [...]}` — `runs` is what
+                  each row's lists are aligned with (the baseline last); `rows` is empty when there is no baseline
+                  or no device data.
+        """
+        runs = list(self.all_files)                                         # dashboard order, baseline last
+        if len(runs) < 2:
+            log('delta_u needs a patient-side or interpolated run as its baseline; skipping.', level='warning')
+            return {'runs': runs, 'baseline': None, 'rows': []}
 
-    # ---- record iteration -----------------------------------------------------
-    @staticmethod
-    def _final_pred(pred):
-        """A prediction is a dict, or a list of retries; take the last (booked) attempt."""
-        if isinstance(pred, list):
-            return pred[-1] if pred else None
-        return pred
+        # The last run is the baseline: the patient side, or — without one — the last interpolated run
+        baseline_file = runs[-1]
+        if not self.patient_file:
+            log(f'No patient-side run; using the last interpolated run as the device ΔU baseline: {baseline_file}', level='warning')
 
+        run_bookings = [self._device_bookings([f]) for f in runs]
+        initial_vacants = self._initial_vacant_slots()
+        if not initial_vacants:
+            log(colorstr('yellow', 'No device schedule found next to the results; skipping device ΔU.'))
+            return {'runs': runs, 'baseline': baseline_file, 'rows': []}
 
-    def _iter_preds(self, files):
-        """Yield each patient's final prediction dict for the follow-up task across `files`."""
-        for file in files:
-            data = json_load(file)
-            value = data.get(self.TASK)
-            if not value:
+        nseg = len(convert_time_to_segment(self.start_hour, self.end_hour, self.time_unit))
+        rows = []
+        for dev in sorted(set().union(*run_bookings)):
+            initial_vacant = initial_vacants.get(dev)
+            if not initial_vacant:
                 continue
-            for pred in value.get('pred', []):
-                fp = self._final_pred(pred)
-                if isinstance(fp, dict):
-                    yield fp
+            
+            dates = sorted(initial_vacant)                       # only the dates this device is open
+            offset = {d: i * nseg for i, d in enumerate(dates)}
+            universe = set()
+            
+            for d in dates:
+                universe.update(offset[d] + s for s in initial_vacant[d])
+            
+            us = [self._compactness(b.get(dev, []), offset, universe) for b in run_bookings]
+            u_base = us[-1]
+
+            # A run (or the baseline) that never booked this device has no score; its ΔU is None, but the row stays
+            rows.append({
+                'dev': dev,
+                'u': [round(u, 4) if u is not None else None for u in us],                # aligned with `runs`
+                'du': [round(u - u_base, 4) if u is not None and u_base is not None else None for u in us],
+                'n': [len(b.get(dev, [])) for b in run_bookings],
+            })
+        rows.sort(key=lambda r: (r['du'][0] is None, -(r['du'][0] or 0)))   # hospital-side ΔU descending, None last
+        return {'runs': runs, 'baseline': baseline_file, 'rows': rows}
 
 
-    def _iter_metrics(self, files):
+    def _initial_vacant_slots(self):
         """
-        Yield each prediction's stored `negotiation_metrics` dict, with the `'inf'` / `'-inf'` strings the
-        simulator writes for infinities (JSON has none) restored to floats — so a free win reads back as
-        `gpc == inf`, while None stays "not computed".
+        `{device: {date: set(vacant segment indices)}}` — each device's vacant slots before the simulation booked
+        anything, i.e. the slots a simulated booking could actually take. Read from the hospital data shared by every
+        compared run (`test[dept][].devices[dev].schedule`, which lists the intervals already occupied before the
+        simulation), so it is the same for every run.
+
+        This matters: a device is closed on some dates (its schedule holds one interval covering the whole
+        day) and on open dates a few hours are already taken. Treating those as vacant would invent slots
+        that never existed and distort the front-loading score, so fully-closed dates are dropped and
+        pre-occupied segments are removed.
         """
-        restore = {'inf': float('inf'), '-inf': float('-inf')}
-        for fp in self._iter_preds(files):
-            m = fp.get('negotiation_metrics')
-            if isinstance(m, dict):
-                yield {k: (restore[v] if isinstance(v, str) and v in restore else v) for k, v in m.items()}
+        # Every compared run shares the hospital data next to the hospital-side result (`<root>/<run>/<hospital>_agent_result.json`)
+        parent = os.path.dirname(os.path.dirname(os.path.abspath(self.hospital_file)))
+        hospital_id = os.path.basename(self.hospital_file).split('_agent_result')[0]
+        source = next((c for c in (os.path.join(parent, 'agent_data', f'{hospital_id}_agent.json'),
+                                   os.path.join(parent, 'data', f'{hospital_id}.json'))
+                       if os.path.isfile(c)), None)
+        if source is None:
+            return {}
 
+        nseg = len(convert_time_to_segment(self.start_hour, self.end_hour, self.time_unit))
+        avail = {}
+        data = json_load(source)
+        for tests in (data.get('test') or {}).values():
+            for test in tests:
+                for device, info in (test.get('devices') or {}).items():
+                    per_date = avail.setdefault(device, {})
+                    for date, intervals in (info.get('schedule') or {}).items():
+                        occupied = set()
+                        for interval in intervals:
+                            occupied.update(convert_time_to_segment(self.start_hour, self.end_hour, self.time_unit, interval))
+                        free = set(range(nseg)) - occupied
+                        if free:                    # skip dates the device is closed all day
+                            per_date[date] = free
+        return avail
 
-    @staticmethod
-    def _is_inf(x) -> bool:
-        """Whether `x` is an infinite number (a free win's GPC / trigger index)."""
-        return isinstance(x, (int, float)) and math.isinf(x)
-
-
-    @classmethod
-    def _ti(cls, m):
+    
+    def _compactness(self, bookings, offset, universe):
         """
-        τ-invariant trigger index ``ti = GPC·TCL``, recomputed from the stored GPC and TCL rather than
-        read from the stored ``ti`` field. The stored ``ti`` is ``GPC·TCL / trigger_temperature``, so it
-        is scaled per run/preference; recomputing keeps it comparable across runs (e.g. interpolation
-        runs with trigger_temperature != 1). ``inf`` for a free win (regardless of TCL, as the policy
-        computes it); None when a value is missing.
+        Mann-Whitney front-loading score of a device's bookings: the fraction of (booked-before-free)
+        slot pairs over the slots this device could actually be booked into (`universe`). 1.0 = every
+        booking precedes every remaining free slot (packed early), 0.0 = fully back-loaded,
+        0.5 = interleaved. None when the device has no booking. Every booking must lie on the vacant slots (an open
+        date, no pre-filled overlap) — anything else is a simulator bug and raises.
         """
-        gpc, tcl = m['gpc'], m['tcl']
-        if cls._is_inf(gpc):
-            return gpc
-        return gpc * tcl
-
-
-    def _metric_row(self, m):
-        """Flatten a `negotiation_metrics` dict to the dashboard fields (+ derived flags)."""
-        row = {k: m.get(k) for k in self.METRIC_KEYS}
-        row['ti'] = self._ti(m)                       # τ-invariant GPC·TCL (not the scaled stored ti)
-        row['gpc_inf'] = self._is_inf(m.get('gpc'))
-        row['auto'] = (m.get('negotiation_action') == 'auto')
-        return row
-
-
-    # ---- cohorts --------------------------------------------------------------
-    def eligible_cohort(self, files=None, actions=('negotiate', 'auto')):
-        """
-        Negotiation-eligible cohort from a run: metrics whose policy action is `negotiate`/`auto`
-        (i.e. GPC > 0, something to gain). Defaults to the hospital-side run.
-        """
-        files = self.files if files is None else files
-        return [self._metric_row(m) for m in self._iter_metrics(files)
-                if m.get('negotiation_action') in actions]
-
-
-    def patient_eligible(self, files=None):
-        """
-        Counterfactually eligible cohort (GPC > 0 or inf) from the patient-side run — used to show that
-        the same population lands at different GPCxTCL positions when nobody is negotiated.
-        """
-        files = self.counterpart_files if files is None else files
-        out = []
-        for m in self._iter_metrics(files):
-            gpc = m.get('gpc')
-            if gpc is not None and gpc > 0:           # inf (free win) included
-                out.append({'preference': m.get('preference'), 'gpc': gpc,
-                            'tcl': m.get('tcl'), 'ti': self._ti(m), 'gpc_inf': self._is_inf(gpc)})
-        return out
+        booked = set()
+        for date, s, e in bookings:
+            segments = convert_time_to_segment(self.start_hour, self.end_hour, self.time_unit, [s, e])
+            booked.update(offset[date] + i for i in segments)      # KeyError if booked on a closed date
+        assert booked <= universe, 'A simulated booking overlaps a pre-filled device slot.'
+        if not booked:
+            return None
+        free = universe - booked
+        if not free:
+            return 1.0
+        good, total = frontload_pairs(booked, free)
+        return good / total
 
 
     def interpolation_taus(self, tau_n=4):
@@ -624,444 +960,128 @@ class FollowUpVisitEvaluator(Evaluator):
         
         log(f'--------------Interpolation tau seeds (tau_n={tau_n})--------------')
         for pref, vals in result.items():
-                log(f'{pref:<12} ({len(vals)}): {vals}')
+            log(f'{pref:<12} ({len(vals)}): {vals}')
 
         return result
 
 
-    # ---- per-device ΔU (compactness on actual bookings) -----------------------
-    def _device_bookings(self, files):
-        """`{device: [(date, start, end), ...]}` from every test booking in a run."""
-        book = {}
-        for fp in self._iter_preds(files):
-            for t in (fp.get('test') or []):
-                dev, date, sch = t.get('device'), t.get('date'), t.get('schedule')
-                if not (dev and date and sch):
-                    continue
-                book.setdefault(dev, []).append((date, float(sch[0]), float(sch[1])))
-        return book
-
-
-    def _device_availability(self):
+    def dashboard_data(self):
         """
-        `{device: {date: set(free segment indices)}}` — the slots a device could actually be booked into,
-        read from the run's own hospital data (`test[dept][].devices[dev].schedule`, which lists the
-        intervals already occupied by other patients).
+        Compute every value the negotiation-policy dashboard needs over all runs in `self.all_files` order
+        (hospital side -> interpolated runs as given -> patient side), log a per-run summary, and save it as
+        `dashboard_data.json` in the dataset folder (the parent of the run folders).
 
-        This matters: a device is closed on some dates (its schedule holds one interval covering the whole
-        day) and on open dates a few hours are already taken. Treating those as free would invent slots
-        that never existed and distort the front-loading score, so fully-closed dates are dropped and
-        pre-occupied segments are removed.
+        Returns:
+            dict: The saved payload —
+                ``eligible``: ``{'runs', 'cohort'}`` — per-run eligible cohorts (`eligible_cohort` rows, GPC > 0),
+                              aligned with ``runs``.
+                ``devices``: per-device ΔU from `_device_delta_u` — ``{'runs', 'baseline', 'rows'}``.
+                ``stats``: ``{'runs', 'cohort', 'device'}`` — per-run cohort stats (`_cohort_stats` plus
+                           ``n_total``, every booking with negotiation metrics) and per-run device ΔU summaries,
+                           each list aligned with its ``runs``.
+                ``meta``: model name, operating window and time unit.
         """
-        parent = os.path.dirname(os.path.normpath(self.path))
-        nseg = round((self.end_hour - self.start_hour) / self.time_unit)
-        avail = {}
-        seen_sources = set()
-        for result_file in self.files:
-            hospital_id = os.path.basename(result_file).split('_agent_result')[0]
-            source = next((c for c in (os.path.join(parent, 'agent_data', f'{hospital_id}_agent.json'),
-                                       os.path.join(parent, 'data', f'{hospital_id}.json'))
-                           if os.path.isfile(c)), None)
-            if source is None or source in seen_sources:
-                continue
-            seen_sources.add(source)
-            data = json_load(source)
-            for tests in (data.get('test') or {}).values():
-                for test in tests:
-                    for device, info in (test.get('devices') or {}).items():
-                        per_date = avail.setdefault(device, {})
-                        for date, intervals in (info.get('schedule') or {}).items():
-                            occupied = set()
-                            for interval in (intervals or []):
-                                if not (isinstance(interval, (list, tuple)) and len(interval) >= 2):
-                                    continue
-                                a = max(0, math.floor((interval[0] - self.start_hour) / self.time_unit))
-                                b = min(nseg, math.ceil((interval[1] - self.start_hour) / self.time_unit))
-                                occupied.update(range(a, b))
-                            free = set(range(nseg)) - occupied
-                            if free:                    # skip dates the device is closed all day
-                                per_date[date] = free
-        return avail
-
-
-    def _compactness(self, bookings, offset, free_by_date, universe):
-        """
-        Mann-Whitney front-loading score of a device's bookings: the fraction of (booked-before-free)
-        slot pairs over the slots this device could actually be booked into (`universe`). 1.0 = every
-        booking precedes every remaining free slot (packed early), 0.0 = fully back-loaded,
-        0.5 = interleaved. None when the device has no booking inside the universe.
-        """
-        booked = set()
-        for date, s, e in bookings:
-            if date not in offset:
-                continue
-            free_today = free_by_date[date]
-            a = max(0, math.floor((s - self.start_hour) / self.time_unit))
-            b = math.ceil((e - self.start_hour) / self.time_unit)
-            booked.update(offset[date] + i for i in range(a, b) if i in free_today)
-        booked &= universe
-        if not booked:
-            return None
-        free = universe - booked
-        if not free:
-            return 1.0
-        free_sorted = sorted(free)
-        good = sum(len(free_sorted) - bisect_right(free_sorted, x) for x in booked)
-        return good / (len(booked) * len(free))
-
-
-    def device_delta_u(self):
-        """
-        Per-device ΔU = compactness(hospital) − compactness(patient) on the actual final bookings, scored
-        against each device's real availability (closed dates and other patients' slots excluded — see
-        `_device_availability`). Returns rows sorted by ΔU descending; empty without a counterpart run.
-        """
-        if not self.counterpart_files:
-            log(colorstr('yellow', 'device_delta_u needs `counterpart_path` (patient-side run); skipping.'))
-            return []
-
-        hos = self._device_bookings(self.files)
-        pat = self._device_bookings(self.counterpart_files)
-        availability = self._device_availability()
-        if not availability:
-            log(colorstr('yellow', 'No device schedule found next to the results; skipping device ΔU.'))
-            return []
-
-        self._used_window = (self.start_hour, self.end_hour)
-        nseg = round((self.end_hour - self.start_hour) / self.time_unit)
-        log(f'device ΔU window: {self.start_hour}–{self.end_hour} (time_unit {self.time_unit}), '
-            f'availability from device schedules ({len(availability)} devices)')
-
-        rows = []
-        for dev in sorted(set(hos) | set(pat)):
-            free_by_date = availability.get(dev)
-            if not free_by_date:
-                continue
-            dates = sorted(free_by_date)                       # only the dates this device is open
-            offset = {d: i * nseg for i, d in enumerate(dates)}
-            universe = set()
-            for d in dates:
-                universe.update(offset[d] + s for s in free_by_date[d])
-            uh = self._compactness(hos.get(dev, []), offset, free_by_date, universe)
-            up = self._compactness(pat.get(dev, []), offset, free_by_date, universe)
-            if uh is None or up is None:
-                continue
-            rows.append({'dev': dev, 'uh': round(uh, 4), 'up': round(up, 4),
-                         'du': round(uh - up, 4), 'nh': len(hos.get(dev, [])), 'np': len(pat.get(dev, []))})
-        rows.sort(key=lambda r: -r['du'])
-        return rows
-
-
-    # ---- summary statistics ---------------------------------------------------
-    @staticmethod
-    def _mean(xs):
-        xs = [x for x in xs if x is not None]
-        return sum(xs) / len(xs) if xs else 0.0
-
-    def _cohort_stats(self, cohort):
-        """Aggregate the tile/trade-off statistics over an eligible cohort."""
-        accepted = [d for d in cohort if d['negotiation_outcome'] == 'accepted']
-        forced = [d for d in cohort if d['negotiation_outcome'] == 'forced']
-        auto = [d for d in cohort if d['negotiation_outcome'] == 'auto']
-        concluded = accepted + forced
-        gv = [d['G'] for d in cohort if d['preference'] == 'visit_min']
-        gs = [d['G'] for d in cohort if d['preference'] == 'stay_min']
-        rounds = [d['negotiation_rounds'] or 0 for d in cohort]
-        return {
-            'n_eligible': len(cohort),
-            'accepted': len(accepted),
-            'forced': len(forced),
-            'auto': len(auto),
-            'concluded': len(concluded),
-            'acceptance_rate': round(len(accepted) / len(concluded) * 100, 2) if concluded else None,
-            'sum_R': round(sum(d['R'] for d in cohort), 2),
-            'mean_R': round(self._mean([d['R'] for d in cohort]), 3),
-            'mean_G_visit': round(self._mean(gv), 3),
-            'mean_G_stay': round(self._mean(gs), 3),
-            'mean_U': round(self._mean([d['U'] for d in cohort]), 3),
-            'mean_U_pref': round(self._mean([d['U_pref'] for d in cohort]), 3),
-            'mean_U_thr': round(self._mean([d['U_thr'] for d in cohort]), 3),
-            'friction_total': sum(rounds),
-            'friction_mean': round(self._mean(rounds), 2),
-            'rounds_dist': {str(k): v for k, v in sorted(Counter(rounds).items())},   # str keys for JSON
+        # Per-run eligible cohorts and their stats, in `self.all_files` order (hospital -> interpolated -> patient)
+        cohorts = [self.eligible_cohort(f) for f in self.all_files]
+        stats = {
+            'runs': list(self.all_files),
+            'cohort': [{'n_total': sum(1 for _ in self._iter_metrics([f])), **self._cohort_stats(c)}
+                    for f, c in zip(self.all_files, cohorts)],
         }
 
-
-    # ---- discrete multi-run dashboard (one folder per τ stop) -----------------
-    @staticmethod
-    def _read_metadata(path):
-        """Read the `_metadata` block a run saved (operating window + policy/τ)."""
-        files = get_files(path, '_result.json')
-        if not files:
-            raise FileNotFoundError(f"No '*_result.json' under {path}")
-        md = json_load(files[0]).get('_metadata')
-        if not md:
-            raise ValueError(f"No '_metadata' in {files[0]} — re-run the simulation or backfill it.")
-        return md
-
-
-    @staticmethod
-    def metadata_policy(md: dict) -> dict:
-        """
-        The run's negotiation policy from its `_metadata` as `{'type', 'mode', <knobs>...}` (empty when
-        the run has no follow-up task), `mode` being `'threshold'`, `'hospital-side'`, or `'patient-side'`.
-        """
-        return md.get('policy') or {}
-
-
-    @classmethod
-    def metadata_tau(cls, md: dict) -> tuple:
-        """
-        `(tau_visit, tau_stay)` of a run from its `_metadata`; `(None, None)` for the poles, which never read τ.
-        """
-        policy = cls.metadata_policy(md)
-        if policy.get('mode') in ('hospital-side', 'patient-side'):
-            return None, None
-        return policy.get('trigger_temperature_visit'), policy.get('trigger_temperature_stay')
-
-
-    def _run_points(self):
-        """
-        This run's negotiation-eligible records (GPC > 0 or inf) as discrete-dashboard points, with the
-        MEASURED target status (`negotiation_action` in negotiate/auto). Keeps non-targets (`keep`) too,
-        so the scatter can show who was / was not negotiated at this run's τ.
-        """
-        points = []
-        for m in self._iter_metrics(self.files):
-            gpc = m.get('gpc')
-            if gpc is None or gpc <= 0:               # inf (free win) included
-                continue
-            target = m.get('negotiation_action') in ('negotiate', 'auto')
-            points.append({
-                'gpc': gpc, 'tcl': m.get('tcl'), 'preference': m.get('preference'), 'gpc_inf': self._is_inf(gpc),
-                'is_target': target,
-                'outcome': (m.get('negotiation_outcome') if target else 'keep'),
-                'R': m.get('R') or 0, 'G': m.get('G') or 0, 'U': m.get('U') or 0,
-                'U_pref': m.get('U_pref') or 0, 'U_thr': m.get('U_thr') or 0,
-                'rounds': (m.get('negotiation_rounds') or 0) if target else 0,
+        # Per-run device ΔU summary, aligned with `devices['runs']` (= `self.all_files`; the baseline's own ΔU is 0)
+        devices = self._device_delta_u()
+        stats['device'] = []
+        for k in range(len(devices['runs'])):
+            dus = [r['du'][k] for r in devices['rows'] if r['du'][k] is not None]
+            stats['device'].append({
+                'n_devices': len(dus),
+                'delta_u_mean': round(self._mean(dus), 4),
+                'n_more_frontloaded': sum(1 for x in dus if x > 1e-9),
             })
-        return points
 
-
-    @classmethod
-    def _points_stats(cls, points):
-        """Per-run tile/trade-off stats over the target subset of `points`."""
-        tg = [p for p in points if p['is_target']]
-        accepted = [p for p in tg if p['outcome'] == 'accepted']
-        forced = [p for p in tg if p['outcome'] == 'forced']
-        kept = [p for p in tg if p['outcome'] == 'kept']    # negotiated but patient held (refused)
-        concluded = accepted + forced + kept                # every negotiation that ran (auto excluded)
-        gv = [p['G'] for p in tg if p['preference'] == 'visit_min']
-        gs = [p['G'] for p in tg if p['preference'] == 'stay_min']
-        rounds = [p['rounds'] for p in tg]
-        return {
-            'n_target': len(tg), 'n_total': len(points),
-            'accepted': len(accepted), 'forced': len(forced), 'kept': len(kept),
-            'acceptance_rate': round(len(accepted) / len(concluded) * 100, 1) if concluded else None,
-            'sum_R': round(sum(p['R'] for p in tg), 1),
-            'mean_G_visit': round(cls._mean(gv), 2), 'mean_G_stay': round(cls._mean(gs), 2),
-            'mean_U': round(cls._mean([p['U'] for p in tg]), 3),
-            'mean_U_pref': round(cls._mean([p['U_pref'] for p in tg]), 3),
-            'mean_U_thr': round(cls._mean([p['U_thr'] for p in tg]), 3),
-            'friction_total': sum(rounds), 'friction_mean': round(cls._mean(rounds), 2),
+        payload = {
+            'eligible': {
+                'runs': list(self.all_files),                     # eligible['cohort'][k] belongs to this run
+                'cohort': cohorts,
+            },
+            'devices': devices,
+            'meta': {
+                'model': self.model_name,
+                'operating_window': [self.start_hour, self.end_hour],
+                'time_unit': self.time_unit,
+            },
+            'stats': stats,
         }
 
+        # Logging the dashboard summary, one block per run in `self.all_files` order
+        device_by_run = dict(zip(devices['runs'], stats['device']))
+        baseline_name = os.path.basename(os.path.dirname(devices['baseline'])) if devices['baseline'] else None
+        log('--------------Follow-up Negotiation Dashboard--------------')
+        for k, (file, s) in enumerate(zip(self.all_files, stats['cohort'])):
+            role = 'hospital-side' if k == 0 else 'patient-side' if file == self.patient_file else 'interpolated'
+            log(f'{colorstr(role)} ({os.path.basename(os.path.dirname(file))})')
+            log(f'- cohort')
+            log(f'    - booked: {colorstr("green", str(s["n_total"]))}')
+            log(f'    - eligible: {colorstr("green", str(s["n_eligible"]))} / {colorstr("green", str(s["n_total"]))}')
+            log(f'    - targeted: {colorstr("green", str(s["n_target"]))} / {colorstr("green", str(s["n_eligible"]))} '
+                f'(accepted: {colorstr("green", str(s["accepted"]))}, forced: {colorstr("red", str(s["forced"]))}, '
+                f'kept: {colorstr("cyan", str(s["kept"]))}, auto: {colorstr("yellow", str(s["auto"]))})')
+            log(f'    - switched: {colorstr("green", str(s["switched"]))} / {colorstr("green", str(s["n_target"]))} '
+                f'(accepted: {colorstr("green", str(s["accepted"]))}, forced: {colorstr("red", str(s["forced"]))}, '
+                f'auto: {colorstr("yellow", str(s["auto"]))})')
+            log(f'    - unswitched: {colorstr("green", str(s["unswitched"]))} / {colorstr("green", str(s["n_target"]))} '
+                f'(kept: {colorstr("cyan", str(s["kept"]))})')
 
-    @classmethod
-    def multi_run_dashboard_data(cls, run_paths, model_name='n/a', save_path=None, verbose=True):
-        """
-        Assemble the discrete multi-run dashboard payload from several run folders — one per τ stop
-        (e.g. hospital-side, one or more interpolation runs, patient-side). Each folder's `_metadata`
-        supplies its τ and operating window; each point carries the MEASURED negotiation status, so no
-        boundary is computed. Poles are detected by policy name; per-device ΔU is computed between the
-        hospital and patient poles when both are present.
+            # Undefined values are logged as n/a with the reason, rather than as misleading zeros or a missing line
+            if s['acceptance_rate'] is not None:
+                log(f'- acceptance rate : {colorstr("green", str(s["acceptance_rate"]) + "%")} '
+                    f'({s["accepted"]} / {s["concluded"]} concluded = '
+                    f'accepted {colorstr("green", str(s["accepted"]))} + forced {colorstr("red", str(s["forced"]))} + kept {colorstr("cyan", str(s["kept"]))})')
+            else:
+                log(f'- acceptance rate : n/a (no negotiation concluded)')
 
-        Returns / saves ``{runs, devices, virtual_mids}`` — exactly what the dashboard consumes. `runs`
-        is ordered by negotiated count (hospital → patient). `virtual_mids` is empty here (all real);
-        it exists so a hand-built demo can flag mock stops.
+            log(f'- sum ΔR (result-hours gained)')
+            for group in ('targeted', 'switched', 'unswitched'):
+                log(f'    - {group}: {colorstr("green", str(s["sum_R"][group]) + "h")} '
+                    f'(mean {colorstr("green", str(s["mean_R"][group]) + "h")} / {group})')
+            log(f'- mean ΔG (patient concession)')
+            for group in ('targeted', 'switched', 'unswitched'):
+                log(f'    - {group}')
+                log(f'        - visit_min: {colorstr("red", str(s["mean_G_visit"][group]) + " days")}')
+                log(f'        - stay_min: {colorstr("red", str(s["mean_G_stay"][group]) + "h")}')
+            log(f'- mean ΔU (per patient, P -> T)')
+            for group in ('targeted', 'switched', 'unswitched'):
+                log(f'    - {group}: {colorstr("green", str(s["mean_U"][group]))}  '
+                    f'(U_pref {colorstr("red", str(s["mean_U_pref"][group]))} -> U_thr {colorstr("green", str(s["mean_U_thr"][group]))})')
+            log(f'- sum F (conversation friction): {colorstr("red", str(s["friction_total"]) + " rounds")} (mean {colorstr("red", str(s["friction_mean"]))} / target)')
+            log(f'    - dist: {s["rounds_dist"]}')
 
-        Args:
-            run_paths (list[str]): One results directory per τ stop.
-            model_name (str): Label only.
-            save_path (str, optional): Where to write the payload JSON.
-        """
-        runs, hospital, patient = [], None, None
-        for path in run_paths:
-            md = cls._read_metadata(path)
-            ev = cls(path, start_hour=md['start_hour'], end_hour=md['end_hour'],
-                     time_unit=md['time_unit'], model_name=model_name)
-            points = ev._run_points()
-            policy = cls.metadata_policy(md).get('mode')
-            pole = 'hospital' if policy == 'hospital-side' else 'patient' if policy == 'patient-side' else None
-            tau_visit, tau_stay = cls.metadata_tau(md)
-            label = ('hospital-side' if pole == 'hospital' else 'patient-side' if pole == 'patient'
-                     else f"τ=({tau_visit}, {tau_stay})")
-            runs.append({'label': label, 'tau_visit': tau_visit, 'tau_stay': tau_stay,
-                         'is_pole': pole, 'points': points, 'stats': cls._points_stats(points)})
-            if pole == 'hospital':
-                hospital = (path, md)
-            elif pole == 'patient':
-                patient = (path, md)
+            dev = device_by_run[file]
+            log(f'- device ΔU vs {baseline_name} : {dev["n_devices"]} devices, mean {dev["delta_u_mean"]:+.4f}, '
+                f'{dev["n_more_frontloaded"]} more front-loaded')
+            log('')            
 
-        runs.sort(key=lambda r: -r['stats']['n_target'])   # hospital (most) -> patient (0)
-
-        devices = []
-        if hospital and patient:
-            hp, hmd = hospital
-            dev_ev = cls(hp, start_hour=hmd['start_hour'], end_hour=hmd['end_hour'],
-                         time_unit=hmd['time_unit'], model_name=model_name, counterpart_path=patient[0])
-            devices = dev_ev.device_delta_u()
-
-        payload = {'runs': runs, 'devices': devices, 'virtual_mids': []}
-
-        if verbose:
-            log('--------------Multi-run discrete dashboard--------------')
-            for r in runs:
-                s = r['stats']
-                log(f"{r['label']:<26} tau=({r['tau_visit']},{r['tau_stay']}) "
-                    f"target {s['n_target']}/{s['n_total']}  sumR {s['sum_R']}")
-        if save_path:
-            json_save_fast(save_path, encode_non_finite(payload))     # free-win GPC / ti saved as 'inf', not null
-            log(f'Multi-run dashboard data saved to {colorstr("green", save_path)}')
+        # Save dashboard data
+        parent = os.path.dirname(os.path.dirname(os.path.abspath(self.hospital_file)))
+        save_path = os.path.join(parent, 'dashboard_data.json')
+        json_save_fast(save_path, encode_non_finite(payload))     # free-win GPC / ti saved as 'inf', not null
+        log(f'Dashboard data saved to {colorstr("green", save_path)}')
+        
         return payload
+    
 
-
-    # ---- urgent capacity protection ------------------------------------------
-    def _booking_rows(self):
-        """
-        `(gt, final pred, status)` of every follow-up row of this run. `gt` is the patient condition dict for a
-        regular booking and a plain string for system rows (e.g. automatic waiting-list rescheduling).
-        """
-        for file in self.files:
-            value = json_load(file).get(self.TASK) or {}
-            for gt, pred, status in zip(value.get('gt', []), value.get('pred', []), value.get('status', [])):
-                yield gt, self._final_pred(pred), self._final_pred(status)
-
-
-    def _test_capacity(self):
-        """
-        `{(test_code, date): free_hours}` before any follow-up booking (total capacity minus fixed bookings), from
-        the run's own hospital data. Closed days carry no capacity. Note the protection's booking limit is based on
-        the total capacity instead (`HospitalEnvironment.test_capacity`).
-        """
-        parent = os.path.dirname(os.path.normpath(self.path))
-        capacity = defaultdict(float)
-        for result_file in self.files:
-            hospital_id = os.path.basename(result_file).split('_agent_result')[0]
-            source = os.path.join(parent, 'agent_data', f'{hospital_id}_agent.json')
-            if not os.path.isfile(source):
-                continue
-            data = json_load(source)
-            for tests in (data.get('test') or {}).values():
-                for test in tests:
-                    for info in (test.get('devices') or {}).values():
-                        for date, intervals in (info.get('schedule') or {}).items():
-                            free = (self.end_hour - self.start_hour) - sum(e - s for s, e in intervals)
-                            if free > 0:
-                                capacity[(test['code'], date)] += free
-        return capacity
-
-
-    @staticmethod
-    def _hours_between(later: str, earlier: str) -> float:
-        return (datetime.fromisoformat(later) - datetime.fromisoformat(earlier)).total_seconds() / 3600
-
-
-    @classmethod
-    def _wait_stats(cls, hours: list) -> dict:
-        """Median / mean / p90 of booking -> all-results-ready hours."""
-        if not hours:
-            return {'n': 0, 'median_h': None, 'mean_h': None, 'p90_h': None}
-        return {'n': len(hours), 'median_h': round(float(np.median(hours)), 1), 'mean_h': round(float(np.mean(hours)), 1),
-                'p90_h': round(float(np.percentile(hours, 90)), 1)}
-
-
-    # Native unit of each scheduling objective, for the protection's cost to a normal booking
-    PROTECTION_COST_UNITS = {'throughput_max': 'result_delay_h', 'visit_min': 'extra_visit_days', 'stay_min': 'extra_idle_wait_h'}
-
-
-    @staticmethod
-    def _is_live(pred: dict) -> bool:
-        """A booking still held at the end of the run (cancelled bookings carry the cancellation time as `last_updated_time`)."""
-        return pred.get('status') != 'cancelled'
-
-
-    @staticmethod
-    def _live_tests(pred: dict) -> list:
-        """The booking's placed tests that were not cancelled."""
-        return [t for t in pred.get('test') or [] if t.get('schedule') and t.get('status') != 'cancelled']
-
-
-    @staticmethod
-    def _cost_stats(costs: list) -> dict:
-        """Count / worse count, and mean / median over all compared bookings and over the worse ones only."""
-        worse = [c for c in costs if c > 1e-6]
-        return {
-            'n': len(costs), 'worse': len(worse), 'better': sum(1 for c in costs if c < -1e-6),
-            'mean_all': round(float(np.mean(costs)), 2) if costs else None,
-            'mean_worse': round(float(np.mean(worse)), 2) if worse else None,
-            'median_worse': round(float(np.median(worse)), 2) if worse else None,
-        }
-
-
-    def _protection_cost(self, pred: dict, tests: list, record: dict) -> Optional[dict]:
-        """
-        What the protection cost one booking against its unprotected counterfactual, compared on the tests both
-        schedules placed. Returns `{'objective', 'native', 'result_delay_h', 'extra_visit_days'}` (native = the cost
-        in the unit of the objective the booking was built with), or None when the two cannot be compared — a
-        partial booking or counterfactual from a run whose record lacks per-test placements.
-        """
-        unprotected = record.get('unprotected') or {}
-        if not unprotected.get('all_results_ready_at'):
-            return None
-        objective = record.get('objective') or pred.get('preference')
-        objective = 'throughput_max' if objective in (None, 'indifferent') else objective
-
-        booked = {t['code']: t for t in tests}
-        placed = unprotected.get('tests')
-        if placed is not None:
-            common = set(booked) & set(placed)
-            if not common:
-                return None
-            complete = common == set(booked) == set(placed)
-            booked_ready = max((booked[c]['result_ready_at'] for c in common), key=datetime.fromisoformat)
-            unprotected_ready = max((placed[c]['result_ready_at'] for c in common), key=datetime.fromisoformat)
-            extra_days = len({booked[c]['date'] for c in common}) - len({placed[c]['date'] for c in common})
-        else:
-            complete = not unprotected.get('unscheduled') and len(booked) == len(pred.get('test') or [])
-            if not complete:
-                return None
-            booked_ready = max((t['result_ready_at'] for t in tests), key=datetime.fromisoformat)
-            unprotected_ready = unprotected['all_results_ready_at']
-            extra_days = len({t['date'] for t in tests}) - len(unprotected.get('test_visit_dates') or [])
-
-        cost = {'objective': objective,
-                'result_delay_h': self._hours_between(booked_ready, unprotected_ready),
-                'extra_visit_days': extra_days}
-        if objective == 'stay_min':
-            # Idle wait depends on every same-day neighbour, so it is only comparable on the full test set
-            if not complete or pred.get('idle_waiting_time') is None or unprotected.get('idle_waiting_time') is None:
-                return None
-            cost['native'] = pred['idle_waiting_time'] - unprotected['idle_waiting_time']
-        else:
-            cost['native'] = cost['extra_visit_days'] if objective == 'visit_min' else cost['result_delay_h']
-        return cost
-
-
-    def protection_summary(self,
-                           window: Optional[dict] = None,
-                           early_days: Optional[int] = None,
-                           first_within_hours: Optional[float] = None) -> dict:
+    def _protection_summary(self, result_file: str, window: dict) -> dict:
         """
         Hospital-side outcome of the urgent capacity protection for this run, split by urgency.
 
         Every metric reads live bookings only (not cancelled; tests not cancelled), with the booking time taken from
         the prediction's `last_updated_time` — which a cancellation overwrites, so cancelled bookings are left out.
 
-        - `urgent` / `normal`: regular bookings (patient-condition rows only) with booking -> all-results-ready hours,
-          failure count and partial bookings (fewer tests than prescribed). `first_test` holds booking -> earliest
-          test start hours and the share starting within `first_within_hours`: the access the protection actually
-          shifts, since the all-results time is set by the latest test.
+        - `urgent` / `normal`: regular bookings (patient-condition rows only) with the failure count and partial
+          bookings (fewer tests than prescribed). `start` holds booking -> earliest test start hours and the share
+          starting within the protection horizon (`horizon_days * 24` hours): the access the protection actually
+          shifts. `end` holds booking -> all-results-ready hours (results of the latest test, not its end time).
         - `normal_cost`: normal bookings that had a date of their tests held back (`blocked_any`), compared with the
           unprotected schedule of the same objective on the tests both placed. `by_objective` reports the cost in each
           objective's own unit (`PROTECTION_COST_UNITS`) — the unit the scheduler minimized, so it is never negative
@@ -1072,67 +1092,73 @@ class FollowUpVisitEvaluator(Evaluator):
           inside `[release_hours, horizon_days * 24)` hours of the booking time, i.e. the capacity the protection
           governed at that moment — and the urgent share of those hours.
         - `capacity`: utilization of the start-of-simulation test capacity by the final bookings, over all dates and
-          over the first `early_days` test dates (a fixed calendar view of the window at the start of the run).
+          over the first `ceil(horizon_days)` test dates (a fixed calendar view of the window at the start of the run).
 
         Args:
-            window (Optional[dict], optional): `{'horizon_days', 'release_hours'}` of the rolling window, normally the
-                                               run's `capacity_protection` (a baseline borrows the compared runs').
-                                               Defaults to None (`CapacityProtection` defaults: 3 days, 24 hours).
-            early_days (Optional[int], optional): Number of first test dates in the fixed early view.
-                                                  Defaults to None (`ceil(horizon_days)`).
-            first_within_hours (Optional[float], optional): Horizon of the first-test access share.
-                                                            Defaults to None (`horizon_days * 24`).
+            result_file (str): The run's result file; only its rows are read.
+            window (dict): The rolling window this run is measured over — the run's own `capacity_protection`, or, for
+                           a run without protection, the one it borrows from the protected runs (see
+                           `protection_report`). Only `horizon_days` and `release_hours` are read; both are required.
 
         Returns:
             dict: `{'urgent', 'normal', 'normal_cost', 'window', 'capacity'}`.
         """
-        window = {'horizon_days': 3.0, 'release_hours': 24.0, **{k: v for k, v in (window or {}).items()
-                                                                 if k in ('horizon_days', 'release_hours')}}
-        horizon_h = window['horizon_days'] * 24
-        early_days = early_days if early_days is not None else math.ceil(window['horizon_days'])
-        first_within_hours = first_within_hours if first_within_hours is not None else horizon_h
+        # Keep only the window keys, so a borrowed protection's `ratio` does not leak into a baseline's report
+        window = {k: window[k] for k in ('horizon_days', 'release_hours')}
+        horizon_h = window['horizon_days'] * 24                 # protection horizon in hours (also the first-test access bound)
+        horizon_dates = math.ceil(window['horizon_days'])       # number of dates the horizon spans (the early capacity view)
 
-        waits, first_waits, failed, partial = defaultdict(list), defaultdict(list), Counter(), Counter()
+        end_waits, start_waits, failed, partial = defaultdict(list), defaultdict(list), Counter(), Counter()
         blocked_any, uncompared, native, delay_h, extra_days = 0, 0, defaultdict(list), [], []
         window_hours = Counter()
-        booked, booked_urgent = defaultdict(float), defaultdict(float)
+        booked, booked_urgent = defaultdict(Decimal), defaultdict(Decimal)     # exact hour sums (no float drift)
 
-        for gt, pred, status in self._booking_rows():
+        for gt, pred, status in self._booking_rows([result_file]):
             ok = status is True and isinstance(pred, dict)
-            live = self._live_tests(pred) if ok and self._is_live(pred) else []
-
+            
+            # Tests still held at the end of the run: a booked, uncancelled booking's placed, uncancelled tests
+            if ok and pred.get('status') != 'cancelled':          # some booked preds carry no `status` key
+                live = [t for t in pred.get('test') or [] if t.get('schedule') and t.get('status') != 'cancelled']
+            else:
+                live = []
+            
             # Final occupancy: every live booking, including system reschedules
             for t in live:
-                hours = t['schedule'][1] - t['schedule'][0]
+                hours = Decimal(str(t['schedule'][1])) - Decimal(str(t['schedule'][0]))
                 booked[(t['code'], t['date'])] += hours
                 if pred.get('urgency') == 'urgent':
                     booked_urgent[(t['code'], t['date'])] += hours
 
             if not isinstance(gt, dict):
                 continue
+            
             urgency = gt.get('urgency')
+            
+            # Failed case
             if not ok:
                 failed[urgency] += 1
                 continue
+            
+            # Partial case
             if len(pred.get('test') or []) < len(gt.get('test') or []):
                 partial[urgency] += 1
 
+            # Full booking case
             tests = [t for t in live if t.get('result_ready_at')]
             booked_at = pred.get('last_updated_time')
             if not tests or not booked_at:
                 continue
-            utc_offset = booked_at[-6:]
-            ready = max((t['result_ready_at'] for t in tests), key=datetime.fromisoformat)
-            waits[urgency].append(self._hours_between(ready, booked_at))
-            first_waits[urgency].append(min(
-                self._hours_between(get_iso_time(t['schedule'][0], t['date'], utc_offset), booked_at) for t in tests
-            ))
+            booked_dt = str_to_datetime(booked_at)
+            utc_offset = booked_dt.strftime('%z')       # the booking's own offset (e.g. '+0900'), so test times share its timezone
+            ready = max((t['result_ready_at'] for t in tests), key=str_to_datetime)
+            end_waits[urgency].append(hours_between(ready, booked_dt))
+            start_waits[urgency].append(min(hours_between(get_iso_time(t['schedule'][0], t['date'], utc_offset), booked_dt) for t in tests))
 
             # Test hours on dates inside the protection window at booking time
             for t in tests:
-                lead = self._hours_between(get_iso_time(self.start_hour, t['date'], utc_offset), booked_at)
+                lead = hours_between(get_iso_time(self.start_hour, t['date'], utc_offset), booked_dt)
                 if window['release_hours'] <= lead < horizon_h:
-                    window_hours[urgency] += t['schedule'][1] - t['schedule'][0]
+                    window_hours[urgency] += Decimal(str(t['schedule'][1])) - Decimal(str(t['schedule'][0]))
 
             # What the protection cost this booking against its unprotected counterfactual
             record = pred.get('capacity_protection') or {}
@@ -1141,20 +1167,23 @@ class FollowUpVisitEvaluator(Evaluator):
                 cost = self._protection_cost(pred, tests, record)
                 if cost is None:
                     uncompared += 1
-                    continue
-                native[cost['objective']].append(cost['native'])
-                delay_h.append(cost['result_delay_h'])
-                extra_days.append(cost['extra_visit_days'])
+                else:
+                    native[cost['objective']].append(cost['native'])
+                    delay_h.append(cost['result_delay_h'])
+                    extra_days.append(cost['extra_visit_days'])
 
+        # Per-urgency waits: booking -> first test start (`start`) and -> all results ready (`end`)
         summary = {
             urgency: {
-                **self._wait_stats(waits[urgency]), 'failed': failed[urgency], 'partial': partial[urgency],
-                'first_test': {
-                    **self._wait_stats(first_waits[urgency]),
-                    'within_hours': first_within_hours,
-                    'within_share': round(float(np.mean(np.array(first_waits[urgency]) < first_within_hours)), 4)
-                                    if first_waits[urgency] else None,
+                'failed': failed[urgency],
+                'partial': partial[urgency],
+                'start': {
+                    **self._wait_stats(start_waits[urgency]),
+                    'within_hours': horizon_h,
+                    'within_share': round(float(np.mean(np.array(start_waits[urgency]) < horizon_h)), 4)
+                                    if start_waits[urgency] else None,
                 },
+                'end': self._wait_stats(end_waits[urgency]),
             }
             for urgency in ('urgent', 'normal')
         }
@@ -1167,28 +1196,32 @@ class FollowUpVisitEvaluator(Evaluator):
             'extra_visit_days': self._cost_stats(extra_days),
         }
 
+        # Exact Decimal sums, turned into floats only for the report (JSON-serializable)
         window_total = window_hours['urgent'] + window_hours['normal']
         summary['window'] = {
             **window,
-            'booked_h': {u: round(window_hours[u], 2) for u in ('urgent', 'normal')},
-            'urgent_share': round(window_hours['urgent'] / window_total, 4) if window_total else None,
+            'booked_h': {u: round(float(window_hours[u]), 2) for u in ('urgent', 'normal')},
+            'urgent_share': round(float(window_hours['urgent'] / window_total), 4) if window_total else None,
         }
 
-        capacity = self._test_capacity()
-        early_dates = set(sorted({d for _, d in capacity})[:early_days])
+        # Utilization of the start-of-run capacity, over all dates and over the first `horizon_dates` test dates;
+        # every sum is an exact Decimal, turned into a float only for the report (JSON-serializable)
+        capacity = self._test_capacity(self.start_hour, self.end_hour, result_file)
+        early_dates = set(sorted({d for _, d in capacity})[:horizon_dates])
         early = [k for k in capacity if k[1] in early_dates]
-        early_booked = sum(booked[k] for k in early)
+        capacity_all = sum(capacity.values(), Decimal(0))
+        capacity_early = sum((capacity[k] for k in early), Decimal(0))
+        booked_early = sum((booked[k] for k in early), Decimal(0))
         summary['capacity'] = {
-            'utilization_all': round(sum(booked[k] for k in capacity) / sum(capacity.values()), 4) if capacity else None,
-            'utilization_early': round(early_booked / sum(capacity[k] for k in early), 4) if early else None,
-            'urgent_share_early': round(sum(booked_urgent[k] for k in early) / early_booked, 4) if early_booked else None,
+            'utilization_all': round(float(sum((booked[k] for k in capacity), Decimal(0)) / capacity_all), 4) if capacity_all else None,
+            'utilization_early': round(float(booked_early / capacity_early), 4) if capacity_early else None,
+            'urgent_share_early': round(float(sum((booked_urgent[k] for k in early), Decimal(0)) / booked_early), 4) if booked_early else None,
             'early_dates': sorted(early_dates),
         }
         return summary
 
 
-    @classmethod
-    def protection_report(cls, run_paths, save_path=None, early_days=None, first_within_hours=None, verbose=True):
+    def protection_report(self):
         """
         Compare the urgent capacity protection across runs: one baseline without protection and runs at several
         `ratio`s, for one or more negotiation modes at once. Each folder's `_metadata` supplies its operating window,
@@ -1196,136 +1229,92 @@ class FollowUpVisitEvaluator(Evaluator):
         first). A run without protection measures the rolling window of the protected runs of its mode (or of any
         run), so baseline and protected runs are read over the same window.
 
-        Args:
-            run_paths (list[str]): One results directory per run.
-            save_path (str, optional): Where to write the report JSON.
-            early_days (int, optional): Number of first test dates in the fixed early view. Defaults to None
-                                        (`ceil(horizon_days)`).
-            first_within_hours (float, optional): Horizon of the first-test access share. Defaults to None
-                                                  (`horizon_days * 24`).
-
         Returns:
             list[dict]: One `{'label', 'mode', 'capacity_protection', 'policy', **protection_summary}` per run.
         """
         runs = []
-        for path in run_paths:
-            md = cls._read_metadata(path)
-            policy = cls.metadata_policy(md)
-            runs.append((path, md, policy, policy.get('mode'), policy.get('capacity_protection')))
+        for path, md in zip(self.protection_files, self.protection_mds):
+            policy = md.get('policy') or {}
+            runs.append((path, policy, policy.get('mode'), policy.get('capacity_protection')))
 
         # Window of the protected runs, borrowed by the baselines (same mode first)
         reference = {}
-        for _, _, _, mode, protection in runs:
+        for _, _, mode, protection in runs:
             if protection:
                 reference.setdefault(mode, protection)
                 reference.setdefault(None, protection)
 
+        if not reference:
+            raise ValueError(colorstr("red", 'No runs with capacity protection found; cannot report.'))
+
+        # Compute the protection summary
         report = []
-        for path, md, policy, mode, protection in runs:
-            ev = cls(path, start_hour=md['start_hour'], end_hour=md['end_hour'], time_unit=md['time_unit'], model_name='n/a')
+        for path, policy, mode, protection in runs:
             window = protection or reference.get(mode) or reference.get(None)
             label = f"{mode} " + (f"ratio={protection['ratio']}" if protection else 'no protection')
             report.append({'label': label, 'mode': mode, 'capacity_protection': protection,
                            'policy': {k: v for k, v in policy.items() if k != 'capacity_protection'},
-                           **ev.protection_summary(window, early_days, first_within_hours)})
+                           **self._protection_summary(path, window)})
         report.sort(key=lambda r: (r['mode'] or '', (r['capacity_protection'] or {}).get('ratio', 0.0)))
 
-        if verbose:
-            log('--------------Urgent capacity protection--------------')
-            for r in report:
-                u, n, c, w, cap = r['urgent'], r['normal'], r['normal_cost'], r['window'], r['capacity']
-                log(colorstr(r['label']))
-                for name, x in (('urgent', u), ('normal', n)):
-                    f = x['first_test']
-                    log(f"  {name:<7} {x['n']:>5} all results median {x['median_h']}h mean {x['mean_h']}h p90 {x['p90_h']}h | "
-                        f"first test median {f['median_h']}h mean {f['mean_h']}h, within {f['within_hours']}h {f['within_share']} "
-                        f"(failed {x['failed']}, partial {x['partial']})")
-                log(f"  window  {w['horizon_days']}d/{w['release_hours']}h urgent share {w['urgent_share']} "
-                    f"| utilization all {cap['utilization_all']}, early {cap['utilization_early']} "
-                    f"(urgent share {cap['urgent_share_early']})")
-                if c['blocked_any']:
-                    log(f"  normal  blocked {c['blocked_any']} (uncompared {c['uncompared']})")
-                    for obj, s in c['by_objective'].items():
-                        log(f"    {obj:<14} {s['unit']:<17} n {s['n']:>4}, worse {s['worse']:>4} "
-                            f"(mean {s['mean_worse']}, median {s['median_worse']}), better {s['better']}, mean over all {s['mean_all']}")
-                    d, e = c['result_delay_h'], c['extra_visit_days']
-                    log(f"    {'(all)':<14} {'result_delay_h':<17} n {d['n']:>4}, worse {d['worse']:>4} "
-                        f"(mean {d['mean_worse']}, median {d['median_worse']}), better {d['better']}, mean over all {d['mean_all']}")
-                    log(f"    {'(all)':<14} {'extra_visit_days':<17} more {e['worse']}, fewer {e['better']}, mean over all {e['mean_all']}")
-        if save_path:
-            json_save_fast(save_path, report)
-            log(f'Protection report saved to {colorstr("green", save_path)}')
+        # Logging the protection report, one block per run (grouped by mode, ratio ascending)
+        def val(v, unit='', color='green'):
+            """A logged value: colored with its unit, or `n/a` when undefined (e.g. no booking in the group)."""
+            return 'n/a' if v is None else colorstr(color, f'{v}{unit}')
+
+        log('--------------Urgent capacity protection--------------')
+        for r in report:
+            c, w, cap = r['normal_cost'], r['window'], r['capacity']
+            log(f'{colorstr(r["label"])}')
+
+            # Waits per urgency
+            for name in ('urgent', 'normal'):
+                x = r[name]
+                s, e = x['start'], x['end']
+                log(f'- {colorstr("cyan", name)}: {val(e["n"])} bookings (failed:{val(x["failed"], color="red")}, '
+                    f'partial: {val(x["partial"], color="yellow")})')
+                share = None if s['within_share'] is None else round(s['within_share'] * 100, 2)
+                log(f'    - first test started within the protection horizon: {val(share, "%")} ({s["within_hours"]}h)')
+                log(f'    - booking -> first test start')
+                log(f'        - median: {val(s["median_h"], "h")}')
+                log(f'        - mean: {val(s["mean_h"], "h")}')
+                log(f'    - booking -> all results ready')
+                log(f'        - median: {val(e["median_h"], "h")}')
+                log(f'        - mean: {val(e["mean_h"], "h")}')
+                log(f'        - p90: {val(e["p90_h"], "h")}')
+
+            # The rolling window the protection governs, and the capacity it used
+            log(f'- {colorstr("cyan", "protection window")} ({w["horizon_days"]} days ahead, released {w["release_hours"]}h before opening)')
+            log(f'    - urgent share of window hours: {val(w["urgent_share"])} '
+                f'(urgent {val(w["booked_h"]["urgent"], "h")}, normal {val(w["booked_h"]["normal"], "h")})')
+            log(f'- {colorstr("cyan", "capacity utilization")}')
+            log(f'    - all dates: {val(cap["utilization_all"])}')
+            log(f'    - first {len(cap["early_dates"])} dates ({", ".join(cap["early_dates"])}): '
+                f'{val(cap["utilization_early"])} (urgent share {val(cap["urgent_share_early"])})')
+
+            # What the protection cost the normal bookings it held back
+            if c['blocked_any']:
+                log(f'- {colorstr("cyan", "normal cost")} (blocked:{val(c["blocked_any"], color="red")}, '
+                    f'uncompared: {val(c["uncompared"], color="yellow")})')
+                for obj, s in c['by_objective'].items():
+                    log(f'    - {obj} ({s["unit"]})')
+                    log(f'        - worse: {val(s["worse"], color="red")} / {val(s["n"])} '
+                        f'(mean {val(s["mean_worse"], color="red")}, median {val(s["median_worse"], color="red")})')
+                    log(f'        - better: {val(s["better"])}')
+                    log(f'        - mean over all: {val(s["mean_all"], color="red")}')
+                d, e = c['result_delay_h'], c['extra_visit_days']
+                log(f'    - all objectives')
+                log(f'        - result delay: worse {val(d["worse"], color="red")} / {val(d["n"])} '
+                    f'(mean {val(d["mean_worse"], "h", "red")}, median {val(d["median_worse"], "h", "red")}), '
+                    f'better {val(d["better"])}, mean over all {val(d["mean_all"], "h", "red")}')
+                log(f'        - extra visit days: more {val(e["worse"], color="red")}, fewer {val(e["better"])}, '
+                    f'mean over all {val(e["mean_all"], color="red")}')
+            log('')
+        
+        # Save protection report
+        parent = os.path.dirname(os.path.dirname(os.path.abspath(self.protection_files[0])))
+        save_path = os.path.join(parent, 'protection_report.json')
+        json_save_fast(save_path, encode_non_finite(report))
+        log(f'Protection report saved to {colorstr("green", save_path)}')
+
         return report
-
-
-    # ---- assembled dashboard payload ------------------------------------------
-    def dashboard_data(self, save_path=None, verbose=True, tau_n=4):
-        """
-        Compute every value the negotiation-policy dashboard needs and return it as one dict:
-        ``eligible`` (hospital cohort), ``eligible_pat`` (patient pole), ``devices`` (per-device ΔU),
-        ``interpolation_taus`` (`tau_n` seeds per preference), ``meta`` and ``stats``. Optionally saves
-        it to `save_path` and prints a summary.
-        """
-        eligible = self.eligible_cohort()
-        eligible_pat = self.patient_eligible() if self.counterpart_files else []
-        devices = self.device_delta_u()
-        stats = self._cohort_stats(eligible)
-        if devices:
-            dus = [d['du'] for d in devices]
-            stats['device'] = {
-                'n_devices': len(devices),
-                'delta_u_mean': round(self._mean(dus), 4),
-                'n_more_frontloaded': sum(1 for x in dus if x > 1e-6),
-            }
-
-        payload = {
-            'eligible': eligible,
-            'eligible_pat': eligible_pat,
-            'devices': devices,
-            'interpolation_taus': self.interpolation_taus(tau_n),
-            'meta': {
-                'hos_total_metrics': sum(1 for _ in self._iter_metrics(self.files)),
-                'pat_total_metrics': sum(1 for _ in self._iter_metrics(self.counterpart_files)) if self.counterpart_files else 0,
-                'model': self.model_name,
-                'operating_window': list(self._used_window) if self._used_window else [self.start_hour, self.end_hour],
-                'time_unit': self.time_unit,
-            },
-            'stats': stats,
-        }
-
-        if verbose:
-            self._report(payload)
-        if save_path:
-            json_save_fast(save_path, encode_non_finite(payload))     # free-win GPC / ti saved as 'inf', not null
-            log(f'Dashboard data saved to {colorstr("green", save_path)}')
-        return payload
-
-
-    def _report(self, payload):
-        """Pretty-print the dashboard summary."""
-        s = payload['stats']
-        dev = s.get('device')
-        n_elig, acc, forced, auto = s['n_eligible'], s['accepted'], s['forced'], s['auto']
-        rate, concluded = s['acceptance_rate'], s['concluded']
-        sum_r, mean_r = s['sum_R'], s['mean_R']
-        gv, gs, mu, mup, mut = s['mean_G_visit'], s['mean_G_stay'], s['mean_U'], s['mean_U_pref'], s['mean_U_thr']
-        fric_t, fric_m, rdist = s['friction_total'], s['friction_mean'], s['rounds_dist']
-        n_pat = len(payload['eligible_pat'])
-
-        log('--------------Follow-up Negotiation Dashboard--------------')
-        log(f'{colorstr("hospital-side (t=0)"):<30} | eligible cohort: {n_elig} (accepted {acc}, forced {forced}, auto {auto})')
-        if rate is not None:
-            log(f'    - acceptance rate : {colorstr("green", str(rate) + "%")} ({acc}/{concluded} concluded)')
-        log(f'    - sum dR (result-hours gained) : {colorstr("green", str(sum_r))}  (mean {mean_r} h)')
-        log(f'    - mean dG : visit_min {gv} days, stay_min {gs} h  (patient concession)')
-        log(f'    - mean U : {mu}  (U_pref {mup} -> U_thr {mut})')
-        log(f'    - Friction : {fric_t} rounds total (mean {fric_m}/target), dist {rdist}')
-        log(f'{colorstr("patient-side (t=inf)"):<30} | counterfactually eligible: {n_pat} (negotiations actually run: 0)')
-        if dev:
-            log(f'{colorstr("device dU (real bookings)"):<30} | {dev["n_devices"]} devices, '
-                f'mean dU {dev["delta_u_mean"]:+.4f}, {dev["n_more_frontloaded"]} more front-loaded under hospital')
-        itaus = payload.get('interpolation_taus')
-        if itaus:
-            log(f'{colorstr("interpolation tau seeds"):<30}')
-            log(f'    - visit_min {itaus.get("visit_min")}')
-            log(f'    - stay_min  {itaus.get("stay_min")}')

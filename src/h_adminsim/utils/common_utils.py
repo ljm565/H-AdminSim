@@ -413,6 +413,21 @@ def compare_iso_time(time1: Union[str, datetime], time2: Union[str, datetime]) -
 
 
 
+def hours_between(later: Union[str, datetime], earlier: Union[str, datetime]) -> float:
+    """
+    Hours from `earlier` to `later` (negative when `later` is actually earlier).
+
+    Args:
+        later (Union[str, datetime]): The later time as an ISO 8601 string or a datetime object.
+        earlier (Union[str, datetime]): The earlier time as an ISO 8601 string or a datetime object.
+
+    Returns:
+        float: `later - earlier` in hours.
+    """
+    return (str_to_datetime(later) - str_to_datetime(earlier)).total_seconds() / 3600
+
+
+
 def add_hours_to_iso(iso_time: Union[str, datetime], hours: Union[int, float]) -> str:
     """
     Add `hours` to an ISO 8601 time, preserving the original timezone suffix

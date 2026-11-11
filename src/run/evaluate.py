@@ -4,8 +4,7 @@ from argparse import ArgumentParser
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
 from h_adminsim.tools import FirstVisitEvaluator, FollowUpVisitEvaluator
-from h_adminsim.utils import colorstr, log
-from h_adminsim.utils.filesys_utils import get_files, json_load
+from h_adminsim.utils import log
 
 
 
@@ -35,13 +34,14 @@ def main(args):
             log('')
 
     # Follow-up (negotiation): dashboard values and/or interpolation tau seeds
-    if any(t in args.type for t in ('fu_dashboard', 'fu_tau')):
+    if any(t in args.type for t in ('fu_dashboard', 'fu_protection', 'fu_tau')):
         log('################### Follow-up evaluation ###################')
         evaluator = FollowUpVisitEvaluator(
             hospital_side_path=args.fu_hospital_path,
             model_name=args.model,
             patient_side_path=args.fu_patient_path,
             interpolated_paths=args.fu_interpolated_paths,
+            protection_paths=args.fu_protection_paths
         )
 
         if 'fu_tau' in args.type:
@@ -49,27 +49,12 @@ def main(args):
             log('')
 
         if 'fu_dashboard' in args.type:
-            evaluator.dashboard_data(save_path=save_path, tau_n=args.fu_tau_n)
+            evaluator.dashboard_data()
             log('')
 
-    # # discrete multi-run dashboard: one results folder per τ stop, assembled from each run's _metadata
-    # if 'dashboard_multi' in args.type:
-    #     save_path = args.out or 'dashboard_multi_data.json'
-    #     FollowUpVisitEvaluator.multi_run_dashboard_data(
-    #         run_paths=args.runs,
-    #         model_name=(args.model or 'n/a'),
-    #         save_path=save_path,
-    #     )
-    #     log('')
-
-    # # urgent capacity protection: one results folder per protection ratio (a run without protection as the baseline)
-    # if 'protection' in args.type:
-    #     FollowUpVisitEvaluator.protection_report(
-    #         run_paths=args.runs,
-    #         save_path=args.out or 'protection_report.json',
-    #         early_days=args.early_days,
-    #     )
-    #     log('')
+        if 'fu_protection' in args.type:
+            evaluator.protection_report()
+            log('')
 
 
 
@@ -77,7 +62,7 @@ if __name__ == '__main__':
     parser = ArgumentParser()
     # Common options
     parser.add_argument('--model', type=str, required=False, default=None,
-                        help='Model name (required for "token" and "dashboard")')
+                        help='Model name (required for "fv_token" and "fu_dashboard")')
     
     # First-visit options
     parser.add_argument('--fv_path', type=str, required=False, default=None,
@@ -94,28 +79,23 @@ if __name__ == '__main__':
                              'so list them in the interpolation order you want shown.')
     parser.add_argument('--fu_tau_n', type=int, required=False, default=4,
                         help='Number of interior tau seeds to extract per preference (default: 4)')
+    parser.add_argument('--fu_protection_paths', type=str, required=False, nargs='+',
+                        help='Results folders compared by the urgent capacity protection, in any order — each run\'s '
+                             'mode and protection ratio are read from its _metadata. Include the runs without protection '
+                             'as the baselines.')
     
     # Evaluation types
     parser.add_argument('-t', '--type', type=str, required=True, nargs='+',
         choices=[
             'fv_task', 'fv_department', 'fv_rounds', 'fv_token', 'fv_human',
-            'fu_tau', 'fu_dashboard', 'dashboard_multi', 'protection'
+            'fu_tau', 'fu_dashboard', 'fu_protection'
         ],
-        help='Evaluations to run (you can specify multiple). "dashboard" computes the follow-up '
-             'negotiation dashboard values; "tau" extracts per-preference interpolation tau seeds; '
-             '"dashboard_multi" assembles the discrete multi-run dashboard from several run folders; '
-             '"protection" compares the urgent capacity protection across run folders (--runs).'
+        help='Evaluations to run (you can specify multiple). First-visit (--fv_path): "fv_task" task accuracy, '
+             '"fv_department" department accuracy, "fv_rounds" average intake rounds, "fv_token" API cost (--model), '
+             '"fv_human" human evaluation. Follow-up: "fu_tau" interpolation tau seeds from the hospital-side run, '
+             '"fu_dashboard" the negotiation dashboard over the hospital-side, interpolated and patient-side runs '
+             '(--model), "fu_protection" the urgent capacity protection across --fu_protection_paths.'
     )
-    
-    # # follow-up (dashboard / tau) options
-    # parser.add_argument('--out', type=str, required=False, default=None,
-    #                     help='[dashboard] Output JSON path (default: <path>/dashboard_data.json)')
-    
-    # parser.add_argument('--runs', type=str, nargs='+', required=False, default=None,
-    #                     help='[dashboard_multi] Results folders, one per τ stop (hospital, interpolation runs, patient). '
-    #                          '[protection] Results folders, one per protection ratio.')
-    # parser.add_argument('--early_days', type=int, required=False, default=3,
-    #                     help='[protection] Number of first test dates counted as early capacity (default: 3)')
     args = parser.parse_args()
 
     # Argument sanity checks
@@ -123,23 +103,17 @@ if __name__ == '__main__':
     if any(t in args.type for t in ('fv_task', 'fv_human', 'fv_department', 'fv_rounds', 'fv_token')) and not args.fv_path:
         parser.error('--fv_path is required for first-visit evaluations (fv_task, fv_human, fv_department, fv_rounds, fv_token)')
 
-        if 'fv_token' in args.type and not args.model:
-            parser.error('--model is required for "fv_token" evaluation')
+    if 'fv_token' in args.type and not args.model:
+        parser.error('--model is required for "fv_token" evaluation')
 
     ## Follow-up sanity checks
-    if 'fu_tau' in args.type and not args.fu_hospital_path:
-        parser.error('--fu_hospital_path is required for "fu_tau" evaluation')
+    if any(t in args.type for t in ('fu_tau', 'fu_dashboard')) and not args.fu_hospital_path:
+        parser.error('--fu_hospital_path is required for follow-up evaluations (fu_tau, fu_dashboard)')
 
-    if 'fu_dashboard' in args.type:
-        if not args.model:
-            parser.error('--model is required when running "dashboard"')
-
-    # for multi_run in ('dashboard_multi', 'protection'):
-    #     if multi_run in args.type and not args.runs:
-    #         parser.error(f'--runs is required when running "{multi_run}"')
+    if any(t in args.type for t in ('fu_dashboard', 'fu_protection')) and not args.model:
+        parser.error('--model is required when running "fu_dashboard" or "fu_protection" evaluation')
     
-    # # every mode except the multi-run ones needs a single -p/--path
-    # if any(t not in ('dashboard_multi', 'protection') for t in args.type) and not args.fv_path:
-    #     parser.error('-p/--fv_path is required')
+    if 'fu_protection' in args.type and not args.fu_protection_paths:
+        parser.error('--fu_protection_paths is required for "fu_protection" evaluation')
 
     main(args)
