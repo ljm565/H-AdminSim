@@ -49,11 +49,11 @@ def main(args):
             log('')
 
         if 'fu_dashboard' in args.type:
-            evaluator.dashboard_data()
+            evaluator.dashboard_data(args.save)
             log('')
 
         if 'fu_protection' in args.type:
-            evaluator.protection_report()
+            evaluator.protection_report(args.save)
             log('')
 
 
@@ -96,6 +96,7 @@ if __name__ == '__main__':
              '"fu_dashboard" the negotiation dashboard over the hospital-side, interpolated and patient-side runs '
              '(--model), "fu_protection" the urgent capacity protection across --fu_protection_paths.'
     )
+    parser.add_argument('--save', action='store_true', required=False, help='Whether to save the evaluation results to a file (default: False)')
     args = parser.parse_args()
 
     # Argument sanity checks

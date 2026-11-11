@@ -965,11 +965,14 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
         return result
 
 
-    def dashboard_data(self):
+    def dashboard_data(self, save: bool = False) -> dict:
         """
         Compute every value the negotiation-policy dashboard needs over all runs in `self.all_files` order
         (hospital side -> interpolated runs as given -> patient side), log a per-run summary, and save it as
         `dashboard_data.json` in the dataset folder (the parent of the run folders).
+        
+        Args:
+            save (bool, optional): Whether to save the dashboard data to `dashboard_data.json`. Defaults to False.
 
         Returns:
             dict: The saved payload —
@@ -1221,13 +1224,16 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
         return summary
 
 
-    def protection_report(self):
+    def protection_report(self, save: bool = False):
         """
         Compare the urgent capacity protection across runs: one baseline without protection and runs at several
         `ratio`s, for one or more negotiation modes at once. Each folder's `_metadata` supplies its operating window,
         its mode and the policy's `capacity_protection`; runs are grouped by mode and ordered by ratio (disabled
         first). A run without protection measures the rolling window of the protected runs of its mode (or of any
         run), so baseline and protected runs are read over the same window.
+
+        Args:
+            save (bool, optional): Whether to save the dashboard data to `protection_report.json`. Defaults to False.
 
         Returns:
             list[dict]: One `{'label', 'mode', 'capacity_protection', 'policy', **protection_summary}` per run.
@@ -1312,9 +1318,10 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
             log('')
         
         # Save protection report
-        parent = os.path.dirname(os.path.dirname(os.path.abspath(self.protection_files[0])))
-        save_path = os.path.join(parent, 'protection_report.json')
-        json_save_fast(save_path, encode_non_finite(report))
-        log(f'Protection report saved to {colorstr("green", save_path)}')
-
+        if save:
+            parent = os.path.dirname(os.path.dirname(os.path.abspath(self.protection_files[0])))
+            save_path = os.path.join(parent, 'protection_report.json')
+            json_save_fast(save_path, encode_non_finite(report))
+            log(f'Protection report saved to {colorstr("green", save_path)}')
+        
         return report
