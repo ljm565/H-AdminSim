@@ -562,7 +562,9 @@ class NegotiationRecordMixin:
         Negotiation-eligible cohort from any run: patients with something to gain (GPC > 0, free win
         included), whatever the run's policy did with them. `is_target` marks the ones the policy actually
         targeted (`negotiate`/`auto`) — every eligible patient on the hospital side, a subset at a
-        threshold τ, none on the patient side.
+        threshold τ, none on the patient side. A target must also have an executed outcome: on the
+        reasoning fallback (tool calling failed) the policy's action is recorded but never run, leaving
+        the outcome 'none' with the preferred schedule booked, so such a patient is not a target.
         """
         if isinstance(files, str):
             files = [files]
@@ -570,7 +572,8 @@ class NegotiationRecordMixin:
         for m in cls._iter_metrics(files):
             if m['gpc'] > 0:                          # inf (free win) included
                 row = cls._metric_row(m)
-                row['is_target'] = m['negotiation_action'] in ('negotiate', 'auto')
+                row['is_target'] = m['negotiation_action'] in ('negotiate', 'auto') \
+                                   and m.get('negotiation_outcome') != 'none'
                 rows.append(row)
         return rows
     
@@ -1066,10 +1069,11 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
             log('')            
 
         # Save dashboard data
-        parent = os.path.dirname(os.path.dirname(os.path.abspath(self.hospital_file)))
-        save_path = os.path.join(parent, 'dashboard_data.json')
-        json_save_fast(save_path, encode_non_finite(payload))     # free-win GPC / ti saved as 'inf', not null
-        log(f'Dashboard data saved to {colorstr("green", save_path)}')
+        if save:
+            parent = os.path.dirname(os.path.dirname(os.path.abspath(self.hospital_file)))
+            save_path = os.path.join(parent, 'dashboard_data.json')
+            json_save_fast(save_path, encode_non_finite(payload))     # free-win GPC / ti saved as 'inf', not null
+            log(f'Dashboard data saved to {colorstr("green", save_path)}')
         
         return payload
     
@@ -1233,7 +1237,7 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
         run), so baseline and protected runs are read over the same window.
 
         Args:
-            save (bool, optional): Whether to save the dashboard data to `protection_report.json`. Defaults to False.
+            save (bool, optional): Whether to save the protection report to `protection_report.json`. Defaults to False.
 
         Returns:
             list[dict]: One `{'label', 'mode', 'capacity_protection', 'policy', **protection_summary}` per run.
@@ -1280,27 +1284,28 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
                 log(f'- {colorstr("cyan", name)}: {val(e["n"])} bookings (failed:{val(x["failed"], color="red")}, '
                     f'partial: {val(x["partial"], color="yellow")})')
                 share = None if s['within_share'] is None else round(s['within_share'] * 100, 2)
-                log(f'    - first test started within the protection horizon: {val(share, "%")} ({s["within_hours"]}h)')
-                log(f'    - booking -> first test start')
+                log(f'    - A_H (first test started within the protection horizon): {val(share, "%")} ({s["within_hours"]}h)')
+                log(f'    - W_start (booking -> first test start)')
                 log(f'        - median: {val(s["median_h"], "h")}')
                 log(f'        - mean: {val(s["mean_h"], "h")}')
-                log(f'    - booking -> all results ready')
+                log(f'    - W_result (booking -> all results ready)')
                 log(f'        - median: {val(e["median_h"], "h")}')
                 log(f'        - mean: {val(e["mean_h"], "h")}')
                 log(f'        - p90: {val(e["p90_h"], "h")}')
 
             # The rolling window the protection governs, and the capacity it used
             log(f'- {colorstr("cyan", "protection window")} ({w["horizon_days"]} days ahead, released {w["release_hours"]}h before opening)')
-            log(f'    - urgent share of window hours: {val(w["urgent_share"])} '
+            log(f'    - S_urg (urgent share of window hours): {val(w["urgent_share"])} '
                 f'(urgent {val(w["booked_h"]["urgent"], "h")}, normal {val(w["booked_h"]["normal"], "h")})')
             log(f'- {colorstr("cyan", "capacity utilization")}')
-            log(f'    - all dates: {val(cap["utilization_all"])}')
-            log(f'    - first {len(cap["early_dates"])} dates ({", ".join(cap["early_dates"])}): '
-                f'{val(cap["utilization_early"])} (urgent share {val(cap["urgent_share_early"])})')
+            log(f'    - η_all (all dates): {val(cap["utilization_all"])}')
+            log(f'    - η_early (first {len(cap["early_dates"])} dates: {", ".join(cap["early_dates"])}): '
+                f'{val(cap["utilization_early"])}')
+            log(f'    - S_early (urgent share of the first {len(cap["early_dates"])} dates): {val(cap["urgent_share_early"])}')
 
             # What the protection cost the normal bookings it held back
             if c['blocked_any']:
-                log(f'- {colorstr("cyan", "normal cost")} (blocked:{val(c["blocked_any"], color="red")}, '
+                log(f'- {colorstr("cyan", "κ (normal cost)")} (blocked:{val(c["blocked_any"], color="red")}, '
                     f'uncompared: {val(c["uncompared"], color="yellow")})')
                 for obj, s in c['by_objective'].items():
                     log(f'    - {obj} ({s["unit"]})')
