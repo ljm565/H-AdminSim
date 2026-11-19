@@ -1,6 +1,7 @@
 import os
 import math
 import numpy as np
+from bisect import bisect_right
 from decimal import Decimal, getcontext
 from typing import Optional, Tuple, Union
 from collections import Counter, defaultdict
@@ -519,8 +520,15 @@ class NegotiationRecordMixin:
             name: round(cls._mean([d[key] for d in rows if pref is None or d['preference'] == pref]), 3)
             for name, rows in groups.items()
         }
+        sum_of = lambda key, pref=None: {
+            name: round(sum(d[key] for d in rows if (pref is None or d['preference'] == pref) and d[key] is not None), 3)
+            for name, rows in groups.items()
+        }
+        count_of = lambda pref: {name: sum(1 for d in rows if d['preference'] == pref) for name, rows in groups.items()}
         return {
             'n_eligible': len(cohort),
+            'n_eligible_visit': sum(1 for d in cohort if d['preference'] == 'visit_min'),
+            'n_eligible_stay': sum(1 for d in cohort if d['preference'] == 'stay_min'),
             'n_target': len(targets),
             'accepted': len(accepted),
             'forced': len(forced),
@@ -530,9 +538,17 @@ class NegotiationRecordMixin:
             'acceptance_rate': round(len(accepted) / len(concluded) * 100, 2) if concluded else None,
             'switched': len(switched),
             'unswitched': len(kept),
+            'n_visit': count_of('visit_min'),
+            'n_stay': count_of('stay_min'),
             'sum_R': {name: round(sum(d['R'] for d in rows), 2) for name, rows in groups.items()},
             'mean_R': mean_of('R'),
+            'sum_R_visit': sum_of('R', 'visit_min'),
+            'mean_R_visit': mean_of('R', 'visit_min'),
+            'sum_R_stay': sum_of('R', 'stay_min'),
+            'mean_R_stay': mean_of('R', 'stay_min'),
+            'sum_G_visit': sum_of('G', 'visit_min'),        # days (visit_min's concession unit)
             'mean_G_visit': mean_of('G', 'visit_min'),
+            'sum_G_stay': sum_of('G', 'stay_min'),          # hours (stay_min's concession unit)
             'mean_G_stay': mean_of('G', 'stay_min'),
             'mean_U': mean_of('U'),
             'mean_U_pref': mean_of('U_pref'),
@@ -1029,15 +1045,23 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
             log(f'{colorstr(role)} ({os.path.basename(os.path.dirname(file))})')
             log(f'- cohort')
             log(f'    - booked: {colorstr("green", str(s["n_total"]))}')
-            log(f'    - eligible: {colorstr("green", str(s["n_eligible"]))} / {colorstr("green", str(s["n_total"]))}')
+            by_pref = lambda n_visit, n_stay: f' | visit_min: {colorstr("green", str(n_visit))}, stay_min: {colorstr("green", str(n_stay))}'
+            log(f'    - eligible: {colorstr("green", str(s["n_eligible"]))} / {colorstr("green", str(s["n_total"]))}'
+                + by_pref(s['n_eligible_visit'], s['n_eligible_stay']))
+            targeted_pct = f'{s["n_target"] / s["n_eligible"] * 100:.2f}%' if s['n_eligible'] else 'n/a'
             log(f'    - targeted: {colorstr("green", str(s["n_target"]))} / {colorstr("green", str(s["n_eligible"]))} '
                 f'(accepted: {colorstr("green", str(s["accepted"]))}, forced: {colorstr("red", str(s["forced"]))}, '
-                f'kept: {colorstr("cyan", str(s["kept"]))}, auto: {colorstr("yellow", str(s["auto"]))})')
+                f'kept: {colorstr("cyan", str(s["kept"]))}, auto: {colorstr("yellow", str(s["auto"]))}) '
+                f'| {colorstr("green", targeted_pct)} of eligible'
+                + by_pref(s['n_visit']['targeted'], s['n_stay']['targeted']))
+            switched_pct = f'{s["switched"] / s["n_target"] * 100:.2f}%' if s['n_target'] else 'n/a'
             log(f'    - switched: {colorstr("green", str(s["switched"]))} / {colorstr("green", str(s["n_target"]))} '
                 f'(accepted: {colorstr("green", str(s["accepted"]))}, forced: {colorstr("red", str(s["forced"]))}, '
-                f'auto: {colorstr("yellow", str(s["auto"]))})')
+                f'auto: {colorstr("yellow", str(s["auto"]))}) | {colorstr("green", switched_pct)} of targeted'
+                + by_pref(s['n_visit']['switched'], s['n_stay']['switched']))
             log(f'    - unswitched: {colorstr("green", str(s["unswitched"]))} / {colorstr("green", str(s["n_target"]))} '
-                f'(kept: {colorstr("cyan", str(s["kept"]))})')
+                f'(kept: {colorstr("cyan", str(s["kept"]))})'
+                + by_pref(s['n_visit']['unswitched'], s['n_stay']['unswitched']))
 
             # Undefined values are logged as n/a with the reason, rather than as misleading zeros or a missing line
             if s['acceptance_rate'] is not None:
@@ -1047,15 +1071,25 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
             else:
                 log(f'- acceptance rate : n/a (no negotiation concluded)')
 
-            log(f'- sum ΔR (result-hours gained)')
+            log(f'- ΔR (result-hours gained)')
             for group in ('targeted', 'switched', 'unswitched'):
                 log(f'    - {group}: {colorstr("green", str(s["sum_R"][group]) + "h")} '
                     f'(mean {colorstr("green", str(s["mean_R"][group]) + "h")} / {group})')
-            log(f'- mean ΔG (patient concession)')
+                log(f'        - visit_min: {colorstr("green", str(s["sum_R_visit"][group]) + "h")} '
+                    f'(mean {colorstr("green", str(s["mean_R_visit"][group]) + "h")} / {s["n_visit"][group]} patients)')
+                log(f'        - stay_min: {colorstr("green", str(s["sum_R_stay"][group]) + "h")} '
+                    f'(mean {colorstr("green", str(s["mean_R_stay"][group]) + "h")} / {s["n_stay"][group]} patients)')
+            # visit_min concedes days and stay_min hours, so a group's ΔG is given per unit rather than as one total
+            log(f'- ΔG (patient concession)')
             for group in ('targeted', 'switched', 'unswitched'):
-                log(f'    - {group}')
-                log(f'        - visit_min: {colorstr("red", str(s["mean_G_visit"][group]) + " days")}')
-                log(f'        - stay_min: {colorstr("red", str(s["mean_G_stay"][group]) + "h")}')
+                log(f'    - {group}: {colorstr("red", str(s["sum_G_visit"][group]) + " days")} + '
+                    f'{colorstr("red", str(s["sum_G_stay"][group]) + "h")} '
+                    f'(mean {colorstr("red", str(s["mean_G_visit"][group]) + " days")}, '
+                    f'{colorstr("red", str(s["mean_G_stay"][group]) + "h")} / {group})')
+                log(f'        - visit_min: {colorstr("red", str(s["sum_G_visit"][group]) + " days")} '
+                    f'(mean {colorstr("red", str(s["mean_G_visit"][group]) + " days")} / {s["n_visit"][group]} patients)')
+                log(f'        - stay_min: {colorstr("red", str(s["sum_G_stay"][group]) + "h")} '
+                    f'(mean {colorstr("red", str(s["mean_G_stay"][group]) + "h")} / {s["n_stay"][group]} patients)')
             log(f'- mean ΔU (per patient, P -> T)')
             for group in ('targeted', 'switched', 'unswitched'):
                 log(f'    - {group}: {colorstr("green", str(s["mean_U"][group]))}  '
@@ -1097,7 +1131,10 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
           actually made worse, `mean_all` over every compared booking (mostly exact zeros).
         - `window`: the protection's rolling window — for each booking, the test hours placed on dates that were
           inside `[release_hours, horizon_days * 24)` hours of the booking time, i.e. the capacity the protection
-          governed at that moment — and the urgent share of those hours.
+          governed at that moment — and the urgent share of those hours. `lead_profile` spreads the same hours over
+          lead-time bins (a test date's opening minus its booking time, so each booking is binned relative to its own
+          time): 24h bins up to a week, split at `release_hours` and `horizon_days * 24`, each tagged as `released`,
+          `protected` or `beyond` the window — the device-side view of where urgent bookings land.
         - `capacity`: utilization of the start-of-simulation test capacity by the final bookings, over all dates and
           over the first `ceil(horizon_days)` test dates (a fixed calendar view of the window at the start of the run).
 
@@ -1114,10 +1151,13 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
         window = {k: window[k] for k in ('horizon_days', 'release_hours')}
         horizon_h = window['horizon_days'] * 24                 # protection horizon in hours (also the first-test access bound)
         horizon_dates = math.ceil(window['horizon_days'])       # number of dates the horizon spans (the early capacity view)
+        # Lead-time bin edges: 24h steps up to a week, split at the window bounds so every bin is in one zone
+        lead_edges = sorted({24 * k for k in range(1, 8)} | {window['release_hours'], horizon_h} - {0})
 
         end_waits, start_waits, failed, partial = defaultdict(list), defaultdict(list), Counter(), Counter()
         blocked_any, uncompared, native, delay_h, extra_days = 0, 0, defaultdict(list), [], []
         window_hours = Counter()
+        lead_hours = defaultdict(Counter)                       # lead-bin index -> {urgency: Decimal hours}
         booked, booked_urgent = defaultdict(Decimal), defaultdict(Decimal)     # exact hour sums (no float drift)
 
         for gt, pred, status in self._booking_rows([result_file]):
@@ -1161,11 +1201,13 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
             end_waits[urgency].append(hours_between(ready, booked_dt))
             start_waits[urgency].append(min(hours_between(get_iso_time(t['schedule'][0], t['date'], utc_offset), booked_dt) for t in tests))
 
-            # Test hours on dates inside the protection window at booking time
+            # Test hours by lead time at booking time: inside the protection window, and per lead bin
             for t in tests:
                 lead = hours_between(get_iso_time(self.start_hour, t['date'], utc_offset), booked_dt)
+                hours = Decimal(str(t['schedule'][1])) - Decimal(str(t['schedule'][0]))
                 if window['release_hours'] <= lead < horizon_h:
-                    window_hours[urgency] += Decimal(str(t['schedule'][1])) - Decimal(str(t['schedule'][0]))
+                    window_hours[urgency] += hours
+                lead_hours[bisect_right(lead_edges, lead)][urgency] += hours    # a same-day test (lead < 0) falls in the first bin
 
             # What the protection cost this booking against its unprotected counterfactual
             record = pred.get('capacity_protection') or {}
@@ -1205,10 +1247,22 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
 
         # Exact Decimal sums, turned into floats only for the report (JSON-serializable)
         window_total = window_hours['urgent'] + window_hours['normal']
+        lead_profile = []
+        for i, (lo, hi) in enumerate(zip([None] + lead_edges, lead_edges + [None])):    # None = open end
+            zone = 'released' if hi is not None and hi <= window['release_hours'] \
+                else 'protected' if hi is not None and lo is not None and lo >= window['release_hours'] and hi <= horizon_h \
+                else 'beyond'
+            total = lead_hours[i]['urgent'] + lead_hours[i]['normal']
+            lead_profile.append({
+                'from_h': lo, 'to_h': hi, 'zone': zone,
+                'booked_h': {u: round(float(lead_hours[i][u]), 2) for u in ('urgent', 'normal')},
+                'urgent_share': round(float(lead_hours[i]['urgent'] / total), 4) if total else None,
+            })
         summary['window'] = {
             **window,
             'booked_h': {u: round(float(window_hours[u]), 2) for u in ('urgent', 'normal')},
             'urgent_share': round(float(window_hours['urgent'] / window_total), 4) if window_total else None,
+            'lead_profile': lead_profile,
         }
 
         # Utilization of the start-of-run capacity, over all dates and over the first `horizon_dates` test dates;
@@ -1297,6 +1351,13 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
             log(f'- {colorstr("cyan", "protection window")} ({w["horizon_days"]} days ahead, released {w["release_hours"]}h before opening)')
             log(f'    - S_urg (urgent share of window hours): {val(w["urgent_share"])} '
                 f'(urgent {val(w["booked_h"]["urgent"], "h")}, normal {val(w["booked_h"]["normal"], "h")})')
+            log(f'    - lead profile (urgent share of booked hours by lead time at booking)')
+            hour = lambda h: f'{h:g}h'
+            for b in w['lead_profile']:
+                span = f'< {hour(b["to_h"])}' if b['from_h'] is None else f'>= {hour(b["from_h"])}' if b['to_h'] is None \
+                    else f'{hour(b["from_h"])}-{hour(b["to_h"])}'
+                log(f'        - {span:<10} [{b["zone"]:<9}]: {val(b["urgent_share"])} '
+                    f'(urgent {val(b["booked_h"]["urgent"], "h")}, normal {val(b["booked_h"]["normal"], "h")})')
             log(f'- {colorstr("cyan", "capacity utilization")}')
             log(f'    - η_all (all dates): {val(cap["utilization_all"])}')
             log(f'    - η_early (first {len(cap["early_dates"])} dates: {", ".join(cap["early_dates"])}): '
