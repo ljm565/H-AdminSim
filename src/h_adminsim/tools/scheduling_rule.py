@@ -11,7 +11,6 @@ from .data_converter import DataConverter
 from h_adminsim.registry import SCHEDULE_STATUS
 from h_adminsim.registry.errors import SchedulingError
 from h_adminsim.utils import log, colorstr
-from h_adminsim.utils.fhir_utils import *
 from h_adminsim.utils.common_utils import *
 
 if TYPE_CHECKING:

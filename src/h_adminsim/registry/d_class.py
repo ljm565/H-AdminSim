@@ -1,5 +1,4 @@
 from __future__ import annotations
-import json
 from importlib import resources
 from dataclasses import dataclass, field
 from typing import ClassVar, Optional, TYPE_CHECKING

@@ -1,8 +1,7 @@
 from copy import deepcopy
-from typing import Tuple, Optional
+from typing import Optional
 from h_adminsim.tools import DataConverter
 
-from h_adminsim.utils import colorstr
 from h_adminsim.utils.common_utils import personal_id_to_birth_date
 
 

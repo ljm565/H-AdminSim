@@ -1,5 +1,4 @@
 from tqdm import tqdm
-from typing import Tuple
 from decimal import Decimal, getcontext
 
 from .data_synthesizer import DataSynthesizer

@@ -1,3 +1,4 @@
+import re
 import os
 import json
 import random
@@ -23,7 +24,6 @@ from h_adminsim.registry import (
 from h_adminsim.registry.errors import AgentSelectionError
 from h_adminsim.utils import colorstr, log
 from h_adminsim.utils.mas_utils import *
-from h_adminsim.utils.fhir_utils import *
 from h_adminsim.utils.common_utils import *
 
 if TYPE_CHECKING:
