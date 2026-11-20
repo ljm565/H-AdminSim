@@ -14,7 +14,7 @@ __pycache__/
 *CLAUDE*
 TEST_EXPLANATION.md
 custom_test_data/
-test/
+pytest/
 
 # Shell scripts
 *.sh
