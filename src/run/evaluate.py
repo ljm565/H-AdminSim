@@ -41,7 +41,8 @@ def main(args):
             model_name=args.model,
             patient_side_path=args.fu_patient_path,
             interpolated_paths=args.fu_interpolated_paths,
-            protection_paths=args.fu_protection_paths
+            protection_paths=args.fu_protection_paths,
+            agent_data_path=args.fu_agent_data_path,
         )
 
         if 'fu_tau' in args.type:
@@ -83,7 +84,10 @@ if __name__ == '__main__':
                         help='Results folders compared by the urgent capacity protection, in any order — each run\'s '
                              'mode and protection ratio are read from its _metadata. Include the runs without protection '
                              'as the baselines.')
-    
+    parser.add_argument('--fu_agent_data_path', type=str, required=False, default=None,
+                        help='Agent simulation data folder the follow-up runs used (read by "fu_protection"). '
+                             'Defaults to <results folder>/../agent_data.')
+
     # Evaluation types
     parser.add_argument('-t', '--type', type=str, required=True, nargs='+',
         choices=[

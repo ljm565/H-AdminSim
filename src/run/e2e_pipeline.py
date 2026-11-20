@@ -7,11 +7,13 @@ from argparse import ArgumentParser
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
 from h_adminsim.agent import SupervisorAgent
-from h_adminsim.task.opfv_task import *
-from h_adminsim.task.opfu_task import *
+from h_adminsim.task.opfv_task import OutpatientFirstIntake, OutpatientFirstScheduling
+from h_adminsim.task.opfu_task import OutpatientFollowUpScheduling
 from h_adminsim.task.fhir_manager import FHIRManager
-from h_adminsim.pipeline import DataGenerator, Simulator
-from h_adminsim.utils import log
+from h_adminsim.pipeline import DataGenerator, Simulator, HospitalMAS
+from h_adminsim.utils import colorstr, log
+from h_adminsim.utils.mas_utils import init_mas_system
+from h_adminsim.utils.common_utils import replace_none_value
 from h_adminsim.utils.filesys_utils import yaml_save
 
 
@@ -32,6 +34,7 @@ def env_setup(config, resume):
 
 def load_config(config_path):
     config = Config(config_path)
+    config = replace_none_value(config)
     return config
 
 
@@ -71,6 +74,20 @@ def main(args):
     os.makedirs(output_dir, exist_ok=True)
     yaml_save(os.path.join(output_dir, 'args.yaml'), s_config)
     
+    # Initialize the admin staff multi-agent system (orchestrator + one staff agent per task)
+    mas_structure = init_mas_system(
+        orchestrator_model=s_config.task_model,
+        orchestrator_vllm_endpoint=s_config.vllm_url,
+        first_visit_intake_model=s_config.task_model if 'first_visit_intake' in args.type else None,
+        first_visit_intake_vllm_endpoint=s_config.vllm_url if 'first_visit_intake' in args.type else None,
+        first_visit_scheduling_model=s_config.task_model if 'first_visit_scheduling' in args.type else None,
+        first_visit_scheduling_vllm_endpoint=s_config.vllm_url if 'first_visit_scheduling' in args.type else None,
+        follow_up_visit_scheduling_model=s_config.task_model if 'follow_up_visit_scheduling' in args.type else None,
+        follow_up_visit_scheduling_vllm_endpoint=s_config.vllm_url if 'follow_up_visit_scheduling' in args.type else None,
+        intake_max_inference=s_config.outpatient_intake.intake_max_inference,
+    )
+    staff_mas = HospitalMAS(mas_structure)
+
     task = dict()
     if 'first_visit_intake' in args.type:
         use_vllm = False if any(m in s_config.supervisor_model.lower() for m in ['gpt', 'gemini']) else True
@@ -78,40 +95,46 @@ def main(args):
             target_task='first_visit_intake',
             model=s_config.supervisor_model,
             use_vllm=use_vllm,
-            vllm_endpoint = s_config.vllm_url if use_vllm else None
+            vllm_endpoint=s_config.vllm_url if use_vllm else None,
+            temperature=0 if not 'gpt-5' in s_config.supervisor_model.lower() else 1
         )
         use_vllm = False if any(m in s_config.task_model.lower() for m in ['gpt', 'gemini']) else True
         _task = OutpatientFirstIntake(
             patient_model=s_config.task_model,
-            admin_staff_model=s_config.task_model,
+            admin_staff_mas=staff_mas,
             supervisor_agent=supervisor_agent if s_config.outpatient_intake.use_supervisor else None,
             intake_max_inference=s_config.outpatient_intake.intake_max_inference,
             patient_vllm_endpoint=s_config.vllm_url if use_vllm else None,
-            admin_staff_vllm_endpoint=s_config.vllm_url if use_vllm else None
         )
         task[_task.name] = _task
     if 'first_visit_scheduling' in args.type:
         use_vllm = False if any(m in s_config.task_model.lower() for m in ['gpt', 'gemini']) else True
         _task = OutpatientFirstScheduling(
             patient_model=s_config.task_model,
-            admin_staff_model=s_config.task_model,
-            schedule_cancellation_prob=s_config.schedule_cancellation_prob,
-            request_early_schedule_prob=s_config.request_early_schedule_prob,
+            admin_staff_mas=staff_mas,
+            schedule_cancellation_prob=s_config.schedule_task.opfv_schedule_cancellation_prob,
+            request_early_schedule_prob=s_config.schedule_task.opfv_request_early_schedule_prob,
             fhir_integration=s_config.integration_with_fhir,
             scheduling_strategy=s_config.schedule_task.scheduling_strategy,
             patient_vllm_endpoint=s_config.vllm_url if use_vllm else None,
-            admin_staff_vllm_endpoint=s_config.vllm_url if use_vllm else None
         )
         task[_task.name] = _task
     if 'follow_up_visit_scheduling' in args.type:
         use_vllm = False if any(m in s_config.task_model.lower() for m in ['gpt', 'gemini']) else True
+        negotiation_config = s_config.schedule_task.negotiation
+        negotiation_params = negotiation_config.get(negotiation_config.policy)
+        if negotiation_params is None:
+            raise ValueError(colorstr('red', f"Unknown negotiation policy `{negotiation_config.policy}`; "
+                                             f"choose one of {[k for k in negotiation_config if k != 'policy']}"))
         _task = OutpatientFollowUpScheduling(
             patient_model=s_config.task_model,
-            admin_staff_model=s_config.task_model,
+            admin_staff_mas=staff_mas,
+            schedule_cancellation_prob=s_config.schedule_task.opfu_schedule_cancellation_prob,
+            request_early_schedule_prob=s_config.schedule_task.opfu_request_early_schedule_prob,
             fhir_integration=s_config.integration_with_fhir,
             scheduling_strategy=s_config.schedule_task.scheduling_strategy,
             patient_vllm_endpoint=s_config.vllm_url if use_vllm else None,
-            admin_staff_vllm_endpoint=s_config.vllm_url if use_vllm else None
+            negotiation_params=negotiation_params,
         )
         task[_task.name] = _task
 

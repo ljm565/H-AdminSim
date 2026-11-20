@@ -60,7 +60,18 @@ class DataGenerator:
         self.fhir_url = self.config.get('fhir_url', None)
         log(f'Data saving directory: {colorstr(self.task.save_dir)}')
 
-        
+
+    @property
+    def save_dir(self) -> Path:
+        """
+        Root directory of the synthesized outputs (`data`, `fhir_data`, `agent_data`).
+
+        Returns:
+            Path: The data saving directory.
+        """
+        return self.task.save_dir
+
+
     def load_config(self, config: Optional[Union[str, Config]] = None) -> Config:
         """
         Load a configuration object.

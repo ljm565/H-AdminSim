@@ -1,3 +1,4 @@
+import math
 import time
 from copy import deepcopy
 from decimal import Decimal
@@ -495,7 +496,7 @@ class SchedulingRule:
         """
         candidates = []
         duration = test_info['duration_hour']
-        min_time_slot_n = max(1, int(Decimal(str(duration)) / Decimal(str(self._TIME_UNIT))))
+        min_time_slot_n = max(1, math.ceil(Decimal(str(duration)) / Decimal(str(self._TIME_UNIT))))
         all_time_segments = convert_time_to_segment(self._START_HOUR, self._END_HOUR, self._TIME_UNIT)
         patient_busy = patient_busy or {}
         unavailable_dates, unavailable_interval = self._unavailable_windows(unavailable)

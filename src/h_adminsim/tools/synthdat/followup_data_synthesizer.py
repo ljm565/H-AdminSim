@@ -154,6 +154,19 @@ class FollowUpDataSynthesizer(DataSynthesizer):
             ) for d in departments
         }
 
+        # Round each test duration up to a multiple of the hospital time unit, so every downstream consumer
+        # (scheduling tools, sanity checker, environment capacity, FHIR conversion) books and checks the same length
+        adjusted = []
+        for test_list in eligible_tests.values():
+            for _test in test_list:
+                n_units = max(1, math.ceil(Decimal(str(_test['duration_hour'])) / Decimal(str(interval_hour))))
+                aligned = float(n_units * Decimal(str(interval_hour)))
+                if aligned != _test['duration_hour']:
+                    adjusted.append(f"{_test['code']} ({_test['duration_hour']}h -> {aligned}h)")
+                    _test['duration_hour'] = aligned
+        if adjusted:
+            log(f"Test durations rounded up to the time unit ({interval_hour}h): {', '.join(adjusted)}")
+
         # Assign random fixed schedules for the tests
         dates = generate_date_range(start_date, days)
         scheduler = ScheduleAssigner(start_hour, end_hour, interval_hour)

@@ -645,10 +645,13 @@ class NegotiationRecordMixin:
     
 
     @staticmethod
-    def _test_capacity(start_hour: float, end_hour: float, result_file: str) -> dict:
+    def _test_capacity(start_hour: float,
+                       end_hour: float,
+                       result_file: str,
+                       agent_data_path: Optional[str] = None) -> dict:
         """
         `{(test_code, date): free_hours}` before any follow-up booking (total capacity minus fixed bookings), pooled
-        over the test's devices, from the hospital data of the run (`<dataset>/agent_data/<hospital>_agent.json`).
+        over the test's devices, from the hospital data of the run (`<agent_data_path>/<hospital>_agent.json`).
         Closed days carry no capacity. Note the protection's booking limit is based on the total capacity instead
         (`HospitalEnvironment.test_capacity`).
 
@@ -657,6 +660,9 @@ class NegotiationRecordMixin:
             end_hour (float): Closing hour of the operating window; a device-date's capacity is `end_hour - start_hour`
                               minus its fixed bookings, and a date booked for the whole window is closed.
             result_file (str): The run's result file (`<dataset>/<run>/<hospital>_agent_result.json`).
+            agent_data_path (Optional[str], optional): Directory holding the agent simulation data the run used.
+                                                       If None, `<dataset>/agent_data` (the sibling of the run's
+                                                       results directory) is used. Defaults to None.
 
         Returns:
             dict: `{(test_code, date): Decimal free hours}` — exact sums, so a closed day is exactly zero.
@@ -664,9 +670,10 @@ class NegotiationRecordMixin:
         Raises:
             FileNotFoundError: If the run's hospital data is not found.
         """
-        parent = os.path.dirname(os.path.dirname(os.path.abspath(result_file)))
+        if agent_data_path is None:
+            agent_data_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(result_file))), 'agent_data')
         hospital_id = os.path.basename(result_file).split('_agent_result')[0]
-        source = os.path.join(parent, 'agent_data', f'{hospital_id}_agent.json')
+        source = os.path.join(agent_data_path, f'{hospital_id}_agent.json')
         if not os.path.isfile(source):
             raise FileNotFoundError(f"No hospital data for {result_file}: {source}")
 
@@ -692,7 +699,8 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
                  model_name: Optional[str] = None,
                  patient_side_path: Optional[str] = None,
                  interpolated_paths: Optional[list[str]] = None,
-                 protection_paths: Optional[list[str]] = None):
+                 protection_paths: Optional[list[str]] = None,
+                 agent_data_path: Optional[str] = None):
         """
         Args:
             hospital_side_path (Optional[str], optional): Hospital-side (τ=0) results directory. Required for the
@@ -706,6 +714,10 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
             protection_paths (Optional[list[str]], optional): Results directories compared by the urgent capacity
                                                               protection, in any order (each run's mode and ratio come
                                                               from its `_metadata`). Defaults to None.
+            agent_data_path (Optional[str], optional): Directory holding the agent simulation data the runs used, read
+                                                       by the protection report for test capacity. If None, each run's
+                                                       `<dataset>/agent_data` (the sibling of its results directory)
+                                                       is used. Defaults to None.
 
         Raises:
             ValueError: If neither `hospital_side_path` nor `protection_paths` is given.
@@ -760,6 +772,7 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
         self.end_hour = float(mds[0]['end_hour'])
         self.time_unit = float(mds[0]['time_unit'])
         self.model_name = model_name
+        self.agent_data_path = agent_data_path
 
         log(f"Run metadata: window {self.start_hour}-{self.end_hour} (time_unit {self.time_unit})")
 
@@ -1267,7 +1280,7 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
 
         # Utilization of the start-of-run capacity, over all dates and over the first `horizon_dates` test dates;
         # every sum is an exact Decimal, turned into a float only for the report (JSON-serializable)
-        capacity = self._test_capacity(self.start_hour, self.end_hour, result_file)
+        capacity = self._test_capacity(self.start_hour, self.end_hour, result_file, self.agent_data_path)
         early_dates = set(sorted({d for _, d in capacity})[:horizon_dates])
         early = [k for k in capacity if k[1] in early_dates]
         capacity_all = sum(capacity.values(), Decimal(0))
