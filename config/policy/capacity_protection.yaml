@@ -1,0 +1,11 @@
+# Device (urgent capacity) protection policy: airline-style booking limit that holds back a share of each
+# test's capacity for `urgent` patients. Independent of negotiation: list it alone (the staff never
+# negotiates) or together with tau.yaml under `schedule_task.policy_config`.
+api_version: 1
+policies:
+  - id: protection
+    source: builtin:capacity_protection
+    params:
+      ratio: 0.2                         # Share of each (test, date) capacity reserved for urgent patients, in [0, 1)
+      horizon_days: 3                    # Protect only dates opening within this many days of the current time
+      release_hours: 24                  # Release a protected date to normal patients once it opens within this many hours

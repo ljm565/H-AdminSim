@@ -27,17 +27,6 @@ schedule_task:
     opfv_request_early_schedule_prob: 0.15  # First-visit scheduling rescheduling prob.
     opfu_schedule_cancellation_prob: 0.05   # Follow-up-visit scheduling cancellation prob.
     opfu_request_early_schedule_prob: 0.075  # Follow-up-visit scheduling rescheduling prob.
-    negotiation:
-        policy: policy1
-        policy1:
-            type: result_gain       # Trigger index ti = GPC * TCL / τ, gain = result-time gain R
-            mode: threshold     # [threshold, hospital-side, patient-side]
-            tcl_temperature: 1.0
-            trigger_temperature_visit: 1.0
-            trigger_temperature_stay: 1.0
-            negotiation_trigger_threshold: 1.0
-            capacity_protection:            # Airline-style booking limit: hold back a share of each test's capacity for urgent patients
-                enabled: False
-                ratio: 0.2                  # Share of each (test, date) start-of-simulation free capacity reserved for urgent patients, in [0, 1)
-                horizon_days: 3             # Protect only dates opening within this many days of the current time
-                release_hours: 24           # Release a protected date to normal patients once it opens within this many hours
+    policy_config:                          # Follow-up scheduling policy files, in priority order; omit -> staff never negotiates, nothing restricted
+        - config/policy/capacity_protection.yaml
+        - config/policy/tau.yaml
