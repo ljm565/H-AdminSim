@@ -28,5 +28,5 @@ schedule_task:
     opfu_schedule_cancellation_prob: 0.05   # Follow-up-visit scheduling cancellation prob.
     opfu_request_early_schedule_prob: 0.075  # Follow-up-visit scheduling rescheduling prob.
     policy_config:                          # Follow-up scheduling policy files, in priority order; omit -> staff never negotiates, nothing restricted
-        - config/policy/capacity_protection.yaml
         - config/policy/tau.yaml
+        - config/policy/capacity_protection.yaml
