@@ -90,6 +90,26 @@ class ToolSelectionError(Exception):
         self.message = message
 
 
+class PolicyError(ValueError):
+    """
+    Raised when a follow-up scheduling policy is configured incorrectly (policy config file, source, parameters) or
+    returns something the simulation cannot use. A `ValueError`, so callers catching `ValueError` keep working.
+    """
+    error_code = "POLICY_ERROR"
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+
+class PolicyCompositionError(PolicyError):
+    """
+    Raised when several policies cannot run together (duplicate policy ids, or `review` policies asking for different
+    values of the same shared negotiation-metrics parameter).
+    """
+    error_code = "POLICY_COMPOSITION_ERROR"
+
+
 class AgentSelectionError(Exception):
     error_code = "WRONG_AGENT_SELECTION"
 

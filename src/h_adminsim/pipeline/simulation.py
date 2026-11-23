@@ -1,10 +1,9 @@
 import os
 import random
 import numpy as np
-from datetime import timedelta
 from typing import Optional
+from datetime import timedelta
 from decimal import Decimal, getcontext
-from dataclasses import fields, asdict, is_dataclass
 
 from h_adminsim.task import OutpatientTask
 from h_adminsim.task.opfv_task import *
@@ -474,11 +473,13 @@ class Simulator:
 
     def _collect_metadata(self, environment) -> dict:
         """
-        Run metadata for the result files: the device operating window and the follow-up negotiation
-        policy actually used — its type and mode plus every field of that policy type (e.g. the τ knobs
-        of `result_gain`, the test selector and value weights of `device_value`), so a run is reproducible from
-        its result alone. The poles (`hospital-side`, `patient-side`) record their pinned knob values
-        (1.0); readers tell them apart by `policy.mode`, not by τ.
+        Run metadata for the result files: the device operating window and the follow-up scheduling
+        policies actually used, so a run is reproducible from its result alone.
+
+        `policies` lists every policy in priority order (id, name, source, source_sha256, api_version, hooks,
+        params); readers such as the evaluator go through `h_adminsim.policy.run_policy_summary`. The poles
+        (`hospital-side`, `patient-side`) record their pinned knob values (1.0); readers tell them apart by the
+        `mode` param, not by τ. `policies` is None when the run has no follow-up scheduling task.
 
         Every value is cast back to built-in types, since config-sourced values are `ruamel.yaml`
         scalars and containers that `orjson` cannot serialize.
@@ -487,18 +488,12 @@ class Simulator:
             'start_hour': environment._START_HOUR,
             'end_hour': environment._END_HOUR,
             'time_unit': environment._TIME_UNIT,
-            'policy': None,
+            'policies': None,
         }
         task = self.task.get('follow_up_visit_scheduling')
-        staff_policy = getattr(task, 'staff_policy', None)
-        if staff_policy is not None:
-            metadata['policy'] = {'type': staff_policy.type, 'mode': staff_policy.mode}
-
-            # Every field of the policy type (the prompt path is derived from the mode, so it is skipped)
-            for field in fields(staff_policy):
-                if field.name not in ('mode', 'negotiation_prompt_path'):
-                    value = getattr(staff_policy, field.name)
-                    metadata['policy'][field.name] = asdict(value) if is_dataclass(value) else value
+        policies = getattr(task, 'policies', None)
+        if policies is not None:
+            metadata['policies'] = policies.describe()
         return to_builtin_scalar(metadata)
 
 

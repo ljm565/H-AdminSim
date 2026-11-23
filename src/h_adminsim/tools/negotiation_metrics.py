@@ -55,7 +55,7 @@ class NegotiationMetrics:
     Slot-level quantities (``tcl``, ``U``) are read off the same ``filtered_test_device_information``
     the scheduler used, so they reflect the device state just before this booking commits. Whether to
     negotiate is not decided here: the staff negotiation policy turns these metrics into its own
-    trigger index (see ``StaffNegotiationPolicy.trigger_index``).
+    trigger index (see ``h_adminsim.policy.ResultGainPolicy.trigger_index``).
     """
 
     def __init__(self,

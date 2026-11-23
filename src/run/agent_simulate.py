@@ -10,6 +10,7 @@ sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
 from h_adminsim.task.opfv_task import *
 from h_adminsim.task.opfu_task import *
+from h_adminsim.policy import pin_policy_config
 from h_adminsim.pipeline import Simulator, HospitalMAS
 from h_adminsim.utils import set_logging, LOGGING_NAME
 from h_adminsim.utils.mas_utils import init_mas_system
@@ -90,11 +91,6 @@ def simulate(config, args, single_file=None):
         task[_task.name] = _task
     if 'follow_up_visit_scheduling' in args.type:
         use_vllm = False if any(m in config.task_model.lower() for m in ['gpt', 'gemini']) else True
-        negotiation_config = config.schedule_task.negotiation
-        negotiation_params = negotiation_config.get(negotiation_config.policy)
-        if negotiation_params is None:
-            raise ValueError(colorstr('red', f"Unknown negotiation policy `{negotiation_config.policy}`; "
-                                             f"choose one of {[k for k in negotiation_config if k != 'policy']}"))
         _task = OutpatientFollowUpScheduling(
             patient_model=config.task_model,
             admin_staff_mas=staff_mas,
@@ -103,7 +99,7 @@ def simulate(config, args, single_file=None):
             fhir_integration=config.integration_with_fhir,
             scheduling_strategy=config.schedule_task.scheduling_strategy,
             patient_vllm_endpoint=config.vllm_url if use_vllm else None,
-            negotiation_params=negotiation_params,
+            policy_config=config.schedule_task.get('policy_config'),
         )
         task[_task.name] = _task
 
@@ -130,6 +126,7 @@ def main(args):
     config = load_config(args.config)
     config.yaml_file = args.config
     os.makedirs(args.output_dir, exist_ok=True)
+    pin_policy_config(config.schedule_task, args.output_dir)   # policy files copied into the run folder; args.yaml and workers use the copies
     yaml_save(os.path.join(args.output_dir, 'args.yaml'), config)
     
     # Multi-processing

@@ -7,8 +7,9 @@ from typing import Tuple, Union, Optional, TYPE_CHECKING
 from patientsim import PatientAgent
 
 from h_adminsim.task import OutpatientTask
-from h_adminsim.simulation import OPFUSchedulingSimulation
 from h_adminsim.tools.sanity_checker import SanityChecker
+from h_adminsim.simulation import OPFUSchedulingSimulation
+from h_adminsim.policy import PolicyStack, load_policy_config
 from h_adminsim.registry import (
     SCHEDULE_STATUS,
     OPFU_PREFERENCE_PHRASE_PATIENT,
@@ -37,7 +38,8 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                  scheduling_strategy: str = 'tool_calling',
                  max_retries: int = 8,
                  patient_vllm_endpoint: Optional[str] = None,
-                 negotiation_params: Optional[dict] = None):
+                 policy_config: Optional[str] = None,
+                 policies: Optional[PolicyStack] = None):
         super().__init__()
 
         # Initialize variables
@@ -55,8 +57,11 @@ class OutpatientFollowUpScheduling(OutpatientTask):
         self.preference_rejection_prob = preference_rejection_prob
         self.preference_rejection_prob_decay = preference_rejection_prob_decay
 
-        # Initialize the staff negotiation policy (its `type` picks the trigger index; None never negotiates)
-        self.staff_policy = build_negotiation_policy(negotiation_params)
+        # Scheduling policies: from a policy config path or a ready-made `PolicyStack` (neither -> default patient-side)
+        if policies is not None and policy_config is not None:
+            raise ValueError(colorstr("red", "Pass either `policy_config` or `policies`, not both."))
+        self.policy_config = policy_config
+        self.policies = policies if policies is not None else load_policy_config(policy_config)
 
         # Others
         self.fhir_integration = fhir_integration
@@ -108,7 +113,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
             preference_rejection_prob_decay=self.preference_rejection_prob_decay,
             fhir_integration=self.fhir_integration,
             sanity_checker=self.sanity_checker,
-            negotiation_policy=self.staff_policy,
+            policies=self.policies,
         )
         return sim_environment
 

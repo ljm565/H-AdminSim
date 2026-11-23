@@ -4,29 +4,26 @@ import pytz
 import random
 from sconf import Config
 from collections import defaultdict
-from collections.abc import Mapping, MutableMapping, MutableSequence
+from collections.abc import (
+    Mapping, 
+    MutableMapping, 
+    MutableSequence,
+)
 from decimal import Decimal, getcontext
 from datetime import datetime, timedelta
-from google.genai.errors import ServerError, ClientError
 from typing import Optional, Union, Tuple, Any
+from google.genai.errors import ServerError, ClientError
 from openai import (
+    RateLimitError,
+    BadRequestError,
     APIConnectionError,
     AuthenticationError,
-    BadRequestError,
     InternalServerError,
     PermissionDeniedError,
-    RateLimitError,
 )
 
 from h_adminsim import registry
-from h_adminsim.registry import (
-    Hospital,
-    ConversationState,
-    CapacityProtection,
-    StaffNegotiationPolicy,
-    ResultGainNegotiationPolicy,
-    NEGOTIATION_POLICY_TYPES,
-)
+from h_adminsim.registry import Hospital, ConversationState
 from h_adminsim.utils import Information, log, colorstr
 
 
@@ -1172,38 +1169,3 @@ def encode_non_finite(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [encode_non_finite(v) for v in value]
     return value
-
-
-
-def build_negotiation_policy(params: Optional[dict] = None) -> StaffNegotiationPolicy:
-    """
-    Build the negotiation policy described by one config block, including its urgent capacity protection.
-
-    Args:
-        params (Optional[dict], optional): The policy block, e.g. ``{'type': 'result_gain', 'mode': 'threshold', ...,
-            'capacity_protection': {'enabled': True, 'ratio': 0.2, ...}}``. ``type`` (required) picks the class; an
-            omitted ``mode`` falls back to the class default ``'threshold'``. The ``capacity_protection`` sub-block
-            builds a `CapacityProtection` when its ``enabled`` is true (omitted or disabled -> None). None means no
-            negotiation is configured, which builds a ``'result_gain'`` policy in ``'patient-side'`` mode (never
-            negotiates, no protection). Defaults to None.
-
-    Raises:
-        ValueError: If ``type`` is not one of the registered policy types.
-
-    Returns:
-        StaffNegotiationPolicy: The policy instance, carrying its `capacity_protection` (or None).
-    """
-    if params is None:
-        return ResultGainNegotiationPolicy(mode='patient-side')
-
-    params = dict(params)
-    policy_type = params.pop('type', None)
-    if policy_type not in NEGOTIATION_POLICY_TYPES:
-        raise ValueError(colorstr("red", f"Unknown negotiation policy type `{policy_type}`; "
-                                         f"choose one of {list(NEGOTIATION_POLICY_TYPES)}"))
-
-    # The protection sub-block becomes a `CapacityProtection` only when it is enabled
-    protection_params = dict(params.pop('capacity_protection', None) or {})
-    capacity_protection = CapacityProtection(**protection_params) if protection_params.pop('enabled', False) else None
-
-    return NEGOTIATION_POLICY_TYPES[policy_type](capacity_protection=capacity_protection, **params)
