@@ -11,7 +11,8 @@ from h_adminsim.task.opfv_task import OutpatientFirstIntake, OutpatientFirstSche
 from h_adminsim.task.opfu_task import OutpatientFollowUpScheduling
 from h_adminsim.task.fhir_manager import FHIRManager
 from h_adminsim.pipeline import DataGenerator, Simulator, HospitalMAS
-from h_adminsim.utils import colorstr, log
+from h_adminsim.policy import pin_policy_config
+from h_adminsim.utils import log
 from h_adminsim.utils.mas_utils import init_mas_system
 from h_adminsim.utils.common_utils import replace_none_value
 from h_adminsim.utils.filesys_utils import yaml_save
@@ -72,6 +73,7 @@ def main(args):
     output_dir = data_generator.save_dir / 'simulation_results'
     s_config.agent_test_data = str(data_generator.save_dir / 'agent_data')
     os.makedirs(output_dir, exist_ok=True)
+    pin_policy_config(s_config.schedule_task, output_dir)   # policy files copied into the run folder; args.yaml and workers use the copies
     yaml_save(os.path.join(output_dir, 'args.yaml'), s_config)
     
     # Initialize the admin staff multi-agent system (orchestrator + one staff agent per task)
@@ -121,11 +123,6 @@ def main(args):
         task[_task.name] = _task
     if 'follow_up_visit_scheduling' in args.type:
         use_vllm = False if any(m in s_config.task_model.lower() for m in ['gpt', 'gemini']) else True
-        negotiation_config = s_config.schedule_task.negotiation
-        negotiation_params = negotiation_config.get(negotiation_config.policy)
-        if negotiation_params is None:
-            raise ValueError(colorstr('red', f"Unknown negotiation policy `{negotiation_config.policy}`; "
-                                             f"choose one of {[k for k in negotiation_config if k != 'policy']}"))
         _task = OutpatientFollowUpScheduling(
             patient_model=s_config.task_model,
             admin_staff_mas=staff_mas,
@@ -134,7 +131,7 @@ def main(args):
             fhir_integration=s_config.integration_with_fhir,
             scheduling_strategy=s_config.schedule_task.scheduling_strategy,
             patient_vllm_endpoint=s_config.vllm_url if use_vllm else None,
-            negotiation_params=negotiation_params,
+            policy_config=s_config.schedule_task.get('policy_config'),
         )
         task[_task.name] = _task
 

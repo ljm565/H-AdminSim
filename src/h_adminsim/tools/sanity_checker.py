@@ -276,9 +276,9 @@ class SanityChecker:
                                                preference optimality via `schedule_tests` (the mode is
                                                selected from `preference`) and the earliest follow-up
                                                consultation slot via `physician_filter`. Its
-                                               `protection_blocked` (urgent capacity protection) also
-                                               rejects tests on held-back dates.
-                                               Skips preference, follow-up and protection checks if not provided.
+                                               `blocked` (the run's `restrict` policy) also rejects tests
+                                               on restricted (test, date) pairs.
+                                               Skips preference, follow-up and restriction checks if not provided.
 
         Returns:
             Tuple[bool, str]: (passed, status_code).
@@ -378,8 +378,8 @@ class SanityChecker:
                     if set(pred_segments) & set(blocked_segments):
                         return False, ts_codes['unavailable']
 
-                # Urgent capacity protection: a normal patient may not take a (test, date) held back for urgent ones
-                if rule is not None and (tc, date) in rule.protection_blocked:
+                # Restriction policy (e.g. urgent capacity protection): the patient may not take a blocked (test, date)
+                if rule is not None and (tc, date) in rule.blocked:
                     return False, ts_codes['protection']
 
                 # Update conditions

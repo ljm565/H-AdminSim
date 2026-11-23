@@ -25,7 +25,8 @@ from h_adminsim.registry import (
 )
 from h_adminsim.tools.callback import TokenUsageCallback
 from h_adminsim.tools.sanity_checker import SanityChecker
-from h_adminsim.tools import SchedulingRule, scheduling_tool_calling, NegotiationMetrics
+from h_adminsim.tools import SchedulingRule, NegotiationMetrics, scheduling_tool_calling
+from h_adminsim.policy import PolicyStack, RestrictContext, ReviewContext, default_policies
 from h_adminsim.simulation.op_scheduling_simulation import OPSchedulingSimulation, TurnLimitReached
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.common_utils import *
@@ -33,7 +34,6 @@ from h_adminsim.utils.common_utils import *
 if TYPE_CHECKING:
     from h_adminsim.pipeline import HospitalMAS
     from h_adminsim.agent import SchedulingAdminStaffAgent
-    from h_adminsim.registry.d_class import StaffNegotiationPolicy
     from h_adminsim.environment.hospital import HospitalEnvironment
 
 
@@ -86,7 +86,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                  fhir_integration: bool = False,
                  schedule_rejection_prompt_path: Optional[str] = None,
                  sanity_checker: Optional[SanityChecker] = None,
-                 negotiation_policy: Optional["StaffNegotiationPolicy"] = None):
+                 policies: Optional[PolicyStack] = None):
 
         super().__init__(patient_agent, admin_staff_mas)
 
@@ -105,9 +105,9 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         self._init_prompt(schedule_rejection_prompt_path)
         self.sanity_checker = sanity_checker
         self.rules = SchedulingRule(metadata, department_data, self.environment, self.fhir_integration)
-        self.negotiation_policy = negotiation_policy
-        self.capacity_protection = negotiation_policy.capacity_protection if negotiation_policy else None  # urgent capacity protection, applied per patient (None disables)
-        self._negotiation_agent = None   # standalone persuasion agent, built lazily on first negotiation        
+        self.policies = policies if policies is not None else default_policies()   # the run's scheduling policies (see `h_adminsim.policy`)
+        self._last_decision = None       # latest `review` decision; its prompt drives the persuasion agent
+        self._negotiation_agent = None   # standalone persuasion agent, built lazily on first negotiation
 
     
     def _rejection_prompt_fields(self,
@@ -195,19 +195,19 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         """
         Standalone persuasion agent used to negotiate the patient toward ``throughput_max``.
 
-        Built lazily on first use (skipped when no policy is set, e.g. cancellation / rescheduling
-        runs). It mirrors the scheduling staff's model but keeps its OWN client — so the persuasion
-        sub-dialogue and its token usage stay separate from the tool-calling scheduling agent — and
-        is invoked directly (no MAS routing / no tools), using the policy's negotiation prompt.
+        Built lazily on first use. It mirrors the scheduling staff's model but keeps its OWN client — so
+        the persuasion sub-dialogue and its token usage stay separate from the tool-calling scheduling
+        agent — and is invoked directly (no MAS routing / no tools), using the prompt of the `review`
+        policy's ``'negotiate'`` decision.
 
         Args:
             patient_preference (str): The patient's stated preference for scheduling (e.g., 'visit_min', 'stay_min').
             negotiation_metrics (dict): Metrics computed by `_calculate_negotiation_metrics`, including `gpc`, `tcl`, `ti`, and other relevant values.
 
         Returns:
-            Optional["SchedulingAdminStaffAgent"]: The negotiation agent, or None if no policy is set.
+            Optional["SchedulingAdminStaffAgent"]: The negotiation agent, or None if no negotiation was decided.
         """
-        if self.negotiation_policy is None:
+        if self._last_decision is None or not self._last_decision.do_negotiate:
             return None
         if self._negotiation_agent is None:
             from h_adminsim.agent import SchedulingAdminStaffAgent
@@ -218,7 +218,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                 model=staff.model,
                 use_vllm=not is_managed,
                 vllm_endpoint=getattr(staff.client, 'vllm_endpoint', None),
-                system_prompt_path=self.negotiation_policy.negotiation_prompt_path or None,
+                system_prompt_path=self._last_decision.prompt_path,
                 log_verbose=False,
                 temperature=0 if not 'gpt-5' in staff.model.lower() else 1,
                 prompt_kwargs={
@@ -259,6 +259,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             '_P': None,
             '_T': None,
             'negotiation_action': None,
+            'decided_by': None,              # id of the policy that made `negotiation_action`
             'negotiation_outcome': 'none',   # 'accepted' | 'forced' | 'kept' | 'auto' | 'none' (booked _T on accepted/forced/auto)
             'negotiation_rounds': 0,         # number of staff persuasion pitches
         }
@@ -654,8 +655,8 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         (via the shared `render_availability_tables`), instead of a verbose JSON dump of occupied
         intervals. One table per (test, device). This is only the reasoning-fallback prompt's
         rendering — the underlying `filtered_test_device_information` (used by post-processing /
-        sanity) is unchanged. Dates of a test held back by the urgent capacity protection are shown
-        fully booked, so the fallback never proposes a slot the sanity checker would reject.
+        sanity) is unchanged. Dates of a test blocked by the run's `restrict` policy are shown fully
+        booked, so the fallback never proposes a slot the sanity checker would reject.
 
         Args:
             filtered_test_device_information (dict): `{'test': {code: {'duration_hour', 'devices': {device: {'schedule': {date: [...]}}}}}}`.
@@ -663,7 +664,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         Returns:
             str: Markdown tables of free windows, or a placeholder when there are no devices.
         """
-        blocked = self.rules.protection_blocked
+        blocked = self.rules.blocked
 
         def bookable(code: str, schedule: dict) -> dict:
             return {date: [[self._START_HOUR, self._END_HOUR]] if (code, date) in blocked else slots
@@ -678,17 +679,48 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         return render_availability_tables(items, self._START_HOUR, self._END_HOUR)
 
 
+    def _restrict_context(self, urgency: Optional[str], exclude: Optional[dict] = None) -> RestrictContext:
+        """
+        Snapshot of the hospital state the `restrict` policy sees for the patient about to be scheduled.
+
+        Args:
+            urgency (Optional[str]): The patient's urgency (`urgent` / `normal`).
+            exclude (Optional[dict], optional): The patient's own booking being rescheduled, whose hours are about
+                                                to be freed and so are not counted as booked. Defaults to None.
+        """
+        return RestrictContext(
+            current_time=self.environment.current_time,
+            urgency=urgency,
+            start_hour=self._START_HOUR,
+            utc_offset=self.rules._utc_offset,
+            test_capacity=self.environment.test_capacity,
+            test_duration=self.environment.test_duration,
+            booked_hours=self.environment.booked_test_hours(exclude=exclude),
+        )
+
+
+    def _apply_restrictions(self, urgency: Optional[str], exclude: Optional[dict] = None) -> frozenset:
+        """
+        Ask the `restrict` policy which (test, date) pairs the patient may not book, and hold them on the rule so
+        every scheduler call for this patient sees them (no-op without a `restrict` policy).
+        """
+        if not self.policies.restrictors:
+            return self.rules.set_blocked(())
+        return self.rules.set_blocked(self.policies.restrict(self._restrict_context(urgency, exclude)))
+
+
     def _capacity_protection_record(self,
                                     preference_type: str,
                                     test_codes: list,
                                     test_device_information: Optional[dict],
                                     unavailable: Optional[dict]) -> Optional[dict]:
         """
-        Per-booking record of the urgent capacity protection, stored on the prediction for evaluation.
+        Per-booking record of the `restrict` policy (e.g. urgent capacity protection), stored on the prediction
+        for evaluation under the `capacity_protection` key.
 
-        `blocked` lists the (test, date) pairs of this patient's tests that were held back from them. When any
-        were, `unprotected` is the schedule the same objective would have produced with nothing held back, so the
-        protection's cost to this (normal) patient can be measured booking by booking.
+        `blocked` lists the (test, date) pairs of this patient's tests that were blocked for them. When any
+        were, `unprotected` is the schedule the same objective would have produced with nothing blocked, so the
+        restriction's cost to this patient can be measured booking by booking.
 
         Args:
             preference_type (str): Objective the booked schedule was built with (`throughput_max` after a negotiation).
@@ -698,13 +730,13 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
 
         Returns:
             Optional[dict]: `{'blocked': [[code, date], ...], 'objective': preference_type, 'unprotected': {...} | None}`,
-                            or None without protection. `unprotected.tests` keeps each placed test's date and result
+                            or None without a `restrict` policy. `unprotected.tests` keeps each placed test's date and result
                             time, so evaluation can compare it with a partial booking on the same tests.
         """
-        if self.capacity_protection is None:
+        if not self.policies.restrictors:
             return None
 
-        blocked = sorted([code, date] for code, date in self.rules.protection_blocked if code in test_codes)
+        blocked = sorted([code, date] for code, date in self.rules.blocked if code in test_codes)
         record = {'blocked': blocked, 'objective': preference_type, 'unprotected': None}
         if blocked:
             filtered_test_device_information = self.environment.get_test_device_schedule(
@@ -712,7 +744,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                 test_code=list(test_codes),
                 fhir_integration=self.fhir_integration and test_device_information is None,
             )
-            with self.rules.capacity_protection_lifted():
+            with self.rules.restrictions_lifted():
                 unprotected = self.rules.schedule_tests(
                     preference_type, filtered_test_device_information, list(test_codes), 10, unavailable=unavailable,
                 )
@@ -747,8 +779,8 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
 
         required_test_codes = [t['code'] for t in known_condition.get('test') or []]
 
-        # The booking's own urgency decides its protected dates; its current hours are about to be freed
-        self.rules.apply_capacity_protection(self.capacity_protection, known_condition.get('urgency'), exclude=known_condition)
+        # The booking's own urgency decides its restrictions; its current hours are about to be freed
+        self._apply_restrictions(known_condition.get('urgency'), exclude=known_condition)
         filtered_doctor_information = self.environment.get_doctor_schedule(
             doctor_information=doctor_information,
             department=known_condition['department'],
@@ -840,7 +872,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         if not improved:
             return None
 
-        # Protection record of the new booking, taken before the old booking's slots are freed (as in its search)
+        # Restriction record of the new booking, taken before the old booking's slots are freed (as in its search)
         protection_record = self._capacity_protection_record(
             new_schedule.get('preference_type') or preference,
             [t['code'] for t in original_tests], test_device_information, original_schedule.get('unavailable'),
@@ -1043,14 +1075,15 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                                        patient_preferred_schedule: dict,
                                        filtered_test_device_information: dict,
                                        preference: Optional[str] = None,
-                                       unavailable: Optional[dict] = None) -> dict:
+                                       unavailable: Optional[dict] = None,
+                                       urgency: Optional[str] = None) -> dict:
         """
         Compute the negotiation trigger metrics for the patient's (hospital-conflicting) preference
-        schedule and let the staff policy decide whether to negotiate.
+        schedule and let the `review` policy decide whether to negotiate.
 
         Metrics are computed on `patient_preferred_schedule` versus the throughput_max counterfactual;
-        the policy adds its trigger index `ti` (threshold mode only; None on the extremes, which never
-        read it) and sets `do_negotiate`. The caller decides whether to run the persuasion turn from it.
+        the policy's decision sets `negotiation_action` / `do_negotiate` / `decided_by` and may add its own
+        fields (e.g. the trigger index `ti`). The caller decides whether to run the persuasion turn from it.
 
         Args:
             patient_preferred_schedule (dict): The preference-based test schedule the staff proposed
@@ -1063,13 +1096,14 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             unavailable (Optional[dict], optional): The patient's test-time unavailability, so the throughput_max
                                                     counterfactual the staff argues for (and books on a won
                                                     negotiation) stays attendable. Defaults to None.
+            urgency (Optional[str], optional): The patient's urgency, shown to the `review` policy. Defaults to None.
 
         Returns:
             dict: The negotiation metrics (`preference`, `gpc`, `tcl`, `ti`, `do_negotiate`, ...).
         """
         preference = preference or patient_preferred_schedule.get('preference_type')
 
-        # The hospital-fixed constants (e.g. tcl_temperature) come from the policy.
+        # The hospital-fixed constants (e.g. tcl_temperature) come from the `review` policy.
         metrics = NegotiationMetrics(
             preference=preference,
             achieved_schedule=self._copy_schedule_for_metrics(patient_preferred_schedule),
@@ -1077,11 +1111,19 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             rule=self.rules,
             environment=self.environment,
             unavailable=unavailable,
-            **self.negotiation_policy.metrics_kwargs(preference),
+            **self.policies.metrics_params(preference),
         ).to_dict()
 
-        # The policy owns the trigger index, then makes the final call: 'keep' (book preferred), 'auto' (free win -> book throughput directly), or 'negotiate' (persuade).
-        metrics.update(self.negotiation_policy.decide(metrics))
+        # The `review` policy makes the final call: 'keep' (book preferred), 'auto' (book its objective directly), or 'negotiate' (persuade).
+        decision = self.policies.review(ReviewContext(preference=preference, urgency=urgency, metrics=metrics))
+        self._last_decision = decision
+        metrics.update({
+            'ti': None,
+            **decision.record,
+            'negotiation_action': decision.action,
+            'do_negotiate': decision.do_negotiate,
+            'decided_by': decision.decided_by,
+        })
         _metrics = {k: v for k, v in metrics.items() if not k.startswith('_')}
         log(colorstr('cyan', f'[negotiation_metrics] {_metrics}'))
         # ############### TMP ###############
@@ -1465,8 +1507,8 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         merged_patient_kwargs = {**patient_kwargs, **kwargs}
         merged_staff_kwargs = {**staff_kwargs, **kwargs}
 
-        # Urgent capacity protection for this patient (hospital time is fixed until the booking)
-        self.rules.apply_capacity_protection(self.capacity_protection, gt_data[0].get('urgency'))
+        # Restriction policy for this patient (hospital time is fixed until the booking)
+        self._apply_restrictions(gt_data[0].get('urgency'))
 
         # Staff turn closure: captures all of `scheduling`'s simulation-side arguments
         def staff_turn(user_prompt: str) -> Tuple[str, dict]:
@@ -1591,7 +1633,6 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                     if (
                         negotiation_ready
                         and not negotiation_done
-                        and self.negotiation_policy is not None
                         and prediction['type'] == 'tool'
                         and isinstance(prediction['result'], dict)
                         and prediction['result'].get('preference_type') not in {None, 'throughput_max'}
@@ -1601,6 +1642,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                             patient_preferred_schedule=prediction['result'],
                             filtered_test_device_information=filtered_test_device_information,
                             unavailable=gt_patient_condition['unavailable'],
+                            urgency=gt_data[0].get('urgency'),
                         )
                         action = negotiation_metrics['negotiation_action']
 
@@ -1693,12 +1735,13 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                             pred_schedule = prediction['result']
                             
                             # Export negotiation metrics for EVERY patient (even non-negotiated / non-eligible) for later hospital-utility analysis
-                            if self.negotiation_policy is not None and negotiation_metrics['gpc'] is None:
+                            if negotiation_metrics['gpc'] is None:
                                 negotiation_metrics = self._calculate_negotiation_metrics(
                                     patient_preferred_schedule=pred_schedule,
                                     filtered_test_device_information=filtered_test_device_information,
                                     preference=gt_patient_condition['preference'],
                                     unavailable=gt_patient_condition['unavailable'],
+                                    urgency=gt_data[0].get('urgency'),
                                 )
                             break
 
@@ -1789,7 +1832,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                 for item in pred_schedule['test_schedule']:
                     item['schedule'] = [item.pop('start'), item.pop('end')]
 
-                # What the urgent capacity protection held back from this booking (and what it would have been without)
+                # What the `restrict` policy blocked for this booking (and what it would have been without)
                 protection_record = self._capacity_protection_record(
                     booked_preference, [t['code'] for t in gt_data[i]['test']], test_device_information, gt_data[i].get('unavailable'),
                 )

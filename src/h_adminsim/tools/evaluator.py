@@ -9,6 +9,7 @@ from collections import Counter, defaultdict
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.common_utils import *
 from h_adminsim.tools.negotiation_metrics import frontload_pairs
+from h_adminsim.policy.metadata import run_policies, run_policy_summary
 from h_adminsim.utils.image_preprocess_utils import draw_fail_donut_subplots
 from h_adminsim.utils.filesys_utils import get_files, json_load, json_save_fast
 
@@ -781,8 +782,8 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
     def _read_data(path: str) -> Tuple[str, dict]:
         """
         Read the `_metadata` block the simulator stored in the result file — the operating window
-        (start/end hour, time_unit) and the negotiation policy / trigger temperatures τ. Assumes the run
-        was saved with metadata (re-run, or backfill older results).
+        (start/end hour, time_unit) and the follow-up scheduling policies (`policies`). Results in the
+        pre-plugin format (only the old `policy` block) are rejected; convert them first.
 
         Args:
             path (str): Path to a run's results directory.
@@ -793,6 +794,8 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
         Raises:
             FileNotFoundError: If no `*_result.json` file is found under `path`.
             ValueError: If the `_metadata` block is missing in the result file.
+            PolicyError: If `_metadata` is in the pre-plugin format (no `policies`, or the old `policy` block still
+                         present) or recorded no policies (a `ValueError`).
         """
         result_files = sorted(get_files(path, '_result.json'))
         
@@ -807,6 +810,9 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
         
         if not md:
             raise ValueError(f"No '_metadata' in {result_file} — re-run the simulation or backfill it.")
+
+        # Pre-plugin results (only the old `policy` block) must be converted first
+        run_policies(md, where=result_file)
         
         return result_file, md
     
@@ -814,8 +820,8 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
     @staticmethod
     def _sanity_check(*args):
         """
-        Check that the runs are compatible: every `_metadata` key except `policy` (operating window, time_unit, ...)
-        must have the same value across all runs.
+        Check that the runs are compatible: every `_metadata` key except `policies` — operating window, time_unit,
+        ... — must have the same value across all runs.
 
         Args:
             *args (dict): `_metadata` dicts of the runs to compare.
@@ -826,13 +832,13 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
         if len(args) < 2:
             return
 
-        keys = sorted(set().union(*args) - {'policy'})
+        keys = sorted(set().union(*args) - {'policies'})
         mismatches = {k: [md.get(k) for md in args] for k in keys}
         mismatches = {k: v for k, v in mismatches.items() if any(x != v[0] for x in v[1:])}
 
         if mismatches:
             detail = ', '.join(f"{k}: {v}" for k, v in mismatches.items())
-            raise ValueError(f"Incompatible run metadata (policy excluded) — {detail}")
+            raise ValueError(f"Incompatible run metadata (policies excluded) — {detail}")
         
     
     def _device_delta_u(self):
@@ -1299,7 +1305,7 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
         """
         Compare the urgent capacity protection across runs: one baseline without protection and runs at several
         `ratio`s, for one or more negotiation modes at once. Each folder's `_metadata` supplies its operating window,
-        its mode and the policy's `capacity_protection`; runs are grouped by mode and ordered by ratio (disabled
+        its mode and `capacity_protection` (read from `_metadata.policies`); runs are grouped by mode and ordered by ratio (disabled
         first). A run without protection measures the rolling window of the protected runs of its mode (or of any
         run), so baseline and protected runs are read over the same window.
 
@@ -1307,12 +1313,12 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
             save (bool, optional): Whether to save the protection report to `protection_report.json`. Defaults to False.
 
         Returns:
-            list[dict]: One `{'label', 'mode', 'capacity_protection', 'policy', **protection_summary}` per run.
+            list[dict]: One `{'label', 'mode', 'capacity_protection', 'policies', **protection_summary}` per run.
         """
         runs = []
         for path, md in zip(self.protection_files, self.protection_mds):
-            policy = md.get('policy') or {}
-            runs.append((path, policy, policy.get('mode'), policy.get('capacity_protection')))
+            summary = run_policy_summary(md, where=path)
+            runs.append((path, summary['policies'], summary['mode'], summary['capacity_protection']))
 
         # Window of the protected runs, borrowed by the baselines (same mode first)
         reference = {}
@@ -1326,11 +1332,11 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
 
         # Compute the protection summary
         report = []
-        for path, policy, mode, protection in runs:
+        for path, policies, mode, protection in runs:
             window = protection or reference.get(mode) or reference.get(None)
             label = f"{mode} " + (f"ratio={protection['ratio']}" if protection else 'no protection')
             report.append({'label': label, 'mode': mode, 'capacity_protection': protection,
-                           'policy': {k: v for k, v in policy.items() if k != 'capacity_protection'},
+                           'policies': policies,
                            **self._protection_summary(path, window)})
         report.sort(key=lambda r: (r['mode'] or '', (r['capacity_protection'] or {}).get('ratio', 0.0)))
 
