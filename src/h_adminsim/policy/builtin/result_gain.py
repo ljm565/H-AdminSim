@@ -57,6 +57,12 @@ class ResultGainPolicy(Policy):
 
 
     def __post_init__(self):
+        """
+        Check the parameters and set the negotiation prompt of the mode when the policy is built.
+
+        Raises:
+            PolicyError: If `mode` is unknown, or a trigger temperature (τ) is not positive.
+        """
         if self.mode not in self.MODES:
             raise PolicyError(colorstr("red", f"Unknown negotiation mode `{self.mode}`; choose one of {list(self.MODES)}"))
 

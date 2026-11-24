@@ -477,9 +477,10 @@ class Simulator:
         policies actually used, so a run is reproducible from its result alone.
 
         `policies` lists every policy in priority order (id, name, source, source_sha256, api_version, hooks,
-        params); readers such as the evaluator go through `h_adminsim.policy.run_policy_summary`. The poles
+        params); readers such as the evaluator go through `h_adminsim.utils.policy_utils.run_policy_summary`. The poles
         (`hospital-side`, `patient-side`) record their pinned knob values (1.0); readers tell them apart by the
-        `mode` param, not by τ. `policies` is None when the run has no follow-up scheduling task.
+        `mode` param, not by τ. `metrics` and `evaluations` list the user-defined negotiation metrics and evaluations the same way. All are None
+        when the run has no follow-up scheduling task.
 
         Every value is cast back to built-in types, since config-sourced values are `ruamel.yaml`
         scalars and containers that `orjson` cannot serialize.
@@ -489,11 +490,15 @@ class Simulator:
             'end_hour': environment._END_HOUR,
             'time_unit': environment._TIME_UNIT,
             'policies': None,
+            'metrics': None,
+            'evaluations': None,
         }
         task = self.task.get('follow_up_visit_scheduling')
         policies = getattr(task, 'policies', None)
         if policies is not None:
             metadata['policies'] = policies.describe()
+            metadata['metrics'] = policies.describe_metrics()
+            metadata['evaluations'] = policies.describe_evaluations()
         return to_builtin_scalar(metadata)
 
 

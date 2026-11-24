@@ -11,11 +11,12 @@ from h_adminsim.task.opfv_task import OutpatientFirstIntake, OutpatientFirstSche
 from h_adminsim.task.opfu_task import OutpatientFollowUpScheduling
 from h_adminsim.task.fhir_manager import FHIRManager
 from h_adminsim.pipeline import DataGenerator, Simulator, HospitalMAS
-from h_adminsim.policy import pin_policy_config
+from h_adminsim.policy import pin_policy_config, load_policy_config
 from h_adminsim.utils import log
+from h_adminsim.utils.filesys_utils import yaml_save
 from h_adminsim.utils.mas_utils import init_mas_system
 from h_adminsim.utils.common_utils import replace_none_value
-from h_adminsim.utils.filesys_utils import yaml_save
+from h_adminsim.utils.policy_utils import check_policy_requirements
 
 
 
@@ -73,7 +74,9 @@ def main(args):
     output_dir = data_generator.save_dir / 'simulation_results'
     s_config.agent_test_data = str(data_generator.save_dir / 'agent_data')
     os.makedirs(output_dir, exist_ok=True)
-    pin_policy_config(s_config.schedule_task, output_dir)   # policy files copied into the run folder; args.yaml and workers use the copies
+    if 'follow_up_visit_scheduling' in args.type:   # policies are used by the follow-up scheduling task only
+        check_policy_requirements(load_policy_config(s_config.schedule_task.get('policy_config')), s_config.agent_test_data)   # the data must hold every patient field the policies require
+        pin_policy_config(s_config.schedule_task, output_dir)   # policy files copied into the run folder; args.yaml and workers use the copies
     yaml_save(os.path.join(output_dir, 'args.yaml'), s_config)
     
     # Initialize the admin staff multi-agent system (orchestrator + one staff agent per task)

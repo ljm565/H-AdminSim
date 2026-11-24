@@ -18,6 +18,7 @@ from h_adminsim.utils import colorstr, log
 from h_adminsim.utils.mas_utils import *
 from h_adminsim.utils.fhir_utils import *
 from h_adminsim.utils.common_utils import *
+from h_adminsim.utils.policy_utils import followup_patient_records, available_patient_fields
 
 if TYPE_CHECKING:
     from h_adminsim.pipeline import HospitalMAS
@@ -62,6 +63,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
             raise ValueError(colorstr("red", "Pass either `policy_config` or `policies`, not both."))
         self.policy_config = policy_config
         self.policies = policies if policies is not None else load_policy_config(policy_config)
+        self._patient_records_cache, self._patient_records_source_cache = {}, None
 
         # Others
         self.fhir_integration = fhir_integration
@@ -114,8 +116,28 @@ class OutpatientFollowUpScheduling(OutpatientTask):
             fhir_integration=self.fhir_integration,
             sanity_checker=self.sanity_checker,
             policies=self.policies,
+            patient_records=self._patient_records_cache,
         )
         return sim_environment
+
+
+    def _load_patient_records(self, agent_test_data: dict):
+        """
+        Build the follow-up patients' records exposed to policies as `ctx.patient`, once per hospital's agent data, and
+        check that the data provides every patient field the policies require.
+
+        Args:
+            agent_test_data (dict): One hospital's agent data.
+        """
+        # If cached
+        if self._patient_records_source_cache is agent_test_data:
+            return
+        
+        records = followup_patient_records(agent_test_data)
+        if records:
+            self.policies.check_patient_fields(available_patient_fields(records.values()),
+                                               where=f"Agent data of {agent_test_data.get('metadata', {}).get('hospital_name', 'the hospital')}")
+        self._patient_records_cache, self._patient_records_source_cache = records, agent_test_data
 
 
     def get_first_visit_patient_information(self, 
@@ -507,6 +529,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
         self._END_HOUR = self._metadata.get('time').get('end_hour')
         self._TIME_UNIT = self._metadata.get('time').get('interval_hour')
         self.sanity_checker = SanityChecker(self._START_HOUR, self._END_HOUR, self._TIME_UNIT)
+        self._load_patient_records(agent_test_data)
         doctor_information = environment.get_general_doctor_info_from_fhir() if self.fhir_integration else agent_test_data.get('doctor')
         test_information = environment.get_general_test_info_from_fhir() if self.fhir_integration else agent_test_data.get('test')
         gt_idx, fv_patient_info = self.get_first_visit_patient_information(gt, environment)

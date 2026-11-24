@@ -67,9 +67,14 @@ class Policy:
     Hooks receive read-only snapshots (`RestrictContext`, `ReviewContext`) and must be pure functions of them:
     a policy keeps no state across patients, since patients are split across worker processes and runs resume.
     Configuration lives in the policy's dataclass fields, which `params()` reports for the run metadata.
+
+    Patient information comes from the agent data through `ctx.patient`, and a policy must declare every patient field
+    it reads in `requires` (``('patient.department', ...)``). A run whose agent data lacks a declared field fails before
+    it starts, and reading an undeclared field raises `PolicyRequirementError`.
     """
     api_version: ClassVar[int] = 1
     name: ClassVar[str] = ''
+    requires: ClassVar[tuple] = ()      # patient fields the hooks read, as `patient.<field>`
 
     # Set by the builder; plain class attributes, not dataclass fields, so `params()` reports configuration only.
     id = ''                 # instance id within a run (defaults to `name`)
@@ -79,7 +84,18 @@ class Policy:
 
     @classmethod
     def implements(cls, hook: str) -> bool:
-        """Whether this policy class overrides `hook`."""
+        """
+        Whether this policy class overrides `hook`.
+
+        Args:
+            hook (str): A hook name (``'restrict'`` or ``'review'``).
+
+        Raises:
+            ValueError: If `hook` is not a hook name.
+
+        Returns:
+            bool: True if the class overrides the hook.
+        """
         if hook not in POLICY_HOOKS:
             raise ValueError(f"Unknown policy hook `{hook}`; choose one of {list(POLICY_HOOKS)}")
         return getattr(cls, hook) is not getattr(Policy, hook)

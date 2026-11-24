@@ -10,7 +10,8 @@ sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
 from h_adminsim.task.opfv_task import *
 from h_adminsim.task.opfu_task import *
-from h_adminsim.policy import pin_policy_config
+from h_adminsim.policy import pin_policy_config, load_policy_config
+from h_adminsim.utils.policy_utils import check_policy_requirements
 from h_adminsim.pipeline import Simulator, HospitalMAS
 from h_adminsim.utils import set_logging, LOGGING_NAME
 from h_adminsim.utils.mas_utils import init_mas_system
@@ -126,7 +127,9 @@ def main(args):
     config = load_config(args.config)
     config.yaml_file = args.config
     os.makedirs(args.output_dir, exist_ok=True)
-    pin_policy_config(config.schedule_task, args.output_dir)   # policy files copied into the run folder; args.yaml and workers use the copies
+    if 'follow_up_visit_scheduling' in args.type:   # policies are used by the follow-up scheduling task only
+        check_policy_requirements(load_policy_config(config.schedule_task.get('policy_config')), config.agent_test_data)   # the data must hold every patient field the policies require
+        pin_policy_config(config.schedule_task, args.output_dir)   # policy files copied into the run folder; args.yaml and workers use the copies
     yaml_save(os.path.join(args.output_dir, 'args.yaml'), config)
     
     # Multi-processing

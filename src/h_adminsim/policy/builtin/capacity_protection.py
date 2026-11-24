@@ -29,6 +29,7 @@ class CapacityProtectionPolicy(Policy):
         release_hours: Release a date to `normal` patients once it opens within this many hours.
     """
     name: ClassVar[str] = 'capacity_protection'
+    requires: ClassVar[tuple] = ('patient.urgency',)
 
     ratio: float = 0.2
     horizon_days: float = 3.0
@@ -36,6 +37,13 @@ class CapacityProtectionPolicy(Policy):
 
 
     def __post_init__(self):
+        """
+        Check the parameters when the policy is built.
+
+        Raises:
+            PolicyError: If `ratio` is not in [0, 1), `horizon_days` is not positive, or `release_hours` is not in
+                         [0, horizon_days * 24).
+        """
         if not 0 <= self.ratio < 1:
             raise PolicyError(colorstr("red", f"`ratio` must be in [0, 1), got {self.ratio}."))
         if self.horizon_days <= 0:
@@ -61,7 +69,7 @@ class CapacityProtectionPolicy(Policy):
         are skipped, as nobody can book them.
         """
         blocked = set()
-        if ctx.urgency != 'normal':
+        if ctx.patient['urgency'] != 'normal':
             return blocked
         for (code, date), capacity_hours in ctx.test_capacity.items():
             if capacity_hours <= 0 or not self.is_protected(ctx.lead_hours(date)):

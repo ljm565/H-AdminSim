@@ -1,29 +1,36 @@
-"""
-Follow-up scheduling policies.
-
-The simulation calls policies only through `PolicyStack` hooks (`restrict`, `review`), handing them read-only
-snapshots (`RestrictContext`, `ReviewContext`). Built-in policies: `result_gain` (τ negotiation trigger) and
-`capacity_protection` (urgent capacity protection). A run's policies come from a policy config YAML
-(`load_policy_config`); custom policies subclass `Policy` and are referenced there as `file:<path.py>:<ClassName>`
-(or registered with `register_policy` and referenced as `builtin:<name>`).
-"""
 from .base import Policy, Decision
-from h_adminsim.registry.errors import PolicyError, PolicyCompositionError
+from h_adminsim.registry.errors import PolicyError, PolicyCompositionError, PolicyRequirementError
 from h_adminsim.registry.policy import (
     POLICY_HOOKS,
     POLICY_ACTIONS,
     POLICY_SUPPORTED_OBJECTIVES,
     POLICY_CONFIG_API_VERSION,
 )
-from .context import RestrictContext, ReviewContext
+from .context import RestrictContext, ReviewContext, PatientView
 from .stack import PolicyStack
-from .registry import register_policy, validate_policy_class, get_policy_class, registered_policies
+from .metric import Metric
+from .evaluation import Evaluation, RunData, run_evaluations
+from .registry import (
+    register_policy,
+    register_metric,
+    register_evaluation,
+    validate_policy_class,
+    validate_metric_class,
+    validate_evaluation_class,
+    get_policy_class,
+    get_metric_class,
+    get_evaluation_class,
+    registered_policies,
+    registered_metrics,
+    registered_evaluations,
+)
 from .builder import (
     build_policy,
+    build_metric,
+    build_evaluation,
     default_policies,
     load_policy_config,
     snapshot_policy_config,
     pin_policy_config,
 )
-from .metadata import run_policies, run_policy_summary
 from .builtin import ResultGainPolicy, CapacityProtectionPolicy

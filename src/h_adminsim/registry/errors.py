@@ -110,6 +110,14 @@ class PolicyCompositionError(PolicyError):
     error_code = "POLICY_COMPOSITION_ERROR"
 
 
+class PolicyRequirementError(PolicyError):
+    """
+    Raised when a policy needs patient information the data does not provide (a `requires` field missing from the agent
+    data), or reads a patient field it did not declare in `requires`.
+    """
+    error_code = "POLICY_REQUIREMENT_ERROR"
+
+
 class AgentSelectionError(Exception):
     error_code = "WRONG_AGENT_SELECTION"
 

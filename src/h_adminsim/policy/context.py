@@ -1,14 +1,111 @@
 from __future__ import annotations
 from types import MappingProxyType
-from dataclasses import dataclass, field
-from typing import Mapping, Optional
+from typing import Iterable, Mapping, Optional
+from collections.abc import Mapping as MappingABC
+from dataclasses import dataclass, field, replace
 
 from h_adminsim.utils.common_utils import get_iso_time, str_to_datetime
+from h_adminsim.utils.policy_utils import deep_freeze, thaw
+from h_adminsim.registry.errors import PolicyRequirementError
 
 
 
 def _freeze(mapping: Optional[Mapping]) -> Mapping:
+    """A read-only shallow copy of `mapping`."""
     return MappingProxyType(dict(mapping or {}))
+
+
+
+class PatientView(MappingABC):
+    """
+    Read-only view of one patient's agent-data record, as `ctx.patient`.
+
+    A view handed to a policy only lets it read the fields it declared in `requires`: reading (or testing membership
+    of) any other field raises `PolicyRequirementError`, and iteration yields the declared fields only. A declared
+    field missing from this patient's record also raises, since the data must provide it. The unrestricted view (the
+    one contexts hold before `for_policy`) reads every field.
+    """
+    __slots__ = ('_data', '_allowed', '_owner')
+
+    def __init__(self, data: Optional[Mapping] = None, allowed: Optional[Iterable[str]] = None, owner: Optional[str] = None):
+        """
+        Args:
+            data (Optional[Mapping], optional): The patient's record (a `PatientView` shares its data). Defaults to None.
+            allowed (Optional[Iterable[str]], optional): Fields the reader may access; None allows every field.
+                                                         Defaults to None.
+            owner (Optional[str], optional): Id of the policy reading the view, for error messages. Defaults to None.
+        """
+        self._data = data._data if isinstance(data, PatientView) else deep_freeze(dict(data or {}))
+        self._allowed = frozenset(allowed) if allowed is not None else None
+        self._owner = owner
+
+
+    def _check(self, key: str):
+        """
+        Check that the reader may read `key` and that this patient's record has it.
+
+        Args:
+            key (str): The patient field being read.
+
+        Raises:
+            PolicyRequirementError: If the reader did not declare `key` in `requires`, or the record lacks it.
+        """
+        who = f"Policy `{self._owner}`" if self._owner else 'A policy'
+        if self._allowed is not None and key not in self._allowed:
+            raise PolicyRequirementError(
+                f"{who} reads `patient.{key}` without declaring it; add 'patient.{key}' to its `requires`.")
+        if key not in self._data:
+            raise PolicyRequirementError(
+                f"{who} needs `patient.{key}`, which this patient's agent data does not have. "
+                f"Add the field to the data (or regenerate it) before using this policy.")
+
+
+    def __getitem__(self, key: str):
+        self._check(key)
+        return self._data[key]
+
+
+    def __contains__(self, key) -> bool:
+        if self._allowed is not None and key not in self._allowed:
+            self._check(key)
+        return key in self._data
+
+
+    def __iter__(self):
+        return (k for k in self._data if self._allowed is None or k in self._allowed)
+
+
+    def __len__(self) -> int:
+        return sum(1 for _ in self)
+
+
+    def __repr__(self) -> str:
+        return f"PatientView({dict(thaw(dict(self.items())))!r})"
+
+
+    def restricted_to(self, fields: Iterable[str], owner: Optional[str]) -> "PatientView":
+        """
+        A view over the same record that only reads `fields`.
+
+        Args:
+            fields (Iterable[str]): Patient fields the reader declared.
+            owner (Optional[str]): Id of the reading policy, for error messages.
+
+        Returns:
+            PatientView: The restricted view.
+        """
+        return PatientView(self, allowed=fields, owner=owner)
+
+
+    def to_dict(self) -> dict:
+        """The full record in plain (JSON-serializable) form, whatever the view allows."""
+        return thaw(self._data)
+
+
+
+def _patient_fields(policy) -> set:
+    """Patient fields a policy declared in `requires` (``patient.<field>`` -> ``<field>``)."""
+    return {r.split('.', 1)[1] for r in getattr(policy, 'requires', ()) or ()}
 
 
 
@@ -19,56 +116,99 @@ class RestrictContext:
 
     Fields:
         current_time: Hospital time (ISO 8601).
-        urgency: The patient's urgency (``'urgent'`` / ``'normal'``, or None if unknown).
         start_hour: Daily opening hour of the test devices.
         utc_offset: Hospital UTC offset (e.g. ``'+09:00'``).
         test_capacity: ``{(test_code, date): hours}`` total working hours of each test (devices pooled); 0 on closed days.
         test_duration: ``{test_code: hours}`` duration of one test.
         booked_hours: ``{(test_code, date): hours}`` already booked (fixed bookings and follow-up patients of any
             urgency), excluding the patient's own booking when it is being rescheduled.
+        patient: The patient's agent-data record (`PatientView`), including ``urgency``; a policy reads only the fields
+            it declared in `requires` (see `patient_record` for the fields).
     """
     current_time: str
-    urgency: Optional[str]
     start_hour: float
     utc_offset: Optional[str]
     test_capacity: Mapping = field(default_factory=dict)
     test_duration: Mapping = field(default_factory=dict)
     booked_hours: Mapping = field(default_factory=dict)
+    patient: Mapping = field(default_factory=dict)
+
 
     def __post_init__(self):
         for name in ('test_capacity', 'test_duration', 'booked_hours'):
             object.__setattr__(self, name, _freeze(getattr(self, name)))
+        if not isinstance(self.patient, PatientView):
+            object.__setattr__(self, 'patient', PatientView(self.patient))
 
 
     def lead_hours(self, date: str) -> float:
-        """Hours from now until `date` opens (negative once it has opened)."""
+        """
+        Hours from now until `date` opens.
+
+        Args:
+            date (str): A date (``YYYY-MM-DD``).
+
+        Returns:
+            float: Hours until the date's opening hour (negative once it has opened).
+        """
         opening = str_to_datetime(get_iso_time(self.start_hour, date, utc_offset=self.utc_offset))
         return (opening - str_to_datetime(self.current_time)).total_seconds() / 3600
 
 
+    def for_policy(self, policy) -> "RestrictContext":
+        """
+        The context as `policy` sees it: `patient` restricted to the fields the policy declared in `requires`.
+
+        Args:
+            policy (Policy): The policy about to read the context.
+
+        Returns:
+            RestrictContext: The restricted copy.
+        """
+        return replace(self, patient=self.patient.restricted_to(_patient_fields(policy), policy.id))
+
+
     def to_dict(self) -> dict:
-        """JSON-serializable form (tuple keys become ``[code, date, hours]`` rows)."""
+        """
+        JSON-serializable form (tuple keys become ``[code, date, hours]`` rows).
+
+        Returns:
+            dict: The context's fields.
+        """
         return {
             'current_time': self.current_time,
-            'urgency': self.urgency,
             'start_hour': self.start_hour,
             'utc_offset': self.utc_offset,
             'test_capacity': [[c, d, h] for (c, d), h in self.test_capacity.items()],
             'test_duration': dict(self.test_duration),
             'booked_hours': [[c, d, h] for (c, d), h in self.booked_hours.items()],
+            'patient': self.patient.to_dict(),
         }
 
 
     @classmethod
     def from_dict(cls, data: dict) -> "RestrictContext":
+        """
+        Rebuild a context saved by `to_dict`.
+
+        Args:
+            data (dict): The saved form. Snapshots taken before `patient` existed keep the urgency at the top level
+                         (``urgency``); it is moved into the patient record.
+
+        Returns:
+            RestrictContext: The context.
+        """
+        patient = dict(data.get('patient') or {})
+        if 'urgency' in data:
+            patient.setdefault('urgency', data['urgency'])
         return cls(
             current_time=data['current_time'],
-            urgency=data.get('urgency'),
             start_hour=data['start_hour'],
             utc_offset=data.get('utc_offset'),
             test_capacity={(c, d): h for c, d, h in data.get('test_capacity') or []},
             test_duration=data.get('test_duration') or {},
             booked_hours={(c, d): h for c, d, h in data.get('booked_hours') or []},
+            patient=patient,
         )
 
 
@@ -80,25 +220,68 @@ class ReviewContext:
 
     Fields:
         preference: The objective the proposed schedule was built with (``'visit_min'``, ``'stay_min'``, ...).
-        urgency: The patient's urgency (``'urgent'`` / ``'normal'``, or None if unknown).
         metrics: Negotiation metrics of the proposal against the ``throughput_max`` counterfactual
             (``gpc``, ``tcl``, ``G``, ``R``, ``U``, ``U_pref``, ``U_thr``; see `NegotiationMetrics`).
             ``gpc`` is ``inf`` for a free win (the patient concedes nothing yet gets results sooner).
+        patient: The patient's agent-data record (`PatientView`), including ``urgency``; a policy reads only the fields
+            it declared in `requires` (see `patient_record` for the fields).
+        schedules: ``{'preferred': ..., 'hospital': ...}`` — the proposed schedule built with the patient's preference
+            and the ``throughput_max`` counterfactual the metrics compare it with (``test_schedule``, ``test_visit_dates``,
+            ``idle_waiting_time``, ``all_results_ready_at``, ...), read-only.
     """
     preference: Optional[str]
-    urgency: Optional[str] = None
     metrics: Mapping = field(default_factory=dict)
+    patient: Mapping = field(default_factory=dict)
+    schedules: Mapping = field(default_factory=dict)
+
 
     def __post_init__(self):
         public = {k: v for k, v in dict(self.metrics or {}).items() if not k.startswith('_')}
         public.setdefault('preference', self.preference)
         object.__setattr__(self, 'metrics', _freeze(public))
+        if not isinstance(self.patient, PatientView):
+            object.__setattr__(self, 'patient', PatientView(self.patient))
+        object.__setattr__(self, 'schedules', deep_freeze(dict(self.schedules or {})))
+
+
+    def for_policy(self, policy) -> "ReviewContext":
+        """
+        The context as `policy` sees it: `patient` restricted to the fields the policy declared in `requires`.
+
+        Args:
+            policy (Policy): The policy about to read the context.
+
+        Returns:
+            ReviewContext: The restricted copy.
+        """
+        return replace(self, patient=self.patient.restricted_to(_patient_fields(policy), policy.id))
 
 
     def to_dict(self) -> dict:
-        return {'preference': self.preference, 'urgency': self.urgency, 'metrics': dict(self.metrics)}
+        """
+        JSON-serializable form.
+
+        Returns:
+            dict: The context's fields.
+        """
+        return {'preference': self.preference, 'metrics': dict(self.metrics),
+                'patient': self.patient.to_dict(), 'schedules': thaw(self.schedules)}
 
 
     @classmethod
     def from_dict(cls, data: dict) -> "ReviewContext":
-        return cls(preference=data.get('preference'), urgency=data.get('urgency'), metrics=data.get('metrics') or {})
+        """
+        Rebuild a context saved by `to_dict`.
+
+        Args:
+            data (dict): The saved form (``patient`` / ``schedules`` may be absent; a top-level ``urgency`` from older
+                         snapshots is moved into the patient record).
+
+        Returns:
+            ReviewContext: The context.
+        """
+        patient = dict(data.get('patient') or {})
+        if 'urgency' in data:
+            patient.setdefault('urgency', data['urgency'])
+        return cls(preference=data.get('preference'), metrics=data.get('metrics') or {},
+                   patient=patient, schedules=data.get('schedules') or {})
