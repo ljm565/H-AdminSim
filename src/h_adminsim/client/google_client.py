@@ -1,8 +1,8 @@
 import os
 import time
-from typing import Optional
 from google import genai
 from google.genai import types
+from typing import Any, Optional
 from dotenv import load_dotenv, find_dotenv
 
 from h_adminsim.utils import log
@@ -17,6 +17,13 @@ from h_adminsim.utils.image_preprocess_utils import (
 
 class GeminiClient:
     def __init__(self, model: str, api_key: Optional[str] = None):
+        """
+        Gemini chat client that keeps the conversation history and token usage.
+
+        Args:
+            model (str): Gemini model name.
+            api_key (Optional[str], optional): Google API key; None reads ``GOOGLE_API_KEY`` from the environment/.env. Defaults to None.
+        """
         # Iniitialize
         self.model = model
         self._init_environment(api_key)
@@ -25,13 +32,12 @@ class GeminiClient:
         self.__first_turn = True
 
 
-    def _init_environment(self, api_key: Optional[str] = None):
+    def _init_environment(self, api_key: Optional[str] = None) -> None:
         """
-        Initialize Goolge GCP Gemini client.
+        Create the Google Gemini client.
 
         Args:
-            api_key (Optional[str]): API key for OpenAI. If not provided, it will
-                                     be loaded from environment variables.
+            api_key (Optional[str], optional): Google API key; None reads ``GOOGLE_API_KEY`` from the environment/.env. Defaults to None.
         """
         if not api_key:
             dotenv_path = find_dotenv(usecwd=True)
@@ -40,12 +46,12 @@ class GeminiClient:
         self.client = genai.Client(api_key=api_key)
 
 
-    def reset_history(self, verbose: bool = True):
+    def reset_history(self, verbose: bool = True) -> None:
         """
-        Reset the conversation history.
+        Clear the conversation history and token usage.
 
         Args:
-            verbose (bool): Whether to print verbose output. Defaults to True.
+            verbose (bool, optional): Whether to log the reset. Defaults to True.
         """
         self.__first_turn = True
         self.histories = list()
@@ -59,15 +65,15 @@ class GeminiClient:
                        image_path: Optional[str] = None,
                        image_size: Optional[tuple[int, int]] = None) -> list[types.Content]:
         """
-        Create a payload for API calls to the Gemini model.
+        Build the user message for the Gemini API.
 
         Args:
             user_prompt (str): User prompt.
-            image_path (Optional[str], optional): Image path if you need to send image. Defaults to None.
-            image_size (Optional[tuple[int, int]], optional): Image size to be resized. Defaults to None.
+            image_path (Optional[str], optional): Image to attach. Defaults to None.
+            image_size (Optional[tuple[int, int]], optional): Max ``(width, height)`` to resize the image to. Defaults to None.
 
         Returns:
-            list[types.Content]: Payload including prompts and image data.
+            list[types.Content]: The user content (text and optional image).
         """
         payloads = list()    
         
@@ -97,25 +103,26 @@ class GeminiClient:
                  using_multi_turn: bool = False,
                  verbose: bool = True,
                  greeting: Optional[str] = None,
-                 **kwargs) -> str:
+                 **kwargs: Any) -> str:
         """
-        Sends a chat completion request to the model with optional image input and system prompt.
+        Send the prompt (with optional image and system prompt) and return the model's reply.
+        Empty replies are retried with backoff; after ``max_retry`` (default 5) 'Could you tell me again?' is returned.
 
         Args:
-            user_prompt (str): The main user prompt or query to send to the model.
-            system_prompt (Optional[str], optional): An optional system-level prompt to set context or behavior. Defaults to None.
-            image_path (Optional[str], optional): Path to an image file to be included in the prompt. Defaults to None.
-            image_size (Optional[tuple[int, int]], optional): The target image size in (width, height) format, if resizing is needed. Defaults to None.
-            using_multi_turn (bool): Whether to structure it as multi-turn. Defaults to False.
-            verbose (bool): Whether to print verbose output. Defaults to True.
-            greeting (Optional[str]): An optional greeting message to include in the conversation. Defaults to None.
-
-        Raises:
-            FileNotFoundError: If `image_path` is provided but the file does not exist.
-            e: Any exception raised during the API call is re-raised.
+            user_prompt (str): User prompt.
+            system_prompt (Optional[str], optional): System instruction. Defaults to None.
+            image_path (Optional[str], optional): Image to attach. Defaults to None.
+            image_size (Optional[tuple[int, int]], optional): Max ``(width, height)`` to resize the image to. Defaults to None.
+            using_multi_turn (bool, optional): Keep the previous history instead of resetting it. Defaults to False.
+            verbose (bool, optional): Whether to log history resets. Defaults to True.
+            greeting (Optional[str], optional): Model greeting prepended on the first turn. Defaults to None.
+            **kwargs (Any): ``max_retry`` and other ``GenerateContentConfig`` options.
 
         Returns:
             str: The model's response message.
+
+        Raises:
+            FileNotFoundError: If `image_path` is provided but the file does not exist.
         """
         if image_path and not os.path.exists(image_path):
             raise FileNotFoundError

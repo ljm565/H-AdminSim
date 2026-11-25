@@ -1,6 +1,6 @@
 from tqdm import tqdm
-from typing import Optional
 from decimal import Decimal, getcontext
+from typing import Optional, TYPE_CHECKING
 
 from h_adminsim.task.schedule_assign import ScheduleAssigner
 from h_adminsim.tools.synthdat.data_synthesizer import DataSynthesizer
@@ -18,10 +18,20 @@ from h_adminsim.utils.random_utils import (
     generate_random_code_with_prob,
 )
 
+if TYPE_CHECKING:
+    from sconf import Config
+
 
 
 class FirstVisitDataSynthesizer(DataSynthesizer):
-    def __init__(self, config, with_follow_up: bool = False):
+    def __init__(self, config: 'Config', with_follow_up: bool = False):
+        """
+        Set up a new project directory for first-visit data synthesis.
+
+        Args:
+            config (Config): Data synthesis config.
+            with_follow_up (bool, optional): If True, doctor schedules also cover the follow-up extra days. Defaults to False.
+        """
         super().__init__(config)
         self.with_follow_up = with_follow_up
         getcontext().prec = 10
@@ -29,17 +39,13 @@ class FirstVisitDataSynthesizer(DataSynthesizer):
 
     def synthesize(self, department_info_path: Optional[str] = None) -> list[Information]:
         """
-        Synthesize hospital data based on the configuration settings.
+        Synthesize and save the hospital data with first-visit patients for every hospital.
 
         Args:
-            department_info_path (Optional[str], optional): Path to a file containing department information. If provided, it will be used to load names. 
-                                                            Defaults to None.
-
-        Raises:
-            e: Exception if data synthesis fails.
+            department_info_path (Optional[str], optional): Department info file; the packaged ``department.json`` if None. Defaults to None.
 
         Returns:
-            list[Information]: A list containing the synthesized hospital data as Information objects.
+            list[Information]: The synthesized data of each hospital.
         """
         try:
             all_data = list()
@@ -60,18 +66,13 @@ class FirstVisitDataSynthesizer(DataSynthesizer):
 
 
     @staticmethod
-    def generate_first_visit_patients(config, data: Information) -> Information:
+    def generate_first_visit_patients(config: 'Config', data: Information) -> Information:
         """
-        Generate first-visit patient profiles and add them to the hospital data.
-
-        Iterates over each doctor and their schedule dates to compute available
-        patient appointment slots, then generates patient profiles with first-visit
-        specific fields (symptom_level, preference).
+        Fill the doctors' vacant slots within the simulation dates with first-visit patients.
 
         Args:
-            config: Configuration object with hospital_data.first_visit settings.
-            data (Information): Hospital data (metadata, department, doctor, patient={})
-                                as returned by DataSynthesizer.define_hospital_info().
+            config (Config): Data synthesis config (``hospital_data.first_visit`` settings).
+            data (Information): Hospital data from ``DataSynthesizer.define_hospital_info``; modified in place.
 
         Returns:
             Information: Hospital data with first-visit patients populated.

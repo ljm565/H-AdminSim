@@ -7,11 +7,17 @@ from h_adminsim.utils import log
 
 
 class FHIRManager:
-    def __init__(self, fhir_url):
+    def __init__(self, fhir_url: str):
+        """
+        Set the FHIR server to talk to.
+
+        Args:
+            fhir_url (str): Base URL of the FHIR server.
+        """
         self.fhir_url = fhir_url
         
     
-    def __logging(self, response: requests.Response, verbose=True) -> Optional[requests.Response]:
+    def __logging(self, response: requests.Response, verbose: bool = True) -> Optional[requests.Response]:
         """
         Log the response status code and content.
 
@@ -113,7 +119,7 @@ class FHIRManager:
             verbose (bool, optional): If True, log details. Defaults to True.
 
         Returns:
-            Optional[requests.Response]: _description_
+            Optional[requests.Response]: The HTTP response object if JSON parsing is successful, else None.
         """
         fhir_url = f'{self.fhir_url}/{resource_type}/{id}'
         response = requests.put(
@@ -126,7 +132,18 @@ class FHIRManager:
         return self.__logging(response, verbose)
 
 
-    def delete(self, resource_type: str, id: str, verbose=True):
+    def delete(self, resource_type: str, id: str, verbose: bool = True) -> Optional[requests.Response]:
+        """
+        Delete a FHIR resource of the specified type and ID.
+
+        Args:
+            resource_type (str): FHIR resource type (e.g., "Patient").
+            id (str): The ID of the FHIR resource to delete.
+            verbose (bool, optional): If True, log details. Defaults to True.
+
+        Returns:
+            Optional[requests.Response]: The HTTP response object if JSON parsing is successful, else None.
+        """
         fhir_url = f'{self.fhir_url}/{resource_type}/{id}'
         response = requests.delete(
             fhir_url
@@ -147,10 +164,10 @@ class FHIRManager:
 
         Args:
             resource_type (str): FHIR resource type (e.g., "PractitionerRole").
-            headers (dict, optional): HTTP headers to use.
-            count (int): Number of resources to fetch per page (default: 100).
-            verbose (bool): If True, log each response. Defaults to True.
-            params (dict, optional): FHIR search parameters (e.g., {"specialty": "IMALL-2"}).
+            headers (Optional[dict], optional): HTTP headers to use. Defaults to None.
+            count (int, optional): Number of resources to fetch per page. Defaults to 100.
+            verbose (bool, optional): If True, log each response. Defaults to True.
+            params (Optional[dict], optional): FHIR search parameters (e.g., {"specialty": "IMALL-2"}). Defaults to None.
 
         Returns:
             list[dict]: List of bundle entry dicts.
@@ -187,14 +204,14 @@ class FHIRManager:
         return all_entries
     
 
-    def delete_all(self, entry: list[dict], verbose: bool = True):
+    def delete_all(self, entry: list[dict], verbose: bool = True) -> None:
         """
         Delete all FHIR resources from a given list of resource entries.
 
         Args:
             entry (list[dict]): List of FHIR Bundle entries, typically from the `read_all()` method.
                                 Each entry should contain a 'resource' dict with 'resourceType' and 'id'.
-            verbose (bool): If True, log each deletion response. Defaults to True.
+            verbose (bool, optional): If True, log each deletion response. Defaults to True.
         """
         error_ids = list()
 

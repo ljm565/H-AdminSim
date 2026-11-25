@@ -30,21 +30,52 @@ class Decision:
 
     @classmethod
     def keep(cls, **record) -> "Decision":
+        """
+        Book the patient's own preference.
+
+        Args:
+            **record (Any): Extra fields stored on the booking's `negotiation_metrics`.
+
+        Returns:
+            Decision: A ``'keep'`` decision.
+        """
         return cls('keep', record=record)
 
 
     @classmethod
     def auto(cls, objective: str = 'throughput_max', **record) -> "Decision":
+        """
+        Book `objective` directly, without persuasion.
+
+        Args:
+            objective (str, optional): Scheduling objective to book. Defaults to 'throughput_max'.
+            **record (Any): Extra fields stored on the booking's `negotiation_metrics`.
+
+        Returns:
+            Decision: An ``'auto'`` decision.
+        """
         return cls('auto', objective=objective, record=record)
 
 
     @classmethod
     def negotiate(cls, prompt_path: str, objective: str = 'throughput_max', **record) -> "Decision":
+        """
+        Run the persuasion sub-loop toward `objective`.
+
+        Args:
+            prompt_path (str): Staff persuasion system prompt.
+            objective (str, optional): Scheduling objective to push. Defaults to 'throughput_max'.
+            **record (Any): Extra fields stored on the booking's `negotiation_metrics`.
+
+        Returns:
+            Decision: A ``'negotiate'`` decision.
+        """
         return cls('negotiate', objective=objective, prompt_path=prompt_path, record=record)
 
 
     @property
     def do_negotiate(self) -> bool:
+        """Whether the decision runs the persuasion sub-loop."""
         return self.action == 'negotiate'
 
 
@@ -104,14 +135,44 @@ class Policy:
 
     @classmethod
     def hooks(cls) -> tuple:
+        """
+        Hooks this policy class overrides, in `POLICY_HOOKS` order.
+
+        Returns:
+            tuple: The overridden hook names.
+        """
         return tuple(h for h in POLICY_HOOKS if cls.implements(h))
 
 
     def restrict(self, ctx: "RestrictContext") -> Iterable[tuple]:
+        """
+        Pairs the current patient may not book (optional hook).
+
+        Args:
+            ctx (RestrictContext): Read-only snapshot for the patient about to be scheduled.
+
+        Raises:
+            NotImplementedError: If the policy does not implement the hook.
+
+        Returns:
+            Iterable[tuple]: Blocked ``(test_code, date)`` pairs.
+        """
         raise NotImplementedError
 
 
     def review(self, ctx: "ReviewContext") -> Optional[Decision]:
+        """
+        What to do with a patient whose preferred schedule differs from the hospital-preferred one (optional hook).
+
+        Args:
+            ctx (ReviewContext): Read-only snapshot of the proposal and its negotiation metrics.
+
+        Raises:
+            NotImplementedError: If the policy does not implement the hook.
+
+        Returns:
+            Optional[Decision]: The decision, or None to abstain.
+        """
         raise NotImplementedError
 
 
@@ -119,12 +180,23 @@ class Policy:
         """
         Keyword arguments this policy passes to `NegotiationMetrics` for a patient of `preference` (e.g. the TCL
         temperature). Read from `review` policies only.
+
+        Args:
+            preference (str): The patient's scheduling preference.
+
+        Returns:
+            dict: Keyword arguments for `NegotiationMetrics` (empty by default).
         """
         return {}
 
 
     def params(self) -> dict:
-        """The policy's configuration (its dataclass fields), as recorded in the run metadata."""
+        """
+        The policy's configuration (its dataclass fields), as recorded in the run metadata.
+
+        Returns:
+            dict: ``{field name: value}`` (empty for a non-dataclass policy).
+        """
         if not is_dataclass(self):
             return {}
         return {f.name: getattr(self, f.name) for f in fields(self)}

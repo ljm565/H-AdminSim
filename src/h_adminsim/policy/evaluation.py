@@ -1,7 +1,7 @@
 import os
 import glob
 import json
-from typing import ClassVar, Optional, Union
+from typing import ClassVar, Iterable, Optional, Union
 from dataclasses import dataclass, field, fields, is_dataclass
 
 from h_adminsim.registry.errors import PolicyError
@@ -14,8 +14,16 @@ TASK = 'follow_up_visit_scheduling'
 
 
 
-def _flat(values) -> list:
-    """Flatten a result column, where one entry may hold several records (a booking and its follow-on events)."""
+def _flat(values: Iterable) -> list:
+    """
+    Flatten a result column, where one entry may hold several records (a booking and its follow-on events).
+
+    Args:
+        values (Iterable): The column's entries (a record or a list / tuple of records each).
+
+    Returns:
+        list: The records, in order.
+    """
     return [x for y in values for x in (y if isinstance(y, (list, tuple)) else [y])]
 
 
@@ -121,6 +129,9 @@ class Evaluation:
 
         Args:
             run (RunData): The run.
+
+        Raises:
+            NotImplementedError: If the subclass does not implement it.
 
         Returns:
             dict: JSON-serializable results.

@@ -22,7 +22,19 @@ class BaseAgent(ABC):
                  azure_endpoint: Optional[str] = None,
                  vllm_endpoint: Optional[str] = None,
                  **kwargs):
-        
+        """
+        Set up the LLM client and the agent environment.
+
+        Args:
+            model (str): The agent's model.
+            api_key (Optional[str], optional): API key for the model (None -> read from environment variables). Defaults to None.
+            use_azure (bool, optional): Whether to use the Azure OpenAI client. Defaults to False.
+            use_vertex (bool, optional): Whether to use the Google Vertex AI client. Defaults to False.
+            use_vllm (bool, optional): Whether to use the vLLM client. Defaults to False.
+            azure_endpoint (Optional[str], optional): Azure OpenAI endpoint. Defaults to None.
+            vllm_endpoint (Optional[str], optional): vLLM server endpoint. Defaults to None.
+            **kwargs (Any): Environment settings passed to `_init_env`.
+        """
         # Initialize base model, environment
         self.model = model
         self._init_model(
@@ -44,7 +56,7 @@ class BaseAgent(ABC):
                     use_vertex: bool = False,
                     use_vllm: bool = False,
                     azure_endpoint: Optional[str] = None,
-                    vllm_endpoint: Optional[str] = None):
+                    vllm_endpoint: Optional[str] = None) -> None:
         """
         Initialize the model and API client based on the specified model type.
 
@@ -52,11 +64,11 @@ class BaseAgent(ABC):
             model (str): The administration office agent model to use.
             api_key (Optional[str], optional): API key for the model. If not provided, it will be fetched from environment variables.
                                                Defaults to None.
-            use_azure (bool): Whether to use Azure OpenAI client.
-            use_vertex (bool): Whether to use Google Vertex AI client.
-            use_vllm (bool): Whether to use vLLM client.
+            use_azure (bool, optional): Whether to use Azure OpenAI client. Defaults to False.
+            use_vertex (bool, optional): Whether to use Google Vertex AI client. Defaults to False.
+            use_vllm (bool, optional): Whether to use vLLM client. Defaults to False.
             azure_endpoint (Optional[str], optional): Azure OpenAI endpoint. Defaults to None.
-            vllm_endpoint (Optional[str], optional): Path to the vLLM server. Defaults to None.
+            vllm_endpoint (Optional[str], optional): vLLM server endpoint. Defaults to None.
 
         Raises:
             ValueError: If the specified model is not supported.
@@ -71,9 +83,12 @@ class BaseAgent(ABC):
             raise ValueError(colorstr("red", f"Unsupported model: {self.model}. Supported models are 'gemini' and 'gpt'."))
         
 
-    def _init_env(self, **kwargs):
+    def _init_env(self, **kwargs) -> None:
         """
         Initialize the environment with default settings.
+
+        Args:
+            **kwargs (Any): Optional ``random_seed`` (default None), ``temperature`` (default 0.2) and ``staff_greet``.
         """
         self.random_seed = kwargs.get('random_seed', None)
         self.temperature = kwargs.get('temperature', 0.2)   # For various responses. If you want deterministic responses, set it to 0.
@@ -85,24 +100,27 @@ class BaseAgent(ABC):
             set_seed(self.random_seed)
 
 
-    def reset_history(self, verbose: bool = True):
+    def reset_history(self, verbose: bool = True) -> None:
         """
         Reset the conversation history.
 
         Args:
-            verbose (bool): Whether to print verbose output. Defaults to True.
+            verbose (bool, optional): Whether to print verbose output. Defaults to True.
         """
         self.client.reset_history(verbose=verbose)
 
 
     @abstractmethod
-    def act(self, *args, **kwargs) -> tuple[str, bool]:
+    def act(self, *args, **kwargs) -> tuple[Union[str, dict], bool]:
         """
-        Produce this turn's reply as a leaf worker, returning ``(reply, is_done)``.
+        Produce this turn's reply as a leaf worker (abstract; each agent implements it).
 
-        Leaf workers (e.g. the intake agent) override this. Routers (e.g. the
-        orchestrator) are driven through ``__call__`` and never act as a leaf, so
-        the default raises rather than returning a value.
+        Args:
+            *args (Any): Agent-specific positional arguments.
+            **kwargs (Any): Agent-specific keyword arguments.
+
+        Returns:
+            tuple[Union[str, dict], bool]: ``(reply, is_done)``; a router's reply is its routing dict.
         """
 
 

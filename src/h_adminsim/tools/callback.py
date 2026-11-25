@@ -5,6 +5,9 @@ from langchain.callbacks.base import BaseCallbackHandler
 
 class TokenUsageCallback(BaseCallbackHandler):
     def __init__(self):
+        """
+        Start with empty per-call token usage lists.
+        """
         self.token_usage = {
             "prompt_tokens": [],
             "completion_tokens": [],
@@ -13,12 +16,13 @@ class TokenUsageCallback(BaseCallbackHandler):
         }
 
 
-    def on_llm_end(self, response: LLMResult, **kwargs):
+    def on_llm_end(self, response: LLMResult, **kwargs) -> None:
         """
-        Callback handler that extracts token usage statistics after each LLM call.
+        Append the token usage of each generation after an LLM call.
 
         Args:
-            response (LLMResult): The response object returned by the LLM, containing generation results and usage metadata.
+            response (LLMResult): The LLM response, with usage metadata on each generation message.
+            **kwargs: Extra callback arguments (ignored).
         """
         for generations in response.generations:
             for generation in generations:

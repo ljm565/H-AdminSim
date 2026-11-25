@@ -1,6 +1,6 @@
 import os
 from tqdm import tqdm
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from h_adminsim.utils import Information, colorstr, log
 from h_adminsim.utils.fhir_utils import (
@@ -21,10 +21,19 @@ from h_adminsim.utils.common_utils import (
     convert_segment_to_time,
 )
 
+if TYPE_CHECKING:
+    from sconf import Config
+
 
 
 class DataConverter:
-    def __init__(self, config):
+    def __init__(self, config: 'Config'):
+        """
+        Collect the synthesized hospital data files under ``<project>/<data_name>/data``.
+
+        Args:
+            config (Config): Data synthesis config (uses ``fhir_url``, ``project`` and ``data_name``).
+        """
         # Initialize configuration
         self.fhir_url = config.fhir_url
         data_dir = os.path.join(config.project, config.data_name, 'data')
@@ -37,7 +46,7 @@ class DataConverter:
                                 patient_name: str,
                                 device_name: str,
                                 date: str,
-                                schedule_time_range: list,
+                                schedule_time_range: list[float],
                                 start_hour: float,
                                 end_hour: float,
                                 interval_hour: float,
@@ -51,8 +60,7 @@ class DataConverter:
             patient_name (str): Patient's full name, used as the participant display label.
             device_name (str): Device identifier; used both for ID generation and as the participant display label.
             date (str): Test date (ISO `YYYY-MM-DD`).
-            schedule_time_range (list[float]): Start/end hour pair describing the test window (e.g. `[10.0, 10.5]`).
-                                               Discretized into segments via `interval_hour`.
+            schedule_time_range (list[float]): Start/end hours of the test window (e.g. `[10.0, 10.5]`).
             start_hour (float): Day-window start hour for segment indexing.
             end_hour (float): Day-window end hour for segment indexing.
             interval_hour (float): Time-slot granularity in hours.
@@ -86,11 +94,8 @@ class DataConverter:
 
         Args:
             data (dict): Synthetic hospital data containing doctor information.
-            output_dir (Optional[str], optional): Directory path to save the converted Practitioner resources 
-                                                  as `.fhir.json` files. If None, the resources are not saved to disk.
-                                                  Defaults to None.
-            sanity_check (bool, optional): If True, performs a sanity check to ensure the uniqueness of the generated FHIR data.
-                                           This only applies when output_dir is specified. Defaults to False.
+            output_dir (Optional[str], optional): Directory to save the resources as `.fhir.json` files; not saved if None. Defaults to None.
+            sanity_check (bool, optional): If True, check the saved files are unique (only when saving). Defaults to False.
 
         Returns:
             list[dict]: A list of converted FHIR Practitioner resource objects.
@@ -147,11 +152,8 @@ class DataConverter:
 
         Args:
             data (dict): Synthetic hospital data containing doctor information.
-            output_dir (Optional[str], optional): Directory path to save the converted PractitionerRole resources 
-                                                  as `.fhir.json` files. If None, the resources are not saved to disk.
-                                                  Defaults to None.
-            sanity_check (bool, optional): If True, performs a sanity check to ensure the uniqueness of the generated FHIR data.
-                                           This only applies when output_dir is specified. Defaults to False.
+            output_dir (Optional[str], optional): Directory to save the resources as `.fhir.json` files; not saved if None. Defaults to None.
+            sanity_check (bool, optional): If True, check the saved files are unique (only when saving). Defaults to False.
 
         Returns:
             list[dict]: A list of converted FHIR PractitionerRole resource objects.
@@ -224,11 +226,8 @@ class DataConverter:
 
         Args:
             data (dict): Synthetic hospital data containing doctor information.
-            output_dir (Optional[str], optional): Directory path to save the converted Patient resources 
-                                                  as `.fhir.json` files. If None, the resources are not saved to disk.
-                                                  Defaults to None.
-            sanity_check (bool, optional): If True, performs a sanity check to ensure the uniqueness of the generated FHIR data.
-                                           This only applies when output_dir is specified. Defaults to False.
+            output_dir (Optional[str], optional): Directory to save the resources as `.fhir.json` files; not saved if None. Defaults to None.
+            sanity_check (bool, optional): If True, check the saved files are unique (only when saving). Defaults to False.
 
         Returns:
             list[dict]: A list of converted FHIR Patient resource objects.
@@ -287,11 +286,8 @@ class DataConverter:
 
         Args:
             data (dict): Synthetic hospital data containing test information.
-            output_dir (Optional[str], optional): Directory path to save the converted Device
-                                                  resources as `.fhir.json` files. If None, the resources
-                                                  are not saved to disk. Defaults to None.
-            sanity_check (bool, optional): If True, asserts that no duplicate files exist when saving.
-                                           Defaults to False.
+            output_dir (Optional[str], optional): Directory to save the resources as `.fhir.json` files; not saved if None. Defaults to None.
+            sanity_check (bool, optional): If True, check the saved files are unique (only when saving). Defaults to False.
 
         Returns:
             list[dict]: A list of converted FHIR Device resource objects.
@@ -353,16 +349,12 @@ class DataConverter:
         """
         Convert hospital test data into `HealthcareService` FHIR resources (one per test type).
 
-        Each HealthcareService represents a logical test type and references the physical Device
-        resources that can perform it (one-to-many via extensions).
+        Each references the Device resources that can perform the test (via extensions).
 
         Args:
             data (dict): Synthetic hospital data containing test information.
-            output_dir (Optional[str], optional): Directory path to save the converted HealthcareService
-                                                  resources as `.fhir.json` files. If None, the resources
-                                                  are not saved to disk. Defaults to None.
-            sanity_check (bool, optional): If True, asserts that no duplicate files exist when saving.
-                                           Defaults to False.
+            output_dir (Optional[str], optional): Directory to save the resources as `.fhir.json` files; not saved if None. Defaults to None.
+            sanity_check (bool, optional): If True, check the saved files are unique (only when saving). Defaults to False.
 
         Returns:
             list[dict]: A list of converted FHIR HealthcareService resource objects.
@@ -454,11 +446,8 @@ class DataConverter:
 
         Args:
             data (dict): Synthetic hospital data containing doctor information.
-            output_dir (Optional[str], optional): Directory path to save the converted Schedule resources 
-                                                  as `.fhir.json` files. If None, the resources are not saved to disk.
-                                                  Defaults to None.
-            sanity_check (bool, optional): If True, performs a sanity check to ensure the uniqueness of the generated FHIR data.
-                                           This only applies when output_dir is specified. Defaults to False.
+            output_dir (Optional[str], optional): Directory to save the resources as `.fhir.json` files; not saved if None. Defaults to None.
+            sanity_check (bool, optional): If True, check the saved files are unique (only when saving). Defaults to False.
 
         Returns:
             list[dict]: A list of converted FHIR Schedule resource objects.
@@ -540,11 +529,8 @@ class DataConverter:
 
         Args:
             data (dict): Synthetic hospital data containing doctor information.
-            output_dir (Optional[str], optional): Directory path to save the converted Slot resources 
-                                                  as `.fhir.json` files. If None, the resources are not saved to disk.
-                                                  Defaults to None.
-            sanity_check (bool, optional): If True, performs a sanity check to ensure the uniqueness of the generated FHIR data.
-                                           This only applies when output_dir is specified. Defaults to False.
+            output_dir (Optional[str], optional): Directory to save the resources as `.fhir.json` files; not saved if None. Defaults to None.
+            sanity_check (bool, optional): If True, check the saved files are unique (only when saving). Defaults to False.
 
         Returns:
             list[dict]: A list of converted FHIR Slot resource objects.
@@ -700,14 +686,14 @@ class DataConverter:
 
         Args:
             data (dict): Synthetic hospital data containing doctor information.
-            output_dir (Optional[str], optional): Directory path to save the converted Appointment resources 
-                                                  as `.fhir.json` files. If None, the resources are not saved to disk.
-                                                  Defaults to None.
-            sanity_check (bool, optional): If True, performs a sanity check to ensure the uniqueness of the generated FHIR data.
-                                           This only applies when output_dir is specified. Defaults to False.
+            output_dir (Optional[str], optional): Directory to save the resources as `.fhir.json` files; not saved if None. Defaults to None.
+            sanity_check (bool, optional): If True, check the saved files are unique (only when saving). Defaults to False.
 
         Returns:
             list[dict]: A list of converted FHIR Appointment resource objects.
+
+        Raises:
+            ValueError: If a patient entry has an unknown ``visit_type``.
         """
         def _emit_consultation(department: str,
                                doctor_name: str,
@@ -837,17 +823,11 @@ class DataConverter:
     def get_fhir_appointment(gt_resource_path: Optional[str] = None,
                              data: Optional[dict] = None) -> dict:
         """
-        Load a FHIR Appointment resource from a file path if available, or generate it dynamically from the provided data.
+        Load a FHIR Appointment resource from a file, or build it from ``data`` if loading fails.
 
         Args:
-            gt_resource_path (Optional[str], optional):  
-                Path to the ground-truth FHIR Appointment resource file.  
-                If the file exists, it will be loaded and returned.  
-                If not, a resource will be generated from the `data` argument.
-            data (Optional[dict], optional):  
-                Dictionary containing the metadata and patient information  
-                needed to generate the Appointment resource.  
-                Expected to include 'metadata' and 'information' keys.
+            gt_resource_path (Optional[str], optional): Path to the ground-truth Appointment resource file. Defaults to None.
+            data (Optional[dict], optional): Fallback source with ``metadata``, ``department`` and ``information``. Defaults to None.
 
         Returns:
             dict: A FHIR Appointment resource in dictionary form.
@@ -879,14 +859,12 @@ class DataConverter:
 
 
     @staticmethod
-    def get_fhir_test_appointments(data: dict) -> list:
+    def get_fhir_test_appointments(data: dict) -> list[dict]:
         """
         Build Device-based FHIR Appointment resources for each prescribed test in a follow-up prediction.
 
         Args:
-            data (dict): Expected to contain 'metadata', 'department', and 'information'.
-                'information' is the prediction dict whose 'test' key holds a list of
-                {device_name: {'name', 'date', 'start', 'end', 'code'}} single-key dicts.
+            data (dict): ``metadata``, ``department`` and ``information`` (the prediction; each ``test`` entry has ``device``, ``date``, ``schedule``).
 
         Returns:
             list[dict]: A list of FHIR Appointment resources (empty when no tests).
@@ -925,15 +903,14 @@ class DataConverter:
                  output_dir: str,
                  sanity_check: bool = False) -> list[Information]:
         """
-        Convert synthetic hospital data files into FHIR resources and optionally save them to disk.
+        Convert every synthesized data file into FHIR resources and save them.
 
         Args:
-            output_dir (str): Directory to save the converted FHIR resources as `.fhir.json` files.
-            sanity_check (bool, optional): If True, performs a sanity check to ensure the uniqueness of the generated FHIR data.
-                                           This only applies when output_dir is specified. Defaults to False.
+            output_dir (str): Directory to save the resources as `.fhir.json` files.
+            sanity_check (bool, optional): If True, check the saved files are unique. Defaults to False.
 
         Returns:
-            list[Information]: An object containing the converted FHIR resources, including practitioners, schedules, slots, patients, and appointments.
+            list[Information]: The converted resources (practitioners, roles, devices, services, schedules, slots, patients, appointments) per file.
         """
         os.makedirs(output_dir, exist_ok=True)
         all_resources = list()

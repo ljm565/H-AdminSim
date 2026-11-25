@@ -5,7 +5,7 @@ from copy import deepcopy
 from patientsim import PatientAgent
 from decimal import Decimal, getcontext
 from langchain.agents import AgentExecutor
-from typing import Union, Optional, TYPE_CHECKING
+from typing import Union, Callable, Iterator, Optional, TYPE_CHECKING
 
 from h_adminsim.registry.errors import (
     STATUS_CODES,
@@ -55,7 +55,22 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
                  fhir_integration: bool = False,
                  schedule_rejection_prompt_path: Optional[str] = None,
                  sanity_checker: Optional[SanityChecker] = None):
+        """
+        Set up the first-visit scheduling simulation.
 
+        Args:
+            patient_agent (PatientAgent): The simulated patient.
+            admin_staff_mas (HospitalMAS): The administration staff multi-agent system.
+            metadata (dict): Hospital metadata (``time`` and ``days``).
+            department_data (dict): Department information of the hospital.
+            environment (HospitalEnvironment): The hospital environment.
+            scheduling_strategy (str, optional): `'tool_calling'` or `'reasoning'`. Defaults to 'tool_calling'.
+            preference_rejection_prob (float, optional): Initial probability the patient rejects a proposal. Defaults to 0.3.
+            preference_rejection_prob_decay (float, optional): Factor applied to that probability after each rejection. Defaults to 0.5.
+            fhir_integration (bool, optional): Whether to use the FHIR server. Defaults to False.
+            schedule_rejection_prompt_path (Optional[str], optional): Custom rejection system prompt file. Defaults to None.
+            sanity_checker (Optional[SanityChecker], optional): Checker grading predicted schedules; None skips grading. Defaults to None.
+        """
         super().__init__(patient_agent, admin_staff_mas)
 
         # Initialize simulation parameters
@@ -81,9 +96,7 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
         """
         Phrase a first-visit scheduling preference for the schedule-rejection prompt.
 
-        A 'date' preference reads as "from {date} onwards", so it is filled in from the
-        booking's `valid_from`; what the staff proposed is left vague on purpose, since the
-        patient is reacting to it rather than restating it.
+        A 'date' preference is filled from the booking's `valid_from`; the rejected one is left vague on purpose.
 
         Args:
             patient_condition (dict): Patient ground-truth condition including current preference.
@@ -108,11 +121,7 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
     @property
     def scheduling_agent(self) -> "SchedulingAdminStaffAgent":
         """
-        The scheduling worker (a leaf of the MAS tree).
-
-        Scheduling, cancellation, and rescheduling are all handled by the same
-        ``'first_visit_scheduling'`` worker and are independent of the intake flow,
-        so it is fetched from the MAS on demand rather than cached as instance state.
+        The ``'first_visit_scheduling'`` worker, fetched from the MAS on each access.
         """
         return self.admin_staff_mas.get_agent('first_visit_scheduling')
 
@@ -130,7 +139,7 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
             natural_express (bool, optional): Whether to phrase a schedule proposal naturally instead of dumping the raw schedule dict. Defaults to True.
 
         Returns:
-            str: The staff utterance to show the patient.
+            str: The staff utterance (empty for failures); falls through to None for an unknown type or reply type.
         """
         # Clarification message
         if prediction['type'] == 'text':
@@ -195,19 +204,19 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
     @staticmethod
     def postprocessing(strategy: str,
                        data: Union[str, dict],
-                       filtered_doctor_information: Optional[dict] = None) -> Union[str, dict]:
+                       filtered_doctor_information: Optional[dict] = None) -> Optional[Union[str, dict]]:
         """
-        Attempts to parse the given text as JSON. If parsing succeeds, returns a dictionary;
-        otherwise, returns the original string.
+        Normalize a staff schedule output into ``{'schedule': {doctor: {date, start, end}}}``.
 
         Args:
-            strategy (str): Scheduling strategy. It must be either `reasoning` or `tool_calling`.
-            data (Union[str, dict]): The text output to post-process, potentially a JSON-formatted string. 
-            filtered_doctor_information (Optional[dict], optional): Department-filtered doctor information 
-                                                                    to postprocess the schedule by tool_calling strategy.
+            strategy (str): `reasoning` (parse JSON text) or `tool_calling` (convert a tool slot).
+            data (Union[str, dict]): The output to post-process, possibly JSON text.
+            filtered_doctor_information (Optional[dict], optional): Department-filtered doctor information, needed
+                                                                    for `tool_calling`. Defaults to None.
 
         Returns:
-            Union[str, dict]: A dictionary if the text is valid JSON, otherwise the original string.
+            Optional[Union[str, dict]]: The schedule dict, the input as a string if `reasoning` parsing fails,
+                                        or None for an unknown strategy.
         """
         if strategy == 'reasoning':
             try:
@@ -244,10 +253,7 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
 
     def _format_doctors_markdown(self, filtered_doctor_information: dict) -> str:
         """
-        Render doctor availability as compact per-doctor markdown tables of FREE (bookable) windows
-        (via the shared `render_availability_tables`), instead of a verbose JSON dump of occupied
-        intervals. Each title carries the fields the reasoning rules use (consult duration, workload).
-        This only changes the reasoning-fallback prompt's rendering; the underlying data is unchanged.
+        Render doctor availability as per-doctor markdown tables of free windows for the reasoning prompt.
 
         Args:
             filtered_doctor_information (dict): `{'doctor': {name: {'schedule': {date: [...]}, 'outpatient_duration', 'workload', ...}}}`.
@@ -276,8 +282,8 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
 
         Args:
             known_condition (dict): Patient conditions known to the staff.
-            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s) involved, 
-                                                           including availability and other relevant details. Defaults to None.
+            doctor_information (Optional[dict], optional): Doctor information (required without FHIR). Defaults to None.
+            **kwargs: Additional keyword arguments forwarded to `scheduling`.
 
         Returns:
             dict: Rescheduled schedule.
@@ -318,11 +324,10 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
             idx (int): Index of the requested schedule (original schedule index).
             new_schedule (dict): New earliest schedule available.
             original_schedule (dict): The original schedule.
-            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s) involved, 
-                                                           including availability and other relevant details.
+            doctor_information (dict): Doctor information whose schedules the cancellation updates.
 
         Returns:
-            Optional[dict]: New schedule if the rescheduling available; otherwise None.
+            Optional[dict]: The new booking if it is earlier than the original; otherwise None.
         """
         pred_doctor_name = list(new_schedule['schedule'].keys())[0]
         old_iso_time = get_iso_time(original_schedule['schedule'][0], original_schedule['date'])
@@ -350,19 +355,17 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
         return None
     
 
-    def _make_reschedule_pipeline(self, doctor_information: Optional[dict] = None, **kwargs):
+    def _make_reschedule_pipeline(self, doctor_information: Optional[dict] = None, **kwargs) -> Callable[[int, dict], dict]:
         """
-        Build a callable that runs the post-retrieval rescheduling pipeline:
-        _get_rescheduled_result -> sanity check -> _check_reschedule_validity -> waiting list.
+        Build the post-retrieval rescheduling pipeline (reschedule -> sanity check -> validity -> waiting list).
 
         Args:
-            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s).
+            doctor_information (Optional[dict], optional): Doctor information. Defaults to None.
             **kwargs: Additional keyword arguments forwarded to the inner scheduling agent.
 
         Returns:
-            Callable[[int, dict], dict]: A pipeline function returning a dict with keys
-                'action' ('reschedule' | 'waiting_list' | 'schedule_fail'),
-                'new_schedule' (dict | None), and optional 'status_code'.
+            Callable[[int, dict], dict]: ``(idx, original_schedule) -> {'action', 'new_schedule', 'status_code'}``,
+                                         action one of 'reschedule' / 'waiting_list' / 'schedule_fail'.
         """
         def pipeline(idx: int, original_schedule: dict) -> dict:
             try:
@@ -406,16 +409,16 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
 
     def automatic_waiting_list_update(self,
                                       doctor_information: dict,
-                                      **kwargs):
+                                      **kwargs) -> Iterator[dict]:
         """
-        Update waiting list availability automatically.
+        Try to move each first-visit waiting-list booking earlier; a failure leaves the entry on the list.
 
         Args:
-            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s) involved, 
-                                                           including availability and other relevant details.
+            doctor_information (dict): Doctor information.
+            **kwargs: Additional keyword arguments forwarded to `scheduling`.
 
         Yields:
-            dict: Updated (or not updated) doctor information and a result dictionary.
+            dict: ``{'doctor_information', 'result_dict', 'original'}`` per attempted entry (none when nothing changed).
         """
         # Snapshot the list: a successful reschedule pops the entry from `waiting_list` mid-iteration
         for turn, (idx, original) in enumerate(list(self.environment.waiting_list)):
@@ -506,17 +509,20 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
         Args:
             client (AgentExecutor): The agent executor to handle tool calls or conversation.
             known_condition (dict): Patient conditions known to the staff.
-            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s) involved, 
-                                                           including availability and other relevant details. Defaults to None.
+            doctor_information (Optional[dict], optional): Doctor information (required without FHIR). Defaults to None.
             reschedule_flag (bool, optional): Whether this process is rescheduling or not. Defaults to False.
             chat_history (list, optional): Chat history. Defaults to [].
+            reasoning_max_tries (int, optional): Extra reasoning-fallback attempts after an unparsable output. Defaults to 0.
+            **kwargs: Forwarded to the reasoning-fallback agent; ``callback`` is popped for tool calling.
+
+        Returns:
+            dict: Scheduling result (``type`` 'tool' with a schedule, or 'text' clarification).
 
         Raises:
-            ToolCallingError: If the agent fails to select or execute a valid scheduling tool.
-            TypeError: If the prediction or inputs are of an unsupported type.
-
-        Return
-            dict: Scheduling processed result.
+            AssertionError: Under the `reasoning` strategy, to skip tool calling (caught here).
+            ToolCallingError: If no appropriate tool was chosen (caught here; falls back to reasoning).
+            TypeError: On an unexpected tool-calling result type (caught here; falls back to reasoning).
+            SchedulingError: If the reasoning fallback produces no valid schedule JSON.
         """
         # Sanity Check
         if not self.fhir_integration:
@@ -625,7 +631,7 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
     
 
     def scheduling_simulate(self,
-                            gt_data: dict,
+                            gt_data: list[dict],
                             staff_known_data: dict,
                             doctor_information: Optional[dict] = None,
                             verbose: bool = False,
@@ -635,29 +641,28 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
                             reasoning_max_tries: int = 0,
                             patient_kwargs: dict = {},
                             staff_kwargs: dict = {},
-                            **kwargs) -> tuple[dict, dict, dict]:
+                            **kwargs) -> tuple[Optional[dict], dict, dict]:
         """
-        Simulate a multi-turn outpatient scheduling dialogue between a patient agent and an administrative staff agent.
+        Simulate a multi-turn first-visit scheduling dialogue between the patient and staff agents.
 
         Args:
-            gt_data (dict): Ground-truth patient condition(s) for each dialogue turn.
+            gt_data (list[dict]): Ground-truth patient conditions, one per preference (later ones follow rejections).
             staff_known_data (dict): Patient information known to the staff agent.
-            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s) involved, 
-                                                           including availability and other relevant details. Defaults to None.
+            doctor_information (Optional[dict], optional): Doctor information (required without FHIR). Defaults to None.
             verbose (bool, optional): Whether to log detailed simulation outputs. Defaults to False.
-            max_inferences (int, optional): Maximum number of dialogue turns.
+            max_inferences (int, optional): Maximum number of dialogue turns. Defaults to 5.
             intake_executed (bool, optional): Whether intake ran before this scheduling step (end-to-end). Defaults to False.
-            natural_express: (bool, optional): Whether express new schedule as natural or not. Defaults to True.
+            natural_express (bool, optional): Whether to express the new schedule naturally. Defaults to True.
             reasoning_max_tries (int, optional): Reasoning fallback maximum number of retries. Defaults to 0.
-            patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent.
-            staff_kwargs (dict, optional): Additional keyword arguments passed to the staff scheduling function.
+            patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent. Defaults to {}.
+            staff_kwargs (dict, optional): Additional keyword arguments passed to the staff scheduling function. Defaults to {}.
             **kwargs: Shared keyword arguments passed to both agents.
 
         Returns:
-            tuple[dict, dict, dict]: 
-                - Doctor information.
-                - Result dictionary after scheduling a new appointment.
-                - Token statistics.
+            tuple[Optional[dict], dict, dict]: Doctor information, the result dictionary, and token statistics.
+
+        Raises:
+            TurnLimitReached: When `max_inferences` runs out (caught here and recorded in the result).
         """
         # Sanity Check
         if not self.fhir_integration:
@@ -841,25 +846,22 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
                            max_inferences: int = 5,
                            patient_kwargs: dict = {},
                            staff_kwargs: dict = {},
-                           **kwargs) -> tuple[dict, dict]:
+                           **kwargs) -> tuple[Optional[dict], dict]:
         """
         Simulate a multi-turn conversation for appointment cancellation.
 
         Args:
             gt_idx (Optional[int], optional): Ground-truth index of the appointment to be cancelled. Defaults to None.
-            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s).
+            doctor_information (Optional[dict], optional): Doctor information (required without FHIR). Defaults to None.
             patient_schedules (Optional[list[dict]], optional): List of patient appointment schedules. Defaults to None.
             verbose (bool, optional): Whether to print conversation logs. Defaults to True.
-            max_inferences (int, optional): Maximum number of dialogue turns.
-            patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent.
-            staff_kwargs (dict, optional): Additional keyword arguments passed to the staff agent.
-            **kwargs: Additional keyword arguments passed to the patient and staff agent.
-
-        Raises:
-            DataNotFoundError: Schedule not found error.
+            max_inferences (int, optional): Maximum number of dialogue turns. Defaults to 5.
+            patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent. Defaults to {}.
+            staff_kwargs (dict, optional): Unused (cancellation needs no staff kwargs). Defaults to {}.
+            **kwargs: Additional keyword arguments passed to the patient agent.
 
         Returns:
-            tuple[dict, dict]: Updated doctor information and a result dictionary after cancellation.
+            tuple[Optional[dict], dict]: Updated doctor information and a result dictionary after cancellation.
         """
         doctor_information, result_dict = self._cancel_simulate(
             'cancel',
@@ -882,27 +884,22 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
                               max_inferences: int = 5,
                               patient_kwargs: dict = {},
                               staff_kwargs: dict = {},
-                              **kwargs) -> tuple[dict, dict]:
+                              **kwargs) -> tuple[Optional[dict], dict]:
         """
         Simulate a multi-turn conversation for appointment rescheduling.
 
         Args:
             gt_idx (Optional[int], optional): Ground-truth index of the appointment to be rescheduled. Defaults to None.
-            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s).
+            doctor_information (Optional[dict], optional): Doctor information (required without FHIR). Defaults to None.
             patient_schedules (Optional[list[dict]], optional): List of patient appointment schedules. Defaults to None.
             verbose (bool, optional): Whether to print conversation logs. Defaults to True.
-            max_inferences (int, optional): Maximum number of dialogue turns.
-            patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent.
-            staff_kwargs (dict, optional): Additional keyword arguments passed to the staff agent.
+            max_inferences (int, optional): Maximum number of dialogue turns. Defaults to 5.
+            patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent. Defaults to {}.
+            staff_kwargs (dict, optional): Additional keyword arguments passed to the staff agent. Defaults to {}.
             **kwargs: Additional keyword arguments passed to the patient and staff agents.
 
-        Raises:
-            TypeError: If the return type from the rescheduling method is unexpected.
-            DataNotFoundError: Schedule not found error.
-            SchedulingError: Scheduling error.
-
         Returns:
-            tuple[dict, dict]: Updated doctor information and a result dictionary after rescheduling.
+            tuple[Optional[dict], dict]: Updated doctor information and a result dictionary after rescheduling.
         """
         doctor_information, result_dict = self._reschedule_simulate(
             'reschedule',
@@ -920,7 +917,7 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
 
 
     def scheduling_simulate_stream(self,
-                                   gt_data: dict,
+                                   gt_data: list[dict],
                                    staff_known_data: dict,
                                    doctor_information: Optional[dict] = None,
                                    verbose: bool = False,
@@ -930,23 +927,25 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
                                    reasoning_max_tries: int = 3,
                                    patient_kwargs: dict = {},
                                    staff_kwargs: dict = {},
-                                   **kwargs):
+                                   **kwargs) -> Iterator[tuple[str, str, Optional[dict]]]:
         """
-        Simulate a multi-turn outpatient scheduling dialogue between a patient agent and an administrative staff agent.
+        Streaming variant of `scheduling_simulate` (demo path: retries API calls and forces misrouted turns).
 
         Args:
-            gt_data (dict): Ground-truth patient condition(s) for each dialogue turn.
+            gt_data (list[dict]): Ground-truth patient conditions, one per preference.
             staff_known_data (dict): Patient information known to the staff agent.
-            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s) involved, 
-                                                           including availability and other relevant details. Defaults to None.
+            doctor_information (Optional[dict], optional): Doctor information (required without FHIR). Defaults to None.
             verbose (bool, optional): Whether to log detailed simulation outputs. Defaults to False.
-            max_inferences (int, optional): Maximum number of dialogue turns.
+            max_inferences (int, optional): Maximum number of dialogue turns. Defaults to 5.
             intake_executed (bool, optional): Whether intake ran before this scheduling step (end-to-end). Defaults to True.
-            natural_express (bool, optional): Whether express new schedule as natural or not. Defaults to True.
+            natural_express (bool, optional): Whether to express the new schedule naturally. Defaults to True.
             reasoning_max_tries (int, optional): Reasoning fallback maximum number of retries. Defaults to 3.
-            patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent.
-            staff_kwargs (dict, optional): Additional keyword arguments passed to the staff scheduling function.
+            patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent. Defaults to {}.
+            staff_kwargs (dict, optional): Additional keyword arguments passed to the staff scheduling function. Defaults to {}.
             **kwargs: Shared keyword arguments passed to both agents.
+
+        Yields:
+            tuple[str, str, Optional[dict]]: ``(role, utterance, proposed schedule or None)``.
         """
         # Sanity Check
         if not self.fhir_integration:

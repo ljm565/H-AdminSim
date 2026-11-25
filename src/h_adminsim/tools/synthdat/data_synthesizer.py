@@ -1,9 +1,9 @@
 import os
 import random
-from typing import Optional
+from datetime import timedelta
 from importlib import resources
 from decimal import Decimal, getcontext
-from datetime import timedelta
+from typing import Optional, TYPE_CHECKING
 
 from h_adminsim.registry import variables
 from h_adminsim.task.schedule_assign import ScheduleAssigner
@@ -30,10 +30,20 @@ from h_adminsim.utils.random_utils import (
     generate_random_specialty,
 )
 
+if TYPE_CHECKING:
+    from sconf import Config
+
 
 
 class DataSynthesizer:
-    def __init__(self, config, existing_data_dir: Optional[str] = None):
+    def __init__(self, config: 'Config', existing_data_dir: Optional[str] = None):
+        """
+        Set up the data save directory; a new project directory (with ``args.yaml``) unless one is given.
+
+        Args:
+            config (Config): Data synthesis config.
+            existing_data_dir (Optional[str], optional): Existing directory to save data into instead of a new project directory. Defaults to None.
+        """
         # Initialize configuration, path and save directory
         self.config = config
         self._n = self.config.hospital_data.hospital_n
@@ -49,7 +59,7 @@ class DataSynthesizer:
         
 
     @staticmethod
-    def define_hospital_info(config,
+    def define_hospital_info(config: 'Config',
                              hospital_name: str,
                              department_info_path: Optional[str] = None,
                              with_follow_up: bool = False) -> Information:
@@ -57,16 +67,16 @@ class DataSynthesizer:
         Define the synthetic hospital data, including its departments and doctors.
 
         Args:
-            config: Configuration object containing hospital data settings.
-            hospital_name (str): Name of the hospital to be defined.
-            department_info_path (Optional[str], optional): Path to a file containing department information. If provided, it will be used to load names.
-                                                            Defaults to None.
-            with_follow_up (bool, optional): Whether follow-up patients will be synthesized into this
-                                             hospital, which is the only case where doctors need clinic
-                                             days outside the simulation window. Defaults to False.
+            config (Config): Data synthesis config (``hospital_data`` settings).
+            hospital_name (str): Name of the hospital.
+            department_info_path (Optional[str], optional): Department info file; the packaged ``department.json`` if None. Defaults to None.
+            with_follow_up (bool, optional): If True, doctor schedules extend beyond the simulation window by the follow-up extra days. Defaults to False.
 
         Returns:
-            Information: Synthetic data about the hospital.
+            Information: Hospital ``metadata``, ``department``, ``doctor`` and an empty ``patient``.
+
+        Raises:
+            AssertionError: If the follow-up extra days are negative or the department/doctor counts are inconsistent.
         """
         # Define hosptial metadata
         days = config.hospital_data.days
@@ -209,10 +219,10 @@ class DataSynthesizer:
         
         Args:
             hospital_n (int): Number of hospitals to generate.
-            file_path (Optional[str], optional): Path to a file containing hospital names. If provided, it will be used to load names.
+            file_path (Optional[str], optional): Hospital name file to sample names from. Defaults to None.
         
         Returns:
-            list[str]: List of hospital names in the format "Hospital 001", "Hospital 002", etc.
+            list[str]: Sampled names, or ``hospital_001``-style names without a file.
         """
         if file_path:
             if variables.HOSPITALS is None:
@@ -225,16 +235,19 @@ class DataSynthesizer:
     
     @staticmethod
     def department_list_generator(department_n: int,
-                                  file_path: Optional[str] = None) -> list[tuple[str, str]]:
+                                  file_path: Optional[str] = None) -> list[tuple[str, Optional[str]]]:
         """
         Generate a list of department names based on the number of departments.
         
         Args:
             department_n (int): Number of departments to generate.
-            file_path (Optional[str], optional): Path to a file containing department names. If provided, it will be used to load names. Defaults to None.
+            file_path (Optional[str], optional): Department JSON file; the packaged ``department.json`` if None. Defaults to None.
         
         Returns:
-            list[tuple[str, str]]: List of department names and their codes.
+            list[tuple[str, Optional[str]]]: ``(department name, code)`` pairs.
+
+        Raises:
+            ValueError: If more departments are requested than the file provides.
         """
         if file_path == None:
             file_path = str(resources.files("h_adminsim.assets.departments").joinpath("department.json"))
@@ -263,14 +276,14 @@ class DataSynthesizer:
         Generate a list of names.
         
         Args:
-            n (int): Number of doctors to generate.
+            n (int): Number of names to generate.
             first_name_file_path (Optional[str], optional): Path to a file containing first names. Defaults to None.
             last_name_file_path (Optional[str], optional): Path to a file containing last names. Defaults to None.
-            prefix (Optional[str], optional): Prefix for to be generated names.
-            reject_list (Optional[list[str]], optional): List of names to exclude.
+            prefix (Optional[str], optional): Prefix added to each name (e.g. ``'Dr. '``). Defaults to None.
+            reject_list (Optional[list[str]], optional): Names to exclude. Defaults to None.
         
         Returns:
-            list[str]: List of names.
+            list[str]: Shuffled list of names.
         """
         if first_name_file_path == None:
             first_name_file_path = str(resources.files("h_adminsim.assets.names").joinpath("firstname.txt"))

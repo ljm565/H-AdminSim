@@ -36,7 +36,19 @@ class Simulator:
                  fhir_url: Optional[str] = None,
                  fhir_max_connection_retries: int = 5,
                  random_seed: int = 9999):
-        
+        """
+        Set up the simulator.
+
+        Args:
+            task (dict): ``{task name: task}`` for ``first_visit_intake``, ``first_visit_scheduling`` and/or
+                         ``follow_up_visit_scheduling``.
+            simulation_start_day_before (float, optional): Days before the data's start date at which the simulation
+                                                           clock starts. Defaults to 3.
+            fhir_integration (bool, optional): Whether to sync with a FHIR server. Defaults to False.
+            fhir_url (Optional[str], optional): FHIR server URL (used only with `fhir_integration`). Defaults to None.
+            fhir_max_connection_retries (int, optional): Max FHIR connection retries. Defaults to 5.
+            random_seed (int, optional): Random seed. Defaults to 9999.
+        """
         # Initialize
         getcontext().prec = 10
         self.simulation_start_day_before = simulation_start_day_before
@@ -47,9 +59,10 @@ class Simulator:
         self.random_seed = random_seed
 
 
-    def __env_setup(self, random_seed: int, resume: bool):
+    def __env_setup(self, random_seed: int, resume: bool) -> None:
         """
-        Initialize environment-level random seeds.
+        Initialize environment-level random seeds; on a fresh FHIR-integrated run, delete the server's Appointment and
+        Patient resources.
 
         Args:
             random_seed (int): Random seed.
@@ -69,10 +82,13 @@ class Simulator:
 
     def _init_task(self, task: dict) -> dict[str, OutpatientTask]:
         """
-        Initialize the task queue for first-visit outpatient workflow.
+        Validate the task dictionary (asserts each task's type and FHIR setting).
 
         Args:
             task (dict): Task dictionary.
+
+        Returns:
+            dict[str, OutpatientTask]: `task`, unchanged.
         """
         assert len(task), \
             colorstr("red", "At least one of `first_visit_intake`, `first_visit_scheduliing`, or `follow_up_visit_scheduling` must be provided.")
@@ -97,11 +113,10 @@ class Simulator:
         return task
     
     
-    def shuffle_data(self, data: dict):
+    def shuffle_data(self, data: dict) -> None:
         """
-        Shuffle the agent test data and (when applicable) split follow-ups
-        into a pending pool that will be activated by the run loop only after
-        each patient's first-visit appointment time has passed.
+        Shuffle the agent test data in place and (when applicable) split follow-ups into a pending pool that the run
+        loop activates only after each patient's first-visit appointment has passed.
 
         Args:
             data (dict): An agent test data to simulate a hospital environmnet.
@@ -138,12 +153,10 @@ class Simulator:
     def _promote_eligible_followups(pending: dict,
                                     ready: list,
                                     environment: HospitalEnvironment,
-                                    processed_first_patients: set):
+                                    processed_first_patients: set) -> None:
         """
-        Promote pending follow-up scheduling tasks into the ready pool once
-        each patient's first-visit appointment has finished, and drop those
-        whose first-visit will never produce a usable appointment.
-        The pool mutations are in-place. Safe to call when `pending` is empty.
+        Promote pending follow-ups into the ready pool once the patient's first visit has finished, and drop those
+        whose first visit will never produce a usable appointment (pools mutated in place).
 
         Args:
             pending (dict): Map of `patient_name -> (gt, test_data)` for follow-ups waiting on their corresponding first-visit.
@@ -190,8 +203,8 @@ class Simulator:
                                                Mutated in-place via `update_current_time(new_time=...)`.
 
         Returns:
-            bool: True if `current_time` actually advanced (caller should retry promotion). 
-                  False if no. candidate falls within the simulation window or `current_time` is already at the cap (caller should break).
+            bool: True if `current_time` advanced (caller should retry promotion); False if no candidate falls within
+                  the simulation window or `current_time` is already at the cap.
         """
         if not pending:
             return False
@@ -224,10 +237,8 @@ class Simulator:
                                   agent_simulation_data: dict,
                                   environment: HospitalEnvironment) -> bool:
         """
-        Seed a synthetic first-visit for follow-up-only mode. Picks the earliest
-        free aligned slot in the doctor's calendar from `_START_DATE` forward,
-        then advances `current_time` past the seed end if needed. No-op if a
-        first-visit entry already exists for the patient.
+        Seed a synthetic first visit for follow-up-only mode in the earliest free aligned doctor slot, then advance
+        `current_time` past it if needed. No-op if the patient already has a first-visit entry.
 
         Args:
             gt (dict): Ground-truth follow-up data (`patient`, `attending_physician`, ...).
@@ -436,23 +447,17 @@ class Simulator:
 
 
     @staticmethod
-    def _save_agent_results(save_path: str, agent_results: dict, metadata: dict = None) -> None:
+    def _save_agent_results(save_path: str, agent_results: dict, metadata: Optional[dict] = None) -> None:
         """
-        Save the agent results in the columnar (struct-of-arrays) format, and additionally a grouped
-        (array-of-structs) view next to it, so one simulation result's fields sit together per record.
+        Save the agent results in the columnar format, plus a grouped (one dict per record) view next to it.
 
-        The grouped file is a read-only convenience view; the columnar file stays the source of truth
-        (resume and evaluation read it). Columns of uneven length (e.g. an empty `trial`) are padded
-        with `None` so every record carries every key.
+        The columnar file is the source of truth (resume and evaluation read it); in the grouped view, columns of
+        uneven length are padded with `None`.
 
         Args:
-            save_path (str): Path to the columnar result JSON; the grouped view is saved alongside it
-                             as `<name>_grouped<ext>`.
+            save_path (str): Path to the columnar result JSON; the grouped view is saved as `<name>_grouped<ext>`.
             agent_results (dict): `{task: {key: [...]}}` columnar results.
-            metadata (dict, optional): Run metadata (operating window + negotiation τ) stored under the
-                             `_metadata` key in both files, so downstream tools read it straight from the
-                             result rather than re-deriving it. The `_` prefix keeps evaluators (which
-                             iterate task keys) from treating it as a task.
+            metadata (Optional[dict], optional): Run metadata stored under `_metadata` in both files. Defaults to None.
         """
         agent_results = encode_non_finite(agent_results)
         columnar = {**agent_results, '_metadata': metadata} if metadata is not None else agent_results
@@ -473,19 +478,16 @@ class Simulator:
         json_save_fast(f"{root}_grouped{ext}", grouped)
 
 
-    def _collect_metadata(self, environment) -> dict:
+    def _collect_metadata(self, environment: HospitalEnvironment) -> dict:
         """
-        Run metadata for the result files: the device operating window and the follow-up scheduling
-        policies actually used, so a run is reproducible from its result alone.
+        Run metadata for the result files: the device operating window and the follow-up policies, metrics and
+        evaluations used (each None without a follow-up scheduling task). Values are cast to built-in types.
 
-        `policies` lists every policy in priority order (id, name, source, source_sha256, api_version, hooks,
-        params); readers such as the evaluator go through `h_adminsim.utils.policy_utils.run_policy_summary`. The poles
-        (`hospital-side`, `patient-side`) record their pinned knob values (1.0); readers tell them apart by the
-        `mode` param, not by τ. `metrics` and `evaluations` list the user-defined negotiation metrics and evaluations the same way. All are None
-        when the run has no follow-up scheduling task.
+        Args:
+            environment (HospitalEnvironment): The run's environment (operating window).
 
-        Every value is cast back to built-in types, since config-sourced values are `ruamel.yaml`
-        scalars and containers that `orjson` cannot serialize.
+        Returns:
+            dict: ``{'start_hour', 'end_hour', 'time_unit', 'policies', 'metrics', 'evaluations'}``.
         """
         metadata = {
             'start_hour': environment._START_HOUR,
@@ -507,12 +509,8 @@ class Simulator:
     @staticmethod
     def _record_virtual_first_visits(agent_results: dict, environment: HospitalEnvironment) -> None:
         """
-        Record the virtual first-visits this run seeded, so a resume restores the same calendar.
-
-        These bookings are predicted by no task, yet they hold a doctor slot and count toward
-        `booking_num`, so without them a resumed run sees a hospital with more availability than
-        the interrupted one had. They go under `VIRTUAL_FIRST_VISIT_KEY` rather than a task key,
-        and a resumed run re-records the restored seeds together with its own.
+        Record the virtual first-visits this run seeded under `VIRTUAL_FIRST_VISIT_KEY`, so a resume restores the
+        same calendar (they hold doctor slots no task predicted).
 
         Args:
             agent_results (dict): Columnar results about to be saved; mutated in place.
@@ -527,18 +525,16 @@ class Simulator:
             simulation_data_path: str,
             output_dir: str,
             resume: bool = False,
-            verbose: bool = False):
+            verbose: bool = False) -> None:
         """
-        Run the agent-based hospital administrative simulation.
+        Run the agent-based hospital administrative simulation. On an error, the partial results are saved and the
+        error is re-raised.
 
         Args:
             simulation_data_path (str): Path to a JSON file or directory containing agent simulation input data.
             output_dir (str): Directory to store simulation results.
             resume (bool, optional): Whether to resume a previous simulation if result files exist. Defaults to False.
             verbose (bool, optional): Whether to print detailed logs during task execution. Defaults to False.
-
-        Raises:
-            Exception: Propagates any errors encountered during simulation or result saving.
         """
         # Initialize environment
         self.__env_setup(self.random_seed, resume)

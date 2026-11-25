@@ -1,6 +1,6 @@
 from types import MappingProxyType
-from typing import Iterable, Mapping, Optional
 from collections.abc import Mapping as MappingABC
+from typing import Any, Iterable, Iterator, Mapping, Optional, Union, TYPE_CHECKING
 from dataclasses import dataclass, field, replace
 
 from h_adminsim.registry.errors import PolicyRequirementError
@@ -8,16 +8,37 @@ from h_adminsim.registry.policy import POLICY_REQUIRES_PATIENT_PREFIX, POLICY_RE
 from h_adminsim.utils.policy_utils import deep_freeze, thaw
 from h_adminsim.utils.common_utils import get_iso_time, str_to_datetime
 
+if TYPE_CHECKING:
+    from h_adminsim.policy.base import Policy
+    from h_adminsim.policy.metric import Metric
 
 
-def _freeze(mapping: Optional[Mapping]) -> Mapping:
-    """A read-only shallow copy of `mapping`."""
+
+def _freeze(mapping: Optional[Mapping] = None) -> Mapping:
+    """
+    A read-only shallow copy of `mapping`.
+
+    Args:
+        mapping (Optional[Mapping], optional): The mapping to copy (None -> empty). Defaults to None.
+
+    Returns:
+        Mapping: The read-only copy.
+    """
     return MappingProxyType(dict(mapping or {}))
 
 
 
-def _declared(obj, prefix: str) -> set:
-    """Keys a policy / metric declared in `requires` under `prefix` (``patient.<field>`` -> ``<field>``)."""
+def _declared(obj: Any, prefix: str) -> set:
+    """
+    Keys a policy / metric declared in `requires` under `prefix` (``patient.<field>`` -> ``<field>``).
+
+    Args:
+        obj (Any): The policy or metric (instance or class).
+        prefix (str): The `requires` prefix (``'patient.'`` or ``'metric.'``).
+
+    Returns:
+        set: The declared keys, without the prefix.
+    """
     return {r[len(prefix):] for r in getattr(obj, 'requires', ()) or () if r.startswith(prefix)}
 
 
@@ -48,13 +69,30 @@ class _DeclaredView(MappingABC):
 
 
     @staticmethod
-    def _freeze_data(data: Optional[Mapping]) -> Mapping:
-        """The read-only form of the data."""
+    def _freeze_data(data: Optional[Mapping] = None) -> Mapping:
+        """
+        The read-only form of the data.
+
+        Args:
+            data (Optional[Mapping], optional): The data (None -> empty). Defaults to None.
+
+        Returns:
+            Mapping: A deep-frozen copy.
+        """
         return deep_freeze(dict(data or {}))
 
 
     def _missing_message(self, who: str, key: str) -> str:
-        """Error message for a declared key the data does not have."""
+        """
+        Error message for a declared key the data does not have.
+
+        Args:
+            who (str): The reader, as shown in the message.
+            key (str): The missing key.
+
+        Returns:
+            str: The message.
+        """
         return f"{who} needs `{self.PREFIX}{key}`, which is not available."
 
 
@@ -76,18 +114,18 @@ class _DeclaredView(MappingABC):
             raise PolicyRequirementError(self._missing_message(who, key))
 
 
-    def __getitem__(self, key: str):
+    def __getitem__(self, key: str) -> Any:
         self._check(key)
         return self._data[key]
 
 
-    def __contains__(self, key) -> bool:
+    def __contains__(self, key: object) -> bool:
         if self._allowed is not None and key not in self._allowed:
             self._check(key)
         return key in self._data
 
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[str]:
         return (k for k in self._data if self._allowed is None or k in self._allowed)
 
 
@@ -99,22 +137,27 @@ class _DeclaredView(MappingABC):
         return f"{type(self).__name__}({dict(thaw(dict(self.items())))!r})"
 
 
-    def restricted_to(self, keys: Iterable[str], owner: Optional[str]):
+    def restricted_to(self, keys: Iterable[str], owner: Optional[str] = None) -> "_DeclaredView":
         """
         A view over the same data that only reads `keys`.
 
         Args:
             keys (Iterable[str]): Keys the reader declared.
-            owner (Optional[str]): Id of the reading policy / metric, for error messages.
+            owner (Optional[str], optional): Id of the reading policy / metric, for error messages. Defaults to None.
 
         Returns:
-            The restricted view (same class as this one).
+            _DeclaredView: The restricted view (same class as this one).
         """
         return type(self)(self, allowed=keys, owner=owner)
 
 
     def to_dict(self) -> dict:
-        """The full data in plain (JSON-serializable) form, whatever the view allows."""
+        """
+        The full data in plain (JSON-serializable) form, whatever the view allows.
+
+        Returns:
+            dict: The data.
+        """
         return thaw(self._data)
 
 
@@ -129,6 +172,16 @@ class PatientView(_DeclaredView):
     PREFIX = POLICY_REQUIRES_PATIENT_PREFIX
 
     def _missing_message(self, who: str, key: str) -> str:
+        """
+        Error message for a declared patient field missing from the agent data.
+
+        Args:
+            who (str): The reader, as shown in the message.
+            key (str): The missing field.
+
+        Returns:
+            str: The message.
+        """
         return (f"{who} needs `patient.{key}`, which this patient's agent data does not have. "
                 f"Add the field to the data (or regenerate it) before using this policy.")
 
@@ -144,10 +197,29 @@ class MetricView(_DeclaredView):
     PREFIX = POLICY_REQUIRES_METRIC_PREFIX
 
     @staticmethod
-    def _freeze_data(data: Optional[Mapping]) -> Mapping:
+    def _freeze_data(data: Optional[Mapping] = None) -> Mapping:
+        """
+        The read-only form of the data.
+
+        Args:
+            data (Optional[Mapping], optional): The metrics (None -> empty). Defaults to None.
+
+        Returns:
+            Mapping: A shallow read-only copy (metric values are scalars).
+        """
         return _freeze(data)    # scalar values: a shallow read-only copy is enough
 
     def _missing_message(self, who: str, key: str) -> str:
+        """
+        Error message for a declared metric this negotiation does not have.
+
+        Args:
+            who (str): The reader, as shown in the message.
+            key (str): The missing metric id.
+
+        Returns:
+            str: The message.
+        """
         return (f"{who} needs `metric.{key}`, which this negotiation does not have; list the metric under `metrics:` "
                 f"in the policy config (before any metric that reads it).")
 
@@ -199,7 +271,7 @@ class RestrictContext:
         return (opening - str_to_datetime(self.current_time)).total_seconds() / 3600
 
 
-    def for_policy(self, policy) -> "RestrictContext":
+    def for_policy(self, policy: "Policy") -> "RestrictContext":
         """
         The context as `policy` sees it: `patient` restricted to the fields the policy declared in `requires`.
 
@@ -290,13 +362,13 @@ class ReviewContext:
         object.__setattr__(self, 'schedules', deep_freeze(dict(self.schedules or {})))
 
 
-    def for_policy(self, policy) -> "ReviewContext":
+    def for_policy(self, policy: Union["Policy", "Metric"]) -> "ReviewContext":
         """
         The context as `policy` sees it: `patient` and `metrics` restricted to what the policy declared in `requires`
         (``preference`` stays readable).
 
         Args:
-            policy (Policy | Metric): The policy or metric about to read the context.
+            policy (Union[Policy, Metric]): The policy or metric about to read the context.
 
         Returns:
             ReviewContext: The restricted copy.

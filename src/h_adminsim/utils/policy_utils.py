@@ -1,24 +1,27 @@
 from types import MappingProxyType
-from typing import Iterable, Optional
 from collections.abc import Mapping as MappingABC
+from typing import TYPE_CHECKING, Any, Iterable, Optional
 
-from h_adminsim.utils import colorstr
 from h_adminsim.registry.errors import PolicyError
 from h_adminsim.registry.policy import POLICY_PATIENT_SYMPTOM_FIELDS
+from h_adminsim.utils import colorstr
 from h_adminsim.utils.filesys_utils import get_files, json_load
 
+if TYPE_CHECKING:
+    from h_adminsim.policy.stack import PolicyStack
 
 
 
-def deep_freeze(value):
+
+def deep_freeze(value: Any) -> Any:
     """
     A read-only deep copy of a JSON-like value: dicts become read-only mappings and lists become tuples.
 
     Args:
-        value: Any JSON-like value.
+        value (Any): Any JSON-like value.
 
     Returns:
-        The frozen value (scalars are returned as they are).
+        Any: The frozen value (scalars are returned as they are).
     """
     if isinstance(value, MappingABC):
         return MappingProxyType({k: deep_freeze(v) for k, v in value.items()})
@@ -28,15 +31,15 @@ def deep_freeze(value):
 
 
 
-def thaw(value):
+def thaw(value: Any) -> Any:
     """
     The plain (JSON-serializable) form of a value frozen by `deep_freeze`.
 
     Args:
-        value: A frozen value.
+        value (Any): A frozen value.
 
     Returns:
-        The value with read-only mappings turned into dicts and tuples into lists.
+        Any: The value with read-only mappings turned into dicts and tuples into lists.
     """
     if isinstance(value, MappingABC):
         return {k: thaw(v) for k, v in value.items()}
@@ -48,10 +51,8 @@ def thaw(value):
 
 def patient_record(gt: dict, test_data: Optional[dict] = None) -> dict:
     """
-    The patient record a policy sees as `ctx.patient`: every field of the follow-up patient's ground-truth entry
-    (``department``, ``attending_physician``, ``preference``, ``occupation``, ``distance``, ``unavailable``,
-    ``required_tests``, ...) plus the fields of its ``constraint.symptom`` listed in `POLICY_PATIENT_SYMPTOM_FIELDS`
-    (``urgency``, ``disease``, ``symptoms``) when present.
+    The patient record a policy sees as `ctx.patient`: the follow-up patient's ground-truth entry plus the
+    ``constraint.symptom`` fields listed in `POLICY_PATIENT_SYMPTOM_FIELDS` (``urgency``, ``disease``, ``symptoms``) when present.
 
     Args:
         gt (dict): The patient's ground-truth entry in the agent data.
@@ -71,8 +72,8 @@ def patient_record(gt: dict, test_data: Optional[dict] = None) -> dict:
 
 def followup_patient_records(agent_data: dict) -> dict:
     """
-    The patient records of every follow-up patient of one hospital's agent data, wherever the simulator keeps the
-    patient (the ``agent_data`` list, or the ``_pending_followups`` / ``_ready_followups`` pools it builds while running).
+    Patient records of every follow-up patient in one hospital's agent data.
+    Covers the ``agent_data`` list and the ``_pending_followups`` / ``_ready_followups`` pools built while running.
 
     Args:
         agent_data (dict): One hospital's agent data.
@@ -109,10 +110,10 @@ def available_patient_fields(records: Iterable[dict]) -> set:
 
 
 
-def check_policy_requirements(policies, agent_data_path: str):
+def check_policy_requirements(policies: 'PolicyStack', agent_data_path: str) -> None:
     """
-    Check, before a run starts, that every agent data file under `agent_data_path` provides the patient fields the
-    policies require. Files without follow-up patients are skipped.
+    Check before a run that every agent data file provides the patient fields the policies require.
+    Files without follow-up patients are skipped.
 
     Args:
         policies (PolicyStack): The run's policies.
@@ -129,21 +130,19 @@ def check_policy_requirements(policies, agent_data_path: str):
 
 
 
-def run_policies(metadata: Optional[dict], where: str = 'run') -> list:
+def run_policies(metadata: Optional[dict] = None, where: str = 'run') -> list:
     """
     The policy list a simulation run recorded under ``_metadata.policies`` (see `PolicyStack.describe`).
 
     Args:
-        metadata (Optional[dict]): The run's ``_metadata`` block.
+        metadata (Optional[dict], optional): The run's ``_metadata`` block. Defaults to None.
         where (str, optional): Label of the run (e.g. its result file), prefixed to error messages. Defaults to 'run'.
 
-    Raises:
-        PolicyError: If the run uses the pre-plugin result format (no ``policies`` key, or the old ``policy`` block is
-                     still present), or recorded no policies (it ran no follow-up scheduling task).
-
     Returns:
-        list: One ``{'id', 'name', 'source', 'source_sha256', 'api_version', 'hooks', 'params'}`` per policy, in
-              priority order.
+        list: One ``{'id', 'name', 'source', 'source_sha256', 'api_version', 'hooks', 'params'}`` per policy, in priority order.
+
+    Raises:
+        PolicyError: If the result is pre-plugin (no ``policies``, or ``policy`` still present) or recorded no policies.
     """
     metadata = metadata or {}
     if 'policies' not in metadata:
@@ -160,22 +159,17 @@ def run_policies(metadata: Optional[dict], where: str = 'run') -> list:
 
 
 
-def run_policy_summary(metadata: Optional[dict], where: str = 'run') -> dict:
+def run_policy_summary(metadata: Optional[dict] = None, where: str = 'run') -> dict:
     """
     The negotiation mode and urgent capacity protection of a run, read from its ``_metadata.policies``.
-
-    The review policy is the highest-priority `result_gain` one, else the highest-priority policy serving `review`;
-    the protection is the highest-priority `capacity_protection` one. A run without a `review` policy keeps every
-    patient on their preference, so its mode is ``'patient-side'``.
+    Review = first `result_gain` policy, else first `review` policy; without one the mode is ``'patient-side'``.
 
     Args:
-        metadata (Optional[dict]): The run's ``_metadata`` block.
+        metadata (Optional[dict], optional): The run's ``_metadata`` block. Defaults to None.
         where (str, optional): Label of the run (e.g. its result file), prefixed to error messages. Defaults to 'run'.
 
     Returns:
-        dict: ``{'mode', 'review', 'capacity_protection', 'policies'}`` — ``mode`` (str or None for a custom review
-              policy without one), ``review`` (the review policy's entry or None), ``capacity_protection`` (its params
-              or None) and the full ``policies`` list.
+        dict: ``{'mode', 'review', 'capacity_protection', 'policies'}``; ``mode`` is None for a custom review policy without one, ``review``/``capacity_protection`` (params) None when absent.
     """
     policies = run_policies(metadata, where)
     reviewers = [p for p in policies if 'review' in (p.get('hooks') or [])]

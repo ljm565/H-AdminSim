@@ -8,10 +8,16 @@ from h_adminsim.utils.common_utils import personal_id_to_birth_date
 
 class OutpatientTask:
     def __init__(self):
+        """
+        Initialize the token usage statistics.
+        """
         self.reset_token_data()
 
     
-    def reset_token_data(self):
+    def reset_token_data(self) -> None:
+        """
+        Reset the token usage statistics of the patient, staff and supervisor agents.
+        """
         self.token_stats = {
             'simulation_n': 0,
             'patient_token': {'input':[], 'output': [], 'reasoning': []}, 
@@ -23,9 +29,9 @@ class OutpatientTask:
     def save_token_data(self, 
                         patient_token: Optional[dict] = None, 
                         admin_staff_token: Optional[dict] = None, 
-                        supervisor_token: Optional[dict] = None):
+                        supervisor_token: Optional[dict] = None) -> None:
         """
-        Save the API token usage data
+        Append one simulation's API token usage to the statistics.
 
         Args:
             patient_token (Optional[dict], optional): Patient token information. Defaults to None.
@@ -116,9 +122,9 @@ class OutpatientTask:
     def get_test_appointment_fhir_resource(self,
                                            metadata: dict,
                                            department_data: dict,
-                                           schedule_data: dict) -> dict:
+                                           schedule_data: dict) -> list[dict]:
         """
-        Generate a FHIR Appointment resource for the test based on the provided scheduling information.
+        Generate FHIR Appointment resources for the tests based on the provided scheduling information.
 
         Args:
             metadata (dict): Hospital metadata information.
@@ -126,7 +132,7 @@ class OutpatientTask:
             schedule_data (dict): Scheduling information for the patient.
         
         Returns:
-            dict: The generated FHIR Appointment resource.
+            list[dict]: The generated FHIR Appointment resources, one per test.
         """
         fhir_appointment = DataConverter.get_fhir_test_appointments(
             data={

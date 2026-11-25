@@ -1,4 +1,5 @@
 import re
+from typing import Any
 
 from h_adminsim.registry.variables import PRIORITY_MAP
 from h_adminsim.utils.common_utils import (
@@ -18,8 +19,7 @@ def sanitize_id(s: str) -> str:
         s (str): The input string to sanitize.
 
     Returns:
-        str: A sanitized string containing only allowed characters,
-             and no longer than 64 characters.
+        str: The string without disallowed characters, truncated to 64 characters.
     """
     cleaned = re.sub(r'[^A-Za-z0-9\-\.]', '', s)
     return cleaned[:64]
@@ -138,19 +138,20 @@ def get_all_doctor_info(practitioners: list[dict],
                         schedules: list[dict],
                         slots: list[dict],
                         appointments: list[dict],
-                        **kwargs) -> dict:
+                        **kwargs: Any) -> dict:
     """
-    Make a current state of doctoral information based on the FHIR server.
+    Build the current doctor information from FHIR resources.
 
     Args:
-        practitioners (list[dict]): Practitioner resources currently used in the hospital environment of the simulation.
-        practitioner_roles (list[dict]): PractitionerRole resources currently used in the hospital environment of the simulation.
-        schedules (list[dict]): Schedule resources currently used in the hospital environment of the simulation.
-        slots (list[dict]): Slot resources currently used in the hospital environment of the simulation._
-        appointments (list[dict]): Appointment resources currently used in the hospital environment of the simulation.
+        practitioners (list[dict]): Practitioner resources.
+        practitioner_roles (list[dict]): PractitionerRole resources.
+        schedules (list[dict]): Schedule resources.
+        slots (list[dict]): Slot resources (non-free ones are fixed schedules).
+        appointments (list[dict]): Appointment resources.
+        **kwargs (Any): ``start``, ``end``, ``interval`` (hours); when all are given, fixed schedules are merged on that grid.
 
     Returns:
-        dict: Current state of doctoral information. 
+        dict: ``{doctor name: {'department', 'specialty', 'schedule', 'capacity_per_hour', 'capacity', ...}}``.
     """
     # Prepare several pre-required data
     doctor_information = dict()
@@ -229,20 +230,21 @@ def get_all_test_info(practitioner_roles: list[dict],
                       schedules: list[dict],
                       slots: list[dict],
                       appointments: list[dict],
-                      **kwargs) -> dict:
+                      **kwargs: Any) -> dict:
     """
-    Make a current state of test information based on the FHIR server.
+    Build the current test (and per-device schedule) information from FHIR resources.
 
     Args:
-        practitioner_roles (list[dict]): PractitionerRole resources currently used in the hospital environment of the simulation.
-        healthcare_services (list[dict]): HealthcareService resources currently used in the hospital environment of the simulation.
-        devices (list[dict]): Device resources currently used in the hospital environment of the simulation.
-        schedules (list[dict]): Schedule resources currently used in the hospital environment of the simulation.
-        slots (list[dict]): Slot resources currently used in the hospital environment of the simulation.
-        appointments (list[dict]): Appointment resources currently used in the hospital environment of the simulation.
+        practitioner_roles (list[dict]): PractitionerRole resources (for department codes).
+        healthcare_services (list[dict]): HealthcareService resources (one per test).
+        devices (list[dict]): Device resources.
+        schedules (list[dict]): Schedule resources.
+        slots (list[dict]): Slot resources (non-free ones are fixed schedules).
+        appointments (list[dict]): Appointment resources.
+        **kwargs (Any): ``start``, ``end``, ``interval`` (hours); when all are given, fixed schedules are merged on that grid.
 
     Returns:
-        dict: Current state of test information.
+        dict: ``{department: [test info with 'code', 'duration_hour', 'priority', 'devices', ...]}``.
     """
     # Prepare several pre-required data
     test_information = dict()

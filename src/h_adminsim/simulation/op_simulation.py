@@ -20,12 +20,18 @@ class OPSimulation:
     def __init__(self,
                  patient_agent: PatientAgent,
                  admin_staff_mas: "HospitalMAS"):
+        """
+        Store the two agents the simulation drives.
 
+        Args:
+            patient_agent (PatientAgent): The simulated patient.
+            admin_staff_mas (HospitalMAS): The administration staff multi-agent system.
+        """
         self.patient_agent = patient_agent
         self.admin_staff_mas = admin_staff_mas
 
 
-    def _init_history(self):
+    def _init_history(self) -> None:
         """
         Reset the dialogue histories.
         """

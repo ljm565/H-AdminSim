@@ -1,6 +1,6 @@
 import os
-from typing import Optional
 from importlib import resources
+from typing import Any, Optional
 
 from h_adminsim.agent.base import BaseAgent
 from h_adminsim.utils import colorstr, log
@@ -18,7 +18,20 @@ class SupervisorAgent(BaseAgent):
                  user_prompt_path: Optional[str] = None,
                  log_verbose: bool = True,
                  **kwargs):
-        
+        """
+        Set up the supervisor agent.
+
+        Args:
+            target_task (str): The task to extract from (only ``'first_visit_intake'``).
+            model (str): The agent's model.
+            api_key (Optional[str], optional): API key for the model. Defaults to None.
+            use_vllm (bool, optional): Whether to use the vLLM client. Defaults to False.
+            vllm_endpoint (Optional[str], optional): vLLM server endpoint. Defaults to None.
+            system_prompt_path (Optional[str], optional): Custom system prompt file. Defaults to None.
+            user_prompt_path (Optional[str], optional): Custom user prompt file. Defaults to None.
+            log_verbose (bool, optional): Whether to log initialization. Defaults to True.
+            **kwargs (Any): Environment settings passed to `BaseAgent`.
+        """
         super().__init__(
             model=model,
             api_key=api_key,
@@ -46,15 +59,16 @@ class SupervisorAgent(BaseAgent):
                      system_prompt_path: Optional[str] = None, 
                      user_prompt_path: Optional[str] = None) -> tuple[str, str]:
         """
-        Initialize the system prompt for the administration staff agent.
+        Load the supervisor's system prompt and user prompt template.
 
         Args:
             system_prompt_path (Optional[str], optional): Path to a custom system prompt file. 
                                                           If not provided, the default system prompt will be used. Defaults to None.
             user_prompt_path (Optional[str], optional): Path to a custom user prompt file. 
                                                         If not provided, the default user prompt will be used. Defaults to None.
+
         Raises:
-            FileNotFoundError: If the specified system prompt file does not exist.
+            FileNotFoundError: If a specified prompt file does not exist.
 
         Returns:
             tuple[str, str]: The system prompt and user prompt templates.
@@ -90,13 +104,15 @@ class SupervisorAgent(BaseAgent):
         return system_prompt, user_prompt_template
 
 
-    def act(self, state) -> tuple[str, bool]:
+    def act(self, state: Any) -> tuple[str, bool]:
         """
-        Not a MAS turn-taking agent.
+        Not supported: the supervisor is a post-hoc extractor called via ``__call__``, never a MAS turn-taking agent.
 
-        ``SupervisorAgent`` is a post-hoc extractor invoked directly via
-        ``__call__``; it never participates in the MAS routing tree, so ``act``
-        is implemented only to satisfy the ``BaseAgent`` abstract contract.
+        Args:
+            state (Any): Unused.
+
+        Raises:
+            NotImplementedError: Always.
         """
         raise NotImplementedError(
             colorstr("red", "SupervisorAgent is not a MAS agent; call it directly via __call__.")
@@ -109,15 +125,16 @@ class SupervisorAgent(BaseAgent):
                  verbose: bool = True,
                  **kwargs) -> str:
         """
-        Call the patient agent with a user prompt and return the response.
+        Run the supervisor model on the user prompt.
 
         Args:
-            user_prompt (str): The user prompt to send to the patient agent.
+            user_prompt (str): The extraction prompt (e.g. the filled user prompt template).
             using_multi_turn (bool, optional): Whether to use multi-turn conversation. Defaults to False.
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
+            **kwargs (Any): Extra arguments passed to the LLM client.
 
         Returns:
-            str: The response from the patient agent.
+            str: The supervisor's reply.
         """
         response = self.client(
             user_prompt=user_prompt,

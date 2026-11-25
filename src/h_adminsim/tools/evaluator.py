@@ -2,9 +2,9 @@ import os
 import math
 import numpy as np
 from bisect import bisect_right
-from typing import Optional, Union
 from decimal import Decimal, getcontext
 from collections import Counter, defaultdict
+from typing import Any, Iterator, Optional, Union
 
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.common_utils import (
@@ -23,11 +23,16 @@ from h_adminsim.utils.filesys_utils import get_files, json_load, json_save_fast
 
 class Evaluator:
     """
-    Base evaluator: file loading, generic accuracy / token-cost / supervisor / human evaluation shared
-    across tasks. Task-specific evaluation lives in the child classes (`FirstVisitEvaluator`,
-    `FollowUpVisitEvaluator`).
+    Base evaluator: result loading and the accuracy / token-cost / supervisor / human evaluations shared by tasks.
     """
-    def __init__(self, path, human_eval=False):
+    def __init__(self, path: str, human_eval: bool = False):
+        """
+        Collect the run's `*_result.json` files (and human evaluation `.txt` files).
+
+        Args:
+            path (str): Results directory of a run.
+            human_eval (bool, optional): If True, also collect the `.txt` human evaluation files. Defaults to False.
+        """
         self.path = path
         self.files = get_files(self.path, '_result.json')
         if human_eval:
@@ -51,7 +56,7 @@ class Evaluator:
 
     def task_evaluation(self):
         """
-        Perform micro-wise evaluation on the aggregated results.
+        Log macro- and micro-wise accuracy and failure types per task, and draw `fails.png`.
         """
         aggregated_results = dict()
         for file in self.files:
@@ -149,10 +154,13 @@ class Evaluator:
 
     def token_cost(self, model_name: str):
         """
-        Estimate and print API cost from token usage statistics per task.
+        Log the average API cost and token usage per simulation for each task.
 
         Args:
-            model_name (str): Model name. One of 'gpt-5-nano', 'gpt-5-mini', 'gemini-2.5-flash'.
+            model_name (str): Priced model: 'gpt-5-nano', 'gpt-5-mini' or 'gemini-2.5-flash'.
+
+        Raises:
+            ValueError: If `model_name` has no pricing.
         """
         if model_name not in self.model_pricing:
             raise ValueError(f"Unknown model: {model_name}. Choose from {list(self.model_pricing.keys())}")
@@ -228,7 +236,7 @@ class Evaluator:
 
     def supervisor_evaluation(self):
         """
-        Evaluate the supervisor's necessity to intervene in tasks.
+        Log how often the supervisor (or feedback) intervened and with what outcome.
         """
         aggregated_results = dict()
         for file in self.files:
@@ -288,7 +296,7 @@ class Evaluator:
 
     def human_evaluation(self):
         """
-        Aggregate and evaluate human evaluation results from text files.
+        Log arena wins and average scores per model from the tab-separated human evaluation files.
         """
         scores = {'arena': dict(), 'score': dict()}
         all_lines = list()
@@ -328,7 +336,7 @@ class FirstVisitEvaluator(Evaluator):
     """
     def department_evaluation(self):
         """
-        Evaluate solely department prediction accuracy.
+        Log the department error rate of the intake results.
         """
         aggregated_results = {'first_visit_intake': {'gt': [], 'pred': [], 'status': []}}
 
@@ -362,7 +370,7 @@ class FirstVisitEvaluator(Evaluator):
 
     def calculate_avg_rounds(self):
         """
-        Calculate average required intake rounds
+        Log the mean and std of staff rounds per intake dialogue.
         """
         counts = list()
         for file in self.files:
@@ -384,12 +392,8 @@ class FirstVisitEvaluator(Evaluator):
 
 class NegotiationRecordMixin:
     """
-    Read and interpret the follow-up task's stored records across any list of result files, so the same helpers
-    serve every run (hospital-side, interpolated, patient-side, protection runs): each patient's final prediction,
-    its ``negotiation_metrics`` (cohorts and their statistics), and its ``capacity_protection`` record (the
-    protection's cost against the unprotected counterfactual), plus the generic wait / cost statistics and the
-    run's start-of-simulation test capacity. Holds no run state; the files (and the operating window, where
-    needed) are always passed in.
+    Stateless helpers reading the follow-up task's stored records (final predictions, ``negotiation_metrics``,
+    ``capacity_protection``) from any list of result files, plus wait / cost statistics and test capacity.
     """
     TASK = 'follow_up_visit_scheduling'
     METRIC_KEYS = ('preference', 'gpc', 'tcl', 'ti', 'G', 'R', 'U', 'U_pref', 'U_thr',
@@ -399,10 +403,15 @@ class NegotiationRecordMixin:
 
 
     @classmethod
-    def _booking_rows(cls, files):
+    def _booking_rows(cls, files: list[str]) -> Iterator[tuple]:
         """
-        `(gt, final pred, status)` of every follow-up row of this run. `gt` is the patient condition dict for a
-        regular booking and a plain string for system rows (e.g. automatic waiting-list rescheduling).
+        Yield `(gt, final pred, final status)` of every follow-up row in `files`.
+
+        Args:
+            files (list[str]): Result files.
+
+        Returns:
+            Iterator[tuple]: The rows; `gt` is a dict for a regular booking, a string for system rows.
         """
         for file in files:
             value = json_load(file).get(cls.TASK) or {}
@@ -411,27 +420,47 @@ class NegotiationRecordMixin:
 
 
     @staticmethod
-    def _final_pred(pred):
-        """A prediction is a dict, or a list of retries; take the last (booked) attempt."""
+    def _final_pred(pred: Any) -> Any:
+        """
+        Last attempt of a prediction (or status) stored as a list of retries.
+
+        Args:
+            pred (Any): A single value, or a list of retries.
+
+        Returns:
+            Any: The last item (None for an empty list), or `pred` itself if not a list.
+        """
         if isinstance(pred, list):
             return pred[-1] if pred else None
         return pred
 
 
     @classmethod
-    def _iter_preds(cls, files):
-        """Yield each patient's final prediction dict for the follow-up task across `files` (failed rows skipped)."""
+    def _iter_preds(cls, files: list[str]) -> Iterator[dict]:
+        """
+        Yield each row's final prediction dict across `files` (non-dict predictions skipped).
+
+        Args:
+            files (list[str]): Result files.
+
+        Returns:
+            Iterator[dict]: The final predictions.
+        """
         for _, fp, _ in cls._booking_rows(files):
             if isinstance(fp, dict):
                 yield fp
 
 
     @classmethod
-    def _iter_metrics(cls, files):
+    def _iter_metrics(cls, files: list[str]) -> Iterator[dict]:
         """
-        Yield each prediction's stored `negotiation_metrics` dict, with the `'inf'` / `'-inf'` strings the
-        simulator writes for infinities (JSON has none) restored to floats — so a free win reads back as
-        `gpc == inf`, while None stays "not computed".
+        Yield each prediction's `negotiation_metrics`, with stored `'inf'` / `'-inf'` strings restored to floats.
+
+        Args:
+            files (list[str]): Result files.
+
+        Returns:
+            Iterator[dict]: The metric dicts (None values stay None).
         """
         restore = {'inf': float('inf'), '-inf': float('-inf')}
         for fp in cls._iter_preds(files):
@@ -441,26 +470,44 @@ class NegotiationRecordMixin:
 
 
     @staticmethod
-    def _is_inf(x) -> bool:
-        """Whether `x` is an infinite number (a free win's GPC / trigger index)."""
+    def _is_inf(x: Any) -> bool:
+        """
+        Whether `x` is an infinite number (a free win's GPC / trigger index).
+
+        Args:
+            x (Any): Value to test.
+
+        Returns:
+            bool: True for an infinite int/float.
+        """
         return isinstance(x, (int, float)) and math.isinf(x)
 
     
     @staticmethod
-    def _mean(xs):
+    def _mean(xs: list) -> float:
+        """
+        Mean of the non-None values.
+
+        Args:
+            xs (list): Values (None entries ignored).
+
+        Returns:
+            float: The mean, or 0.0 if there are no values.
+        """
         xs = [x for x in xs if x is not None]
         return sum(xs) / len(xs) if xs else 0.0
     
 
     @classmethod
-    def _ti(cls, m):
+    def _ti(cls, m: dict) -> float:
         """
-        τ-invariant trigger index ``ti = GPC·TCL``, recomputed from the stored GPC and TCL rather than
-        read from the stored ``ti`` field. The stored ``ti`` is ``GPC·TCL / trigger_temperature``, so it
-        is scaled per run/preference; recomputing keeps it comparable across runs (e.g. interpolation
-        runs with trigger_temperature != 1). ``inf`` for a free win (regardless of TCL, as the policy
-        computes it). Both values are required — a record missing either raises, so a malformed
-        result surfaces instead of being skipped.
+        τ-invariant trigger index ``GPC·TCL`` recomputed from the metrics (the stored ``ti`` is scaled by τ).
+
+        Args:
+            m (dict): Negotiation metrics; ``gpc`` and ``tcl`` are required (KeyError otherwise).
+
+        Returns:
+            float: ``gpc * tcl``, or inf for a free win.
         """
         gpc, tcl = m['gpc'], m['tcl']
         if cls._is_inf(gpc):
@@ -469,8 +516,16 @@ class NegotiationRecordMixin:
 
 
     @classmethod
-    def _metric_row(cls, m):
-        """Flatten a `negotiation_metrics` dict to the dashboard fields (+ derived flags)."""
+    def _metric_row(cls, m: dict) -> dict:
+        """
+        Flatten a `negotiation_metrics` dict to the dashboard fields plus derived flags.
+
+        Args:
+            m (dict): Negotiation metrics.
+
+        Returns:
+            dict: `METRIC_KEYS` values with τ-invariant `ti`, plus `gpc_inf` and `auto`.
+        """
         row = {k: m.get(k) for k in cls.METRIC_KEYS}
         row['ti'] = cls._ti(m)                        # τ-invariant GPC·TCL (not the scaled stored ti)
         row['gpc_inf'] = cls._is_inf(m.get('gpc'))
@@ -480,7 +535,15 @@ class NegotiationRecordMixin:
 
     @staticmethod
     def _wait_stats(hours: list) -> dict:
-        """Count / median / mean / p90 of a list of waiting hours (n=0 and None stats when the list is empty)."""
+        """
+        Count / median / mean / p90 of waiting hours.
+
+        Args:
+            hours (list): Waiting hours.
+
+        Returns:
+            dict: `n`, `median_h`, `mean_h`, `p90_h` (stats None when empty).
+        """
         if not hours:
             return {'n': 0, 'median_h': None, 'mean_h': None, 'p90_h': None}
         return {
@@ -493,7 +556,15 @@ class NegotiationRecordMixin:
 
     @staticmethod
     def _cost_stats(costs: list) -> dict:
-        """Count / worse count, and mean / median over all compared bookings and over the worse ones only."""
+        """
+        Counts of worse/better costs and their mean/median statistics.
+
+        Args:
+            costs (list): Per-booking costs (worse > 1e-6, better < -1e-6).
+
+        Returns:
+            dict: `n`, `worse`, `better`, `mean_all`, `mean_worse`, `median_worse` (stats None when undefined).
+        """
         worse = [c for c in costs if c > 1e-6]
         return {
             'n': len(costs), 'worse': len(worse), 'better': sum(1 for c in costs if c < -1e-6),
@@ -504,14 +575,17 @@ class NegotiationRecordMixin:
     
 
     @classmethod
-    def _cohort_stats(cls, cohort):
+    def _cohort_stats(cls, cohort: list[dict]) -> dict:
         """
-        Aggregate the tile/trade-off statistics of a run's eligible cohort (`eligible_cohort`) over the patients
-        the policy targeted (`is_target`) — all of them on the hospital side, a subset at a threshold τ, none on
-        the patient side. Outcome counts and friction cover every target. R / G / U are reported for three groups,
-        each as `{'targeted': ..., 'switched': ..., 'unswitched': ...}`: `targeted` is every target (what the policy
-        proposed, before refusals filter it), `switched` the targets that took the throughput_max schedule
-        (accepted / forced / auto) — what was realized — and `unswitched` the rest (kept), whose proposal was refused.
+        Outcome counts, friction and R / G / U statistics of a run's targeted patients.
+
+        R / G / U are per group: `targeted` (all targets), `switched` (accepted / forced / auto), `unswitched` (kept).
+
+        Args:
+            cohort (list[dict]): Rows from `eligible_cohort`.
+
+        Returns:
+            dict: The statistics (group-keyed dicts for R / G / U and per-preference counts).
         """
         targets = [d for d in cohort if d['is_target']]
         accepted = [d for d in targets if d['negotiation_outcome'] == 'accepted']
@@ -567,8 +641,16 @@ class NegotiationRecordMixin:
 
 
     @classmethod
-    def _device_bookings(cls, files):
-        """`{device: [(date, start, end), ...]}` from every test booking in a run."""
+    def _device_bookings(cls, files: list[str]) -> dict[str, list[tuple[str, float, float]]]:
+        """
+        Every test booking in `files`, per device.
+
+        Args:
+            files (list[str]): Result files.
+
+        Returns:
+            dict[str, list[tuple[str, float, float]]]: `{device: [(date, start hour, end hour), ...]}`.
+        """
         book = {}
         for fp in cls._iter_preds(files):
             for t in (fp.get('test') or []):
@@ -580,14 +662,17 @@ class NegotiationRecordMixin:
 
     
     @classmethod
-    def eligible_cohort(cls, files: Union[list[str], str]):
+    def eligible_cohort(cls, files: Union[list[str], str]) -> list[dict]:
         """
-        Negotiation-eligible cohort from any run: patients with something to gain (GPC > 0, free win
-        included), whatever the run's policy did with them. `is_target` marks the ones the policy actually
-        targeted (`negotiate`/`auto`) — every eligible patient on the hospital side, a subset at a
-        threshold τ, none on the patient side. A target must also have an executed outcome: on the
-        reasoning fallback (tool calling failed) the policy's action is recorded but never run, leaving
-        the outcome 'none' with the preferred schedule booked, so such a patient is not a target.
+        Negotiation-eligible patients (GPC > 0, free wins included), whatever the run's policy did.
+
+        `is_target` marks a `negotiate`/`auto` action with an executed outcome (not 'none', e.g. on the reasoning fallback).
+
+        Args:
+            files (Union[list[str], str]): Result file(s).
+
+        Returns:
+            list[dict]: `_metric_row` rows with `is_target`.
         """
         if isinstance(files, str):
             files = [files]
@@ -604,20 +689,16 @@ class NegotiationRecordMixin:
     @staticmethod
     def _protection_cost(pred: dict, tests: list, record: dict) -> Optional[dict]:
         """
-        What the protection cost one booking against its unprotected counterfactual — the schedule the same objective
-        would have booked with nothing held back — compared on the tests both schedules placed.
+        Cost of the protection to one booking vs. its unprotected counterfactual, on the tests both placed.
 
         Args:
-            pred (dict): The booked prediction (its `idle_waiting_time` is read for a `stay_min` booking).
-            tests (list): The booking's live tests, i.e. the schedule actually booked under the protection.
-            record (dict): The booking's `capacity_protection` record with `objective` and `unprotected` (which
-                           carries per-test placements in `tests`); only called for a booking the protection blocked.
+            pred (dict): The booked prediction (`idle_waiting_time` read for `stay_min`).
+            tests (list): The booking's live tests.
+            record (dict): The booking's `capacity_protection` record (`objective`, `unprotected`).
 
         Returns:
-            Optional[dict]: `{'objective', 'native', 'result_delay_h', 'extra_visit_days'}` (native = the cost in the
-                            unit of the objective the booking was built with), or None when the two cannot be
-                            compared — the schedules share no placed test, or a `stay_min` booking's two schedules do
-                            not place the same tests (its idle wait spans the whole test set).
+            Optional[dict]: `objective`, `native` (in the objective's unit), `result_delay_h`, `extra_visit_days`; None if
+                            not comparable (no common test, or `stay_min` with different test sets).
         """
         unprotected = record['unprotected']
         if not unprotected.get('all_results_ready_at'):
@@ -657,22 +738,16 @@ class NegotiationRecordMixin:
                        result_file: str,
                        agent_data_path: Optional[str] = None) -> dict:
         """
-        `{(test_code, date): free_hours}` before any follow-up booking (total capacity minus fixed bookings), pooled
-        over the test's devices, from the hospital data of the run (`<agent_data_path>/<hospital>_agent.json`).
-        Closed days carry no capacity. Note the protection's booking limit is based on the total capacity instead
-        (`HospitalEnvironment.test_capacity`).
+        Free test hours before any follow-up booking, pooled over each test's devices (closed days excluded).
 
         Args:
             start_hour (float): Opening hour of the operating window.
-            end_hour (float): Closing hour of the operating window; a device-date's capacity is `end_hour - start_hour`
-                              minus its fixed bookings, and a date booked for the whole window is closed.
+            end_hour (float): Closing hour of the operating window.
             result_file (str): The run's result file (`<dataset>/<run>/<hospital>_agent_result.json`).
-            agent_data_path (Optional[str], optional): Directory holding the agent simulation data the run used.
-                                                       If None, `<dataset>/agent_data` (the sibling of the run's
-                                                       results directory) is used. Defaults to None.
+            agent_data_path (Optional[str], optional): Agent data directory; `<dataset>/agent_data` if None. Defaults to None.
 
         Returns:
-            dict: `{(test_code, date): Decimal free hours}` — exact sums, so a closed day is exactly zero.
+            dict: `{(test_code, date): Decimal free hours}`.
 
         Raises:
             FileNotFoundError: If the run's hospital data is not found.
@@ -709,22 +784,15 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
                  protection_paths: Optional[list[str]] = None,
                  agent_data_path: Optional[str] = None):
         """
+        Load every run's result file and metadata and check the runs are compatible.
+
         Args:
-            hospital_side_path (Optional[str], optional): Hospital-side (τ=0) results directory. Required for the
-                                                          dashboard and the τ seeds; may be omitted when only the
-                                                          protection runs are evaluated. Defaults to None.
-            model_name (Optional[str], optional): Model label stored in the dashboard meta block. Defaults to None.
-            patient_side_path (Optional[str], optional): Patient-side (τ=∞) results directory. Required for the
-                                                         patient pole and per-device ΔU; the hospital-only values
-                                                         are still produced without it. Defaults to None.
-            interpolated_paths (Optional[list[str]], optional): List of interpolated results directories. Defaults to None.
-            protection_paths (Optional[list[str]], optional): Results directories compared by the urgent capacity
-                                                              protection, in any order (each run's mode and ratio come
-                                                              from its `_metadata`). Defaults to None.
-            agent_data_path (Optional[str], optional): Directory holding the agent simulation data the runs used, read
-                                                       by the protection report for test capacity. If None, each run's
-                                                       `<dataset>/agent_data` (the sibling of its results directory)
-                                                       is used. Defaults to None.
+            hospital_side_path (Optional[str], optional): Hospital-side (τ=0) results directory; needed for the dashboard and τ seeds. Defaults to None.
+            model_name (Optional[str], optional): Model label for the dashboard meta block. Defaults to None.
+            patient_side_path (Optional[str], optional): Patient-side (τ=∞) results directory (the ΔU baseline). Defaults to None.
+            interpolated_paths (Optional[list[str]], optional): Interpolated results directories, in order. Defaults to None.
+            protection_paths (Optional[list[str]], optional): Results directories for the capacity protection report. Defaults to None.
+            agent_data_path (Optional[str], optional): Agent data directory for test capacity; each run's `<dataset>/agent_data` if None. Defaults to None.
 
         Raises:
             ValueError: If neither `hospital_side_path` nor `protection_paths` is given.
@@ -787,9 +855,7 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
     @staticmethod
     def _read_data(path: str) -> tuple[str, dict]:
         """
-        Read the `_metadata` block the simulator stored in the result file — the operating window
-        (start/end hour, time_unit) and the follow-up scheduling policies (`policies`). Results in the
-        pre-plugin format (only the old `policy` block) are rejected; convert them first.
+        Find a run's result file and read its `_metadata` (pre-plugin results are rejected by `run_policies`).
 
         Args:
             path (str): Path to a run's results directory.
@@ -800,8 +866,6 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
         Raises:
             FileNotFoundError: If no `*_result.json` file is found under `path`.
             ValueError: If the `_metadata` block is missing in the result file.
-            PolicyError: If `_metadata` is in the pre-plugin format (no `policies`, or the old `policy` block still
-                         present) or recorded no policies (a `ValueError`).
         """
         result_files = sorted(get_files(path, '_result.json'))
         
@@ -824,10 +888,9 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
     
 
     @staticmethod
-    def _sanity_check(*args):
+    def _sanity_check(*args) -> None:
         """
-        Check that the runs are compatible: every `_metadata` key except `policies`, `metrics` and `evaluations` — operating window,
-        time_unit, ... — must have the same value across all runs.
+        Check every `_metadata` key except `policies`, `metrics` and `evaluations` is equal across runs.
 
         Args:
             *args (dict): `_metadata` dicts of the runs to compare.
@@ -847,19 +910,14 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
             raise ValueError(f"Incompatible run metadata (policies excluded) — {detail}")
         
     
-    def _device_delta_u(self):
+    def _device_delta_u(self) -> dict:
         """
-        Per-device ΔU of every run against the baseline: compactness(run) - compactness(baseline) on the actual final
-        bookings, scored against each device's real availability (closed dates and other patients' slots excluded —
-        see `_initial_vacant_slots`). The runs are `self.all_files` (hospital side -> interpolated runs as given ->
-        patient side), and each row's `u` / `du` / `n` lists follow that order. The baseline is the last run — the
-        patient side, or the last interpolated run without one — so its own `du` is 0 (None when it never booked the
-        device), anchoring the curve. Rows are sorted by the hospital-side ΔU descending.
+        Per-device ΔU = compactness(run) - compactness(baseline) of every run in `self.all_files`.
+
+        The baseline is the last run (patient side, else the last interpolated run); rows sort by hospital-side ΔU, descending.
 
         Returns:
-            dict: `{'runs': [result file, ...], 'baseline': result file or None, 'rows': [...]}` — `runs` is what
-                  each row's lists are aligned with (the baseline last); `rows` is empty when there is no baseline
-                  or no device data.
+            dict: `{'runs', 'baseline', 'rows'}`; each row's `u` / `du` / `n` align with `runs` (`rows` empty without baseline or data).
         """
         runs = list(self.all_files)                                         # dashboard order, baseline last
         if len(runs) < 2:
@@ -905,17 +963,14 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
         return {'runs': runs, 'baseline': baseline_file, 'rows': rows}
 
 
-    def _initial_vacant_slots(self):
+    def _initial_vacant_slots(self) -> dict[str, dict[str, set[int]]]:
         """
-        `{device: {date: set(vacant segment indices)}}` — each device's vacant slots before the simulation booked
-        anything, i.e. the slots a simulated booking could actually take. Read from the hospital data shared by every
-        compared run (`test[dept][].devices[dev].schedule`, which lists the intervals already occupied before the
-        simulation), so it is the same for every run.
+        Each device's vacant segments before the simulation, from the hospital data next to the hospital-side run.
 
-        This matters: a device is closed on some dates (its schedule holds one interval covering the whole
-        day) and on open dates a few hours are already taken. Treating those as vacant would invent slots
-        that never existed and distort the front-loading score, so fully-closed dates are dropped and
-        pre-occupied segments are removed.
+        Fully closed dates are dropped and pre-occupied segments removed.
+
+        Returns:
+            dict[str, dict[str, set[int]]]: `{device: {date: vacant segment indices}}` (empty if no hospital data is found).
         """
         # Every compared run shares the hospital data next to the hospital-side result (`<root>/<run>/<hospital>_agent_result.json`)
         parent = os.path.dirname(os.path.dirname(os.path.abspath(self.hospital_file)))
@@ -943,13 +998,22 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
         return avail
 
     
-    def _compactness(self, bookings, offset, universe):
+    def _compactness(self,
+                     bookings: list[tuple[str, float, float]],
+                     offset: dict[str, int],
+                     universe: set[int]) -> Optional[float]:
         """
-        Mann-Whitney front-loading score of a device's bookings: the fraction of (booked-before-free)
-        slot pairs over the slots this device could actually be booked into (`universe`). 1.0 = every
-        booking precedes every remaining free slot (packed early), 0.0 = fully back-loaded,
-        0.5 = interleaved. None when the device has no booking. Every booking must lie on the vacant slots (an open
-        date, no pre-filled overlap) — anything else is a simulator bug and raises.
+        Mann-Whitney front-loading score of a device's bookings over its vacant slots (1.0 = packed early).
+
+        Bookings off the vacant slots are a simulator bug (KeyError on a closed date, AssertionError on overlap).
+
+        Args:
+            bookings (list[tuple[str, float, float]]): `(date, start hour, end hour)` bookings of the device.
+            offset (dict[str, int]): Global slot offset of each open date.
+            universe (set[int]): Global indices of the device's vacant slots.
+
+        Returns:
+            Optional[float]: The score, 1.0 if no free slot remains, None without bookings.
         """
         booked = set()
         for date, s, e in bookings:
@@ -965,23 +1029,14 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
         return good / total
 
 
-    def interpolation_taus(self, tau_n=4):
+    def interpolation_taus(self, tau_n: int = 4) -> dict[str, list[float]]:
         """
-        Pick `tau_n` interior trigger-temperature (τ) candidates per preference for interpolating
-        between the two poles (τ=0 hospital → τ=∞ patient).
+        Evenly-ranked quantiles of the hospital-side finite ``GPC·TCL`` > 0 per preference, as τ seeds for interpolation runs.
 
-        Uses ``ti = GPC·TCL`` recomputed τ-invariantly (via `_ti`, not the scaled stored ``ti`` field),
-        so it is valid for any run regardless of `trigger_temperature`. Setting the ``'negotiation'``
-        policy's ``trigger_temperature`` to a value τ (with ``negotiation_trigger_threshold == 1``) makes
-        exactly the patients with ``GPC·TCL >= τ`` negotiate — equivalently one may keep
-        ``trigger_temperature == 1`` and set ``negotiation_trigger_threshold`` to the same value. So per
-        preference we sort the ti values ascending (visit_min / stay_min, ti > 0; the free-win ``auto``
-        case has ti inf and is excluded) and take evenly-ranked quantile points — giving cutoff
-        candidates that split the cohort into roughly equal bands. `auto` free wins always negotiate
-        regardless of the cutoff, so they are not thresholds.
+        Only seeds: ti shifts once a run at that τ re-books everyone.
 
-        NOTE: ti is endogenous — a run at one of these τ re-books everyone and shifts ti, so the realized
-        negotiation fraction drifts from the intended quantile. Treat these as interpolation *seeds*.
+        Args:
+            tau_n (int, optional): Number of τ candidates per preference. Defaults to 4.
 
         Returns:
             dict[str, list[float]]: ``{'visit_min': [...], 'stay_min': [...]}`` with up to `tau_n` τ each.
@@ -1011,22 +1066,13 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
 
     def dashboard_data(self, save: bool = False) -> dict:
         """
-        Compute every value the negotiation-policy dashboard needs over all runs in `self.all_files` order
-        (hospital side -> interpolated runs as given -> patient side), log a per-run summary, and save it as
-        `dashboard_data.json` in the dataset folder (the parent of the run folders).
-        
+        Compute and log the negotiation dashboard values for every run in `self.all_files` order.
+
         Args:
-            save (bool, optional): Whether to save the dashboard data to `dashboard_data.json`. Defaults to False.
+            save (bool, optional): If True, save to `dashboard_data.json` in the dataset folder. Defaults to False.
 
         Returns:
-            dict: The saved payload —
-                ``eligible``: ``{'runs', 'cohort'}`` — per-run eligible cohorts (`eligible_cohort` rows, GPC > 0),
-                              aligned with ``runs``.
-                ``devices``: per-device ΔU from `_device_delta_u` — ``{'runs', 'baseline', 'rows'}``.
-                ``stats``: ``{'runs', 'cohort', 'device'}`` — per-run cohort stats (`_cohort_stats` plus
-                           ``n_total``, every booking with negotiation metrics) and per-run device ΔU summaries,
-                           each list aligned with its ``runs``.
-                ``meta``: model name, operating window and time unit.
+            dict: ``eligible`` (per-run cohorts), ``devices`` (`_device_delta_u`), ``stats`` (per-run cohort and device summaries), ``meta``.
         """
         # Per-run eligible cohorts and their stats, in `self.all_files` order (hospital -> interpolated -> patient)
         cohorts = [self.eligible_cohort(f) for f in self.all_files]
@@ -1139,35 +1185,16 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
 
     def _protection_summary(self, result_file: str, window: dict) -> dict:
         """
-        Hospital-side outcome of the urgent capacity protection for this run, split by urgency.
+        Urgent capacity protection outcome of one run, over live (uncancelled) bookings.
 
-        Every metric reads live bookings only (not cancelled; tests not cancelled), with the booking time taken from
-        the prediction's `last_updated_time` — which a cancellation overwrites, so cancelled bookings are left out.
-
-        - `urgent` / `normal`: regular bookings (patient-condition rows only) with the failure count and partial
-          bookings (fewer tests than prescribed). `start` holds booking -> earliest test start hours and the share
-          starting within the protection horizon (`horizon_days * 24` hours): the access the protection actually
-          shifts. `end` holds booking -> all-results-ready hours (results of the latest test, not its end time).
-        - `normal_cost`: normal bookings that had a date of their tests held back (`blocked_any`), compared with the
-          unprotected schedule of the same objective on the tests both placed. `by_objective` reports the cost in each
-          objective's own unit (`PROTECTION_COST_UNITS`) — the unit the scheduler minimized, so it is never negative
-          by construction of a different objective; `result_delay_h` / `extra_visit_days` are the same comparison in
-          fixed units over every objective, as auxiliary views. `mean_worse` / `median_worse` are over the bookings
-          actually made worse, `mean_all` over every compared booking (mostly exact zeros).
-        - `window`: the protection's rolling window — for each booking, the test hours placed on dates that were
-          inside `[release_hours, horizon_days * 24)` hours of the booking time, i.e. the capacity the protection
-          governed at that moment — and the urgent share of those hours. `lead_profile` spreads the same hours over
-          lead-time bins (a test date's opening minus its booking time, so each booking is binned relative to its own
-          time): 24h bins up to a week, split at `release_hours` and `horizon_days * 24`, each tagged as `released`,
-          `protected` or `beyond` the window — the device-side view of where urgent bookings land.
-        - `capacity`: utilization of the start-of-simulation test capacity by the final bookings, over all dates and
-          over the first `ceil(horizon_days)` test dates (a fixed calendar view of the window at the start of the run).
+        `urgent` / `normal`: failures, partial bookings and waits (booking -> first test start / all results ready).
+        `normal_cost`: cost to blocked normal bookings vs. their unprotected schedule. `window`: test hours booked
+        inside `[release_hours, horizon_days * 24)` hours of booking, with a lead-time profile. `capacity`: utilization
+        of the start-of-run test capacity, overall and over the first `ceil(horizon_days)` dates.
 
         Args:
-            result_file (str): The run's result file; only its rows are read.
-            window (dict): The rolling window this run is measured over — the run's own `capacity_protection`, or, for
-                           a run without protection, the one it borrows from the protected runs (see
-                           `protection_report`). Only `horizon_days` and `release_hours` are read; both are required.
+            result_file (str): The run's result file.
+            window (dict): Rolling window with `horizon_days` and `release_hours` (the run's own, or borrowed for a baseline).
 
         Returns:
             dict: `{'urgent', 'normal', 'normal_cost', 'window', 'capacity'}`.
@@ -1307,19 +1334,20 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
         return summary
 
 
-    def protection_report(self, save: bool = False):
+    def protection_report(self, save: bool = False) -> list[dict]:
         """
-        Compare the urgent capacity protection across runs: one baseline without protection and runs at several
-        `ratio`s, for one or more negotiation modes at once. Each folder's `_metadata` supplies its operating window,
-        its mode and `capacity_protection` (read from `_metadata.policies`); runs are grouped by mode and ordered by ratio (disabled
-        first). A run without protection measures the rolling window of the protected runs of its mode (or of any
-        run), so baseline and protected runs are read over the same window.
+        Compare the urgent capacity protection across the protection runs, grouped by mode and sorted by ratio.
+
+        A run without protection is measured over the window of a protected run of its mode (else of any mode).
 
         Args:
-            save (bool, optional): Whether to save the protection report to `protection_report.json`. Defaults to False.
+            save (bool, optional): If True, save to `protection_report.json` in the dataset folder. Defaults to False.
 
         Returns:
             list[dict]: One `{'label', 'mode', 'capacity_protection', 'policies', **protection_summary}` per run.
+
+        Raises:
+            ValueError: If no run has capacity protection.
         """
         runs = []
         for path, md in zip(self.protection_files, self.protection_mds):
@@ -1347,8 +1375,18 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
         report.sort(key=lambda r: (r['mode'] or '', (r['capacity_protection'] or {}).get('ratio', 0.0)))
 
         # Logging the protection report, one block per run (grouped by mode, ratio ascending)
-        def val(v, unit='', color='green'):
-            """A logged value: colored with its unit, or `n/a` when undefined (e.g. no booking in the group)."""
+        def val(v: Any, unit: str = '', color: str = 'green') -> str:
+            """
+            A logged value colored with its unit, or `n/a` when None.
+
+            Args:
+                v (Any): The value.
+                unit (str, optional): Unit suffix. Defaults to ''.
+                color (str, optional): Color name. Defaults to 'green'.
+
+            Returns:
+                str: The formatted value.
+            """
             return 'n/a' if v is None else colorstr(color, f'{v}{unit}')
 
         log('--------------Urgent capacity protection--------------')

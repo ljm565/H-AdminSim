@@ -4,7 +4,7 @@ import yaml
 import shutil
 import hashlib
 import importlib.util
-from typing import Callable, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 from h_adminsim.utils import colorstr
 from h_adminsim.registry.errors import PolicyError
@@ -418,7 +418,7 @@ def load_policy_config(paths: Optional[Union[str, os.PathLike, list]] = None) ->
 
     Args:
         paths (Optional[Union[str, os.PathLike, list]], optional): A policy config file, or a list of them in priority
-            order. None (or an empty list) builds `default_policies()`.
+            order. None (or an empty list) builds `default_policies()`. Defaults to None.
 
     Raises:
         PolicyError: If a file is missing or is not valid YAML.
@@ -522,7 +522,7 @@ def snapshot_policy_config(paths: Union[str, os.PathLike, list],
 
 
 
-def pin_policy_config(schedule_task, output_dir: Union[str, os.PathLike]) -> Optional[list]:
+def pin_policy_config(schedule_task: Any, output_dir: Union[str, os.PathLike]) -> Optional[list]:
     """
     Snapshot a run's policy config into its output directory (see `snapshot_policy_config`) and point the config at
     the snapshot, so the saved ``args.yaml`` re-runs exactly these policies and the run's workers load them too.
@@ -532,8 +532,8 @@ def pin_policy_config(schedule_task, output_dir: Union[str, os.PathLike]) -> Opt
     ``args.yaml``). Call it before saving ``args.yaml``.
 
     Args:
-        schedule_task: The ``schedule_task`` section of the simulation config (a mutable mapping, e.g. an `sconf`
-                       config node).
+        schedule_task (Any): The ``schedule_task`` section of the simulation config (a mutable mapping, e.g. an
+                             `sconf` config node).
         output_dir (Union[str, os.PathLike]): The run's output directory.
 
     Returns:

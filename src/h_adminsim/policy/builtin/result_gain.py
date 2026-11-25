@@ -1,15 +1,24 @@
 from importlib import resources
 from dataclasses import dataclass
-from typing import ClassVar, Optional
+from typing import ClassVar, Mapping, Optional
 
-from h_adminsim.utils import log, colorstr
 from h_adminsim.registry.errors import PolicyError
 from h_adminsim.policy.base import Policy, Decision
 from h_adminsim.policy.context import ReviewContext
+from h_adminsim.utils import log, colorstr
 
 
 
 def _prompt(name: str) -> str:
+    """
+    Path of a bundled prompt file.
+
+    Args:
+        name (str): File name under ``h_adminsim/assets/prompts``.
+
+    Returns:
+        str: The prompt's path.
+    """
     return str(resources.files("h_adminsim.assets.prompts").joinpath(name))
 
 
@@ -89,7 +98,7 @@ class ResultGainPolicy(Policy):
         return self.mode != 'threshold'
 
 
-    def _pin_trigger_knobs(self):
+    def _pin_trigger_knobs(self) -> None:
         """Force the trigger knobs to 1.0 on the extremes, which decide without ever reading them."""
         overridden = {k: getattr(self, k) for k in self.TRIGGER_KNOBS if getattr(self, k) != 1.0}
         for k in self.TRIGGER_KNOBS:
@@ -100,19 +109,41 @@ class ResultGainPolicy(Policy):
 
 
     def trigger_temperature_for(self, preference: str) -> float:
-        """τ for the given preference: ``stay_min`` uses the stay temperature, everything else visit."""
+        """
+        τ for the given preference: ``stay_min`` uses the stay temperature, everything else visit.
+
+        Args:
+            preference (str): The patient's scheduling preference.
+
+        Returns:
+            float: The trigger temperature.
+        """
         return self.trigger_temperature_stay if preference == 'stay_min' else self.trigger_temperature_visit
 
 
     def metrics_params(self, preference: str) -> dict:
-        """The TCL softmax temperature; τ is applied later in ``trigger_index``."""
+        """
+        The TCL softmax temperature; τ is applied later in ``trigger_index``.
+
+        Args:
+            preference (str): The patient's scheduling preference (unused).
+
+        Returns:
+            dict: ``{'tcl_temperature': ...}``.
+        """
         return {'tcl_temperature': self.tcl_temperature}
 
 
-    def trigger_index(self, metrics) -> float:
+    def trigger_index(self, metrics: Mapping) -> float:
         """
         ``GPC * TCL / τ``; preferences without a τ (``throughput_max`` / ``indifferent``) use ``GPC * TCL``.
         A free win (``gpc == inf``) is ``inf`` regardless of TCL, so an idle device (TCL 0) cannot turn it into NaN.
+
+        Args:
+            metrics (Mapping): The negotiation metrics (``gpc``, ``tcl``, ``preference``).
+
+        Returns:
+            float: The trigger index.
         """
         if metrics['gpc'] == float('inf'):
             return float('inf')
@@ -121,10 +152,17 @@ class ResultGainPolicy(Policy):
         return metrics['gpc'] * metrics['tcl']
 
 
-    def negotiation_action(self, gpc: float, ti: Optional[float]) -> str:
+    def negotiation_action(self, gpc: float, ti: Optional[float] = None) -> str:
         """
-        ``'keep'`` (leave the patient on their preferred schedule), ``'auto'`` (a free win where the patient concedes
-        nothing, ``gpc == inf``: book throughput_max without persuading) or ``'negotiate'`` (run the persuasion sub-loop).
+        The action for one patient under this policy's mode.
+
+        Args:
+            gpc (float): Gain per concession (``inf`` for a free win).
+            ti (Optional[float], optional): Trigger index; read only in the ``'threshold'`` mode. Defaults to None.
+
+        Returns:
+            str: ``'keep'`` (leave the patient on their preferred schedule), ``'auto'`` (a free win, ``gpc == inf``:
+                 book throughput_max without persuading) or ``'negotiate'`` (run the persuasion sub-loop).
         """
         # patient-side is the no-intervention baseline: never switch, not even a free win.
         if self.mode == 'patient-side':
@@ -146,6 +184,12 @@ class ResultGainPolicy(Policy):
         """
         Trigger index and decision, with the index computed once so the recorded ``ti`` is exactly the value the
         decision used (None on the extremes, which never read it).
+
+        Args:
+            ctx (ReviewContext): The negotiation, with ``gpc``, ``tcl``, ``G``, ``R`` readable in ``ctx.metrics``.
+
+        Returns:
+            Decision: The decision, recording ``ti``.
         """
         ti = None if self.is_pole else self.trigger_index(ctx.metrics)
         action = self.negotiation_action(ctx.metrics['gpc'], ti)

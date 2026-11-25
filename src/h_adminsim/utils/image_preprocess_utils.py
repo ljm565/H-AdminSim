@@ -3,9 +3,9 @@ import os
 import math
 import base64
 from PIL import Image
-from typing import Union
 from collections import Counter
 import matplotlib.pyplot as plt
+from typing import Callable, Union
 
 
 
@@ -15,12 +15,10 @@ def encode_image(image_path: str, encode_base64: bool = True) -> Union[str, byte
 
     Args:
         image_path (str): Path to the image file.
-        encode_base64 (bool, optional): If True, the image is returned as a base64-encoded string.
-                                        If False, the raw binary content is returned. Defaults to True.
+        encode_base64 (bool, optional): Return a base64 string instead of raw bytes. Defaults to True.
 
     Returns:
-        Union[str, bytes]: The base64-encoded string or raw binary content of the image,
-                           depending on the value of `encode_base64`.
+        Union[str, bytes]: Base64 string or raw bytes of the image.
     """
     with open(image_path, "rb") as image_file:
         if encode_base64:
@@ -31,21 +29,16 @@ def encode_image(image_path: str, encode_base64: bool = True) -> Union[str, byte
 
 def encode_resize_image(image_path: str, max_size: tuple[int, int], encode_base64: bool = True) -> Union[str, bytes]:
     """
-    Resize an image to fit within the specified maximum dimensions and return its content,
-    optionally encoded in base64.
-
-    If the original image is smaller than the specified max size, it will be returned without resizing.
+    Downscale an image (keeping aspect ratio, saved as JPEG) to fit within ``max_size`` and return its content.
+    Images that already fit are returned unchanged.
 
     Args:
         image_path (str): Path to the input image file.
-        max_size (tuple[int, int]): Maximum allowed size as (width, height). The image will be resized
-                               proportionally to fit within this box while preserving aspect ratio.
-        encode_base64 (bool, optional): If True, the image content is returned as a base64-encoded string.
-                                        If False, raw binary data is returned. Defaults to True.
+        max_size (tuple[int, int]): Maximum ``(width, height)``.
+        encode_base64 (bool, optional): Return a base64 string instead of raw bytes. Defaults to True.
 
     Returns:
-        Union[str, bytes]: The resized image as a base64-encoded string or raw binary data,
-                           depending on the value of `encode_base64`.
+        Union[str, bytes]: Base64 string or raw bytes of the image.
     """
     with Image.open(image_path) as img:
         original_width, original_height = img.size
@@ -74,19 +67,19 @@ def encode_resize_image(image_path: str, max_size: tuple[int, int], encode_base6
     
 
 
-def get_image_extension(path: str) -> str:
+def get_image_extension(path: str) -> Union[str, tuple[str, str]]:
     """
-    Extract and normalize the image file extension from the given file path.
+    Normalized image format of a path: "png", or "jpeg" for jpg/jpeg.
+    Caveat: it compares the whole ``os.path.splitext`` tuple, so as written it always raises.
 
     Args:
         path (str): Path to the image file.
 
+    Returns:
+        Union[str, tuple[str, str]]: The image format.
+
     Raises:
         ValueError: If the file extension is not a supported image format.
-
-    Returns:
-        str: Normalized image format string. Returns "png" for PNG files,
-             and "jpeg" for JPG or JPEG files. 
     """
     ext = os.path.splitext(path)
     if ext == "png":
@@ -98,20 +91,18 @@ def get_image_extension(path: str) -> str:
 
 
 
-def autopct_format(values: list[int], threshold: float = 5.0):
+def autopct_format(values: list[int], threshold: float = 5.0) -> Callable[[float], str]:
     """
-    Returns a formatting function for pie chart percentages and counts.
+    Pie-chart label formatter showing percentage and count, e.g. '42.0%\n(21)'.
 
     Args:
-        values (list[int]): List of values corresponding to each pie chart slice.
-        threshold (float): Minimum percentage value required to display the label. Slices with 
-                           percentages below this threshold will not show any text.
+        values (list[int]): Slice values.
+        threshold (float, optional): Slices at or below this percentage get no label. Defaults to 5.0.
 
     Returns:
-        function: A function that takes a percentage (float) and returns a formatted string
-                  showing both the percentage and the corresponding count, e.g., '42.0%\n(21)'.
+        Callable[[float], str]: Formatter for matplotlib's ``autopct``.
     """
-    def my_autopct(pct):
+    def my_autopct(pct: float) -> str:
         total = sum(values)
         count = int(round(pct * total / 100.0))
         return f'{pct:.1f}%\n({count})' if pct > threshold else ''
@@ -119,13 +110,13 @@ def autopct_format(values: list[int], threshold: float = 5.0):
 
 
 
-def draw_fail_donut_subplots(fail_data_dict: dict, save_path: str):
+def draw_fail_donut_subplots(fail_data_dict: dict, save_path: str) -> None:
     """
-    Draws donut-style pie chart subplots showing the failure type distribution for each task.
+    Draw one donut chart of failure-type distribution per task and save the figure.
 
     Args:
-        fail_data_dict (dict): A dictionary where keys are task names and values are lists of failure types (e.g., error codes).
-        save_path (str): File path where the final figure will be saved as a PNG.
+        fail_data_dict (dict): ``{task name: list of failure types}``.
+        save_path (str): Output image path.
     """
     keys = list(fail_data_dict.keys())
     num_plots = len(keys)

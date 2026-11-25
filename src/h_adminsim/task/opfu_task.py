@@ -47,8 +47,30 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                  scheduling_strategy: str = 'tool_calling',
                  max_retries: int = 8,
                  patient_vllm_endpoint: Optional[str] = None,
-                 policy_config: Optional[str] = None,
+                 policy_config: Optional[Union[str, list]] = None,
                  policies: Optional[PolicyStack] = None):
+        """
+        Set up the follow-up scheduling task.
+
+        Args:
+            patient_model (str): The patient agent's model.
+            admin_staff_mas (HospitalMAS): The staff MAS (must have a ``follow_up_visit_scheduling`` agent).
+            schedule_cancellation_prob (float, optional): Per-patient probability of a test cancellation event. Defaults to 0.05.
+            request_early_schedule_prob (float, optional): Per-patient probability of a rescheduling request. Defaults to 0.1.
+            preference_rejection_prob (float, optional): Initial probability the patient rejects a proposal. Defaults to 0.3.
+            preference_rejection_prob_decay (float, optional): Factor applied to that probability after each rejection. Defaults to 0.5.
+            fhir_integration (bool, optional): Whether to sync with a FHIR server. Defaults to False.
+            scheduling_max_inference (int, optional): Maximum number of scheduling dialogue turns. Defaults to 5.
+            scheduling_strategy (str, optional): ``'reasoning'`` or ``'tool_calling'``. Defaults to 'tool_calling'.
+            max_retries (int, optional): Retries of a failed LLM simulation. Defaults to 8.
+            patient_vllm_endpoint (Optional[str], optional): vLLM endpoint of the patient model. Defaults to None.
+            policy_config (Optional[Union[str, list]], optional): Policy config file(s) in priority order. Defaults to None.
+            policies (Optional[PolicyStack], optional): Ready-made policies, instead of `policy_config`. With neither,
+                                                        the default (patient-side) policies are used. Defaults to None.
+
+        Raises:
+            ValueError: If both `policy_config` and `policies` are given.
+        """
         super().__init__()
 
         # Initialize variables
@@ -92,15 +114,16 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                          environment: "HospitalEnvironment",
                          additional_patient_conditions: dict = {}) -> OPFUSchedulingSimulation:
         """
-        Initialize an outpatient first-visit intake and scheduling simulation.
+        Initialize an outpatient follow-up scheduling simulation.
 
         Args:
             system_prompt_path (str): Path to the system prompt used to initialize the patient agent.
             environment (HospitalEnvironment): Hospital environment configuration for the simulation.
             additional_patient_conditions (dict, optional): Additional patient-specific conditions for simulation control.
+                                                            Defaults to {}.
 
         Returns:
-            OPFVIntakeSimulation: Configured outpatient intake and scheduling simulation instance.
+            OPFUSchedulingSimulation: Configured follow-up scheduling simulation instance.
         """
         patient_agent = PatientAgent(
             self.patient_model,
@@ -129,7 +152,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
         return sim_environment
 
 
-    def _load_patient_records(self, agent_test_data: dict):
+    def _load_patient_records(self, agent_test_data: dict) -> None:
         """
         Build the follow-up patients' records exposed to policies as `ctx.patient`, once per hospital's agent data, and
         check that the data provides every patient field the policies require.
@@ -152,16 +175,14 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                                             gt: dict, 
                                             environment: "HospitalEnvironment") -> tuple[int, Optional[dict]]:
         """
-        Extracts the patient name and predicted department from agent results.
-        If predictions are not available, falls back to using ground truth labels.
+        Find the patient's completed first-visit booking in the environment.
 
         Args:
             gt (dict): Ground truth data of a patient.
             environment (HospitalEnvironment): Hospital environment.
-            agent_test_data (dict): Dictionary containing test data and metadata for a single hospital.
 
         Returns:
-            tuple[int, Optional[dict]]: Patient information that assumed already saved in HIS and its index.
+            tuple[int, Optional[dict]]: The booking's index in `patient_schedules` and the booking, or ``(-1, None)``.
         """
         name = gt['patient']
         for idx, fv_schedule in enumerate(environment.patient_schedules):
@@ -175,7 +196,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                        prediction: dict,
                        doctor_information: dict,
                        test_information: dict,
-                       environment: "HospitalEnvironment"):
+                       environment: "HospitalEnvironment") -> None:
         """
         Book a follow-up prediction: append each test's device slot + the follow-up consultation slot, then sync the env.
 
@@ -221,11 +242,13 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                                        including availability and other relevant details.
             test_information (dict): A dictionary containing test device schedules.
             environment (HospitalEnvironment): Hospital environment.
-            idx (int, optional): Specific patient schedule index.
+            idx (Optional[int], optional): Specific patient schedule index (None -> a random follow-up booking with
+                                           tests). Defaults to None.
             verbose (bool, optional): Whether logging the each result or not. Defaults to False.
 
         Returns:
-            tuple[dict, dict, Optional[dict]]: Updated doctor information, test information, and a result dictionary after cancellation.
+            tuple[dict, dict, Optional[dict]]: Updated doctor information, test information, and the result dictionary
+                                               (None if nothing to cancel).
         """
         # Candidates are follow-up bookings that carry prescribed tests ('not_yet' covers bookings whose follow-up slot was out of range)
         if idx is None:
@@ -299,11 +322,13 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                                        including availability and other relevant details.
             test_information (dict): A dictionary containing test device schedules.
             environment (HospitalEnvironment): Hospital environment.
-            idx (int, optional): Specific patient schedule index.
+            idx (Optional[int], optional): Specific patient schedule index (None -> a random eligible follow-up booking).
+                                           Defaults to None.
             verbose (bool, optional): Whether logging the each result or not. Defaults to False.
 
         Returns:
-            tuple[dict, dict, Optional[dict]]: Updated doctor information, test information, and a result dictionary after rescheduling.
+            tuple[dict, dict, Optional[dict]]: Updated doctor information, test information, and the result dictionary
+                                               (None if no request was made).
         """
         result_dict = init_result_dict()
         # Candidates: follow-up bookings whose every test is still scheduled (none performed), not already waiting
@@ -400,10 +425,10 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                                                    environment: "HospitalEnvironment",
                                                    fv_patient_info: dict,
                                                    required_test_list: list,
-                                                   code_to_test_name: dict):
+                                                   code_to_test_name: dict) -> None:
         """
-        Append HealthcareService references for the prescribed tests onto the completed
-        first-visit consultation Appointment via `supportingInformation` (FHIR R5).
+        Append HealthcareService references for the prescribed tests to the completed first-visit Appointment's
+        `supportingInformation` on the FHIR server (FHIR R5).
 
         Args:
             environment (HospitalEnvironment): Hospital environment.
@@ -453,7 +478,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                    status: bool,
                    prediction: Union[dict, str],
                    environment: "HospitalEnvironment",
-                   patient_information: Optional[dict] = None):
+                   patient_information: Optional[dict] = None) -> None:
         """
         Update the simulation environment with scheduling results and optionally synchronize FHIR resources.
 
@@ -462,7 +487,6 @@ class OutpatientFollowUpScheduling(OutpatientTask):
             prediction (Union[dict, str]): The predicted scheduling result (e.g., patient schedule information).
             environment (HospitalEnvironment): The environment instance to be updated (must implement `update_env`).
             patient_information (Optional[dict], optional): Patient-related predicted (or GT) information to generate FHIR Patient resources. Defaults to None.
-
         """
         # POST/PUT to FHIR
         fhir_patient, fhir_appointment = None, None
@@ -508,27 +532,20 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                  verbose: bool = False,
                  **kwargs) -> dict:
         """
-        This method uses agent test data to prompt an LLM for scheduling decisions, post-processes
-        the output, runs sanity checks on predicted schedules, and collects the results for evaluation.
+        Simulate one follow-up scheduling dialogue (plus random cancellation / rescheduling events) and collect results.
+        The patient must already have a completed first visit in the environment.
 
         Args:
             data_pair (tuple[dict, dict]): A pair of ground truth and patient data for agent simulation.
-            agent_test_data (dict): Dictionary containing test data and metadata for a single hospital.
-                Expected keys include:
-                    - 'metadata': A dict containing start_hour, end_hour, and interval_hour under 'time'.
-                    - 'agent_data': A list of (ground_truth, test_data) pairs.
-                    - 'doctor': A dictionary of doctor profiles with department and schedule info.
-            agent_results (dict): Optional dictionary containing prior department predictions.
-                Used to extract department-level guidance per patient. Can be empty.
+            agent_test_data (dict): Test data of one hospital (``metadata``, ``department``, ``doctor``, ``test``); its
+                                    ``doctor`` / ``test`` schedules are updated in place.
+            agent_results (dict): Results so far (unused here).
             environment (HospitalEnvironment): Hospital environment instance to manage patient schedules.
-            verbose (bool, option): Whether logging the each result or not.
+            verbose (bool, optional): Whether logging the each result or not. Defaults to False.
+            **kwargs (Any): Unused.
 
         Returns:
-            dict: A dictionary with three keys:
-                - 'gt': List of ground truth results, each including patient info, attending physician, department, and schedule.
-                - 'pred': List of predicted results (either valid dict or fallback string).
-                - 'status': List of booleans indicating whether each prediction passed sanity checks.
-                - 'status_code': List of status codes explaining each status.
+            dict: Result columns (``gt``, ``pred``, ``status``, ``status_code``, ``dialog``, ``token``, ...).
         """
         gt, test_data = data_pair
         self._metadata = agent_test_data.get('metadata')

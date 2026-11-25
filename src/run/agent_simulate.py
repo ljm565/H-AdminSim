@@ -3,8 +3,9 @@ import sys
 import logging
 import traceback
 from sconf import Config
+from typing import Optional
 import patientsim.utils as pu
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 from concurrent.futures import ProcessPoolExecutor, as_completed
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
@@ -21,13 +22,23 @@ from h_adminsim.utils.filesys_utils import yaml_save, get_files
 
 
 
-def bridge_patientsim():
+def bridge_patientsim() -> None:
+    """
+    Make the `patientsim` package log through the H-AdminSim logger.
+    """
     main_logger = logging.getLogger(LOGGING_NAME)
     pu.LOGGER = main_logger
     pu.LOGGING_NAME = LOGGING_NAME
 
 
-def init_worker_logging(output_dir: str, name: str):
+def init_worker_logging(output_dir: str, name: str) -> None:
+    """
+    Set up logging for a worker process, writing to ``<output_dir>/<name>_worker_<pid>.out``.
+
+    Args:
+        output_dir (str): Log directory.
+        name (str): Log file prefix (model name).
+    """
     pid = os.getpid()
     set_logging(
         LOGGING_NAME,
@@ -37,13 +48,30 @@ def init_worker_logging(output_dir: str, name: str):
     bridge_patientsim()
 
 
-def load_config(config_path: str):
+def load_config(config_path: str) -> Config:
+    """
+    Load a YAML config, turning ``'None'`` strings into ``None``.
+
+    Args:
+        config_path (str): Path to the config file.
+
+    Returns:
+        Config: The loaded config.
+    """
     config = Config(config_path)
     config = replace_none_value(config)
     return config
 
 
-def simulate(config, args, single_file=None):
+def simulate(config: Config, args: Namespace, single_file: Optional[str] = None) -> None:
+    """
+    Build the requested tasks and run the simulator on the agent data (one file, or the configured path).
+
+    Args:
+        config (Config): Simulation config.
+        args (Namespace): Parsed CLI arguments.
+        single_file (Optional[str], optional): Agent data file for this worker; None uses ``config.agent_test_data``. Defaults to None.
+    """
     if args.logging_dir is not None:
         init_worker_logging(args.logging_dir, config.task_model.replace('/', '_'))
 
@@ -123,7 +151,16 @@ def simulate(config, args, single_file=None):
     )
 
 
-def main(args):
+def main(args: Namespace) -> None:
+    """
+    Prepare the output folder (config, pinned policies) and run the simulation, in parallel over agent data files.
+
+    Args:
+        args (Namespace): Parsed CLI arguments.
+
+    Raises:
+        RuntimeError: If any worker's simulation failed.
+    """
     # Init config
     config = load_config(args.config)
     config.yaml_file = args.config

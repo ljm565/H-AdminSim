@@ -13,15 +13,13 @@ from h_adminsim.utils.common_utils import str_to_datetime, datetime_to_str
 
 def random_uuid(is_develop: bool = False) -> str:
     """
-    Generate ranodm UUID
+    Generate a random UUID.
 
     Args:
-        is_develop (bool, optional): If True, generates a UUID using fully random bytes
-                                     to support reproducibility during development or debugging.
-                                     Defaults to False.
+        is_develop (bool, optional): Build it from `random` bits (reproducible under a seed) instead of ``uuid1``. Defaults to False.
 
     Returns:
-        str: The generated UUID
+        str: The generated UUID.
     """
     if is_develop:
         # For development purposes, generate controlled random UUID
@@ -39,8 +37,7 @@ def generate_random_number_string(length: int) -> str:
         length (int): The desired length of the random numeric string.
 
     Returns:
-        str: A string consisting of randomly generated digits (0-9) 
-             with the specified length.
+        str: Random digits (0-9) of the given length.
     """
     return ''.join(str(random.randint(0, 9)) for _ in range(length))
 
@@ -51,16 +48,16 @@ def generate_random_names(n: int,
                           last_name_file: Optional[str] = None,
                           reject_list: Optional[list[str]] = None) -> list[str]:
     """
-    Generate a list of random names by combining first and last names from specified files.
+    Generate unique random "First Last" names; duplicates get a numeric suffix.
 
     Args:
         n (int): Number of random names to generate.
         first_name_file (Optional[str], optional): Path to the file containing first names. Defaults to None.
         last_name_file (Optional[str], optional): Path to the file containing last names. Defaults to None.
-        reject_list (Optional[list[str]], optional): List of names to exclude.
+        reject_list (Optional[list[str]], optional): Names to avoid. Defaults to None.
 
     Returns:
-        list[str]: List of randomly generated names in the format "First Last".
+        list[str]: Sorted list of names.
     """
     reject_list = set(reject_list) if reject_list else set()
     if first_name_file is None:
@@ -93,14 +90,14 @@ def generate_random_names(n: int,
 def generate_random_address(address_file_path: Optional[str] = None,
                             format: str = '{street}, {district}, {city}') -> str:
     """
-    Generate random address.
+    Generate a random address from the address asset.
 
     Args:
-        address_file (Optional[str], optional): Path to the file containing addresses. Defaults to None.
-        format (str, optional): Format of the address.
+        address_file_path (Optional[str], optional): Path to the address JSON file; None uses the bundled asset. Defaults to None.
+        format (str, optional): Address template with fields among street/neighborhood/district/county/city/state. Defaults to '{street}, {district}, {city}'.
 
     Returns:
-        str: Random generated address based on the asset.
+        str: The generated address.
     """
     if address_file_path == None:
         address_file_path = str(resources.files("h_adminsim.assets.country").joinpath("address.json"))
@@ -128,7 +125,7 @@ def generate_random_address(address_file_path: Optional[str] = None,
 
 def generate_random_prob(has_schedule_prob: float, coverage_min: float, coverage_max: float) -> float:
     """
-    Determine the final schedule ratio for a doctor.
+    Draw a doctor's schedule coverage ratio.
 
     Args:
         has_schedule_prob (float): Probability that a doctor has any schedule.
@@ -136,7 +133,7 @@ def generate_random_prob(has_schedule_prob: float, coverage_min: float, coverage
         coverage_max (float): Maximum proportion of total available hours the schedule can occupy.
 
     Returns:
-        float: The final schedule ratio. 0.0 if the doctor has no schedule. A float in [coverage_min, coverage_max] if the doctor has a schedule.
+        float: 0.0 if the doctor has no schedule, else a value in [coverage_min, coverage_max].
     """
     has_schedule = random.random() < has_schedule_prob
     if not has_schedule:
@@ -153,20 +150,18 @@ def generate_random_symptom(department: str,
                             max_n: int = 4,
                             verbose: bool = True) -> Union[dict, str]:
     """
-    Generate a string of random symptom from pre-defined data file.
+    Pick a random disease of a department with a random subset of its symptoms.
 
     Args:
-        department (str, optional): A name of hospital department.
-        symptom_file_path (Optional[str], optional): A path of pre-defined symptom data. Defaults to None.
-        ensure_unique_department (bool): Ensure that the disease can only be treated in a single medical specialty.
+        department (str): Hospital department name.
+        symptom_file_path (Optional[str], optional): Path to the symptom JSON file; None uses the bundled asset. Defaults to None.
+        ensure_unique_department (bool, optional): Prefer diseases treated by this department only. Defaults to True.
         min_n (int, optional): Minimum number of symptoms to select. Defaults to 2.
         max_n (int, optional): Maximum number of symptoms to select. Defaults to 4.
-        verbose (bool, optional): If True, print a warning message when no matching department is found. Defaults to True.
+        verbose (bool, optional): Warn when the department is not found. Defaults to True.
 
     Returns:
-        Union[dict, str]:
-            - dict: A randomly selected disease and its associated symptoms for the given department.  
-            - str: The string `"{PLACEHOLDER}"` if the department is not found in the data.
+        Union[dict, str]: ``{'disease', 'symptom', ...}``, or ``"{PLACEHOLDER}"`` if the department is unknown.
     """
     if symptom_file_path == None:
         symptom_file_path = str(resources.files("h_adminsim.assets.departments").joinpath("symptom.json"))
@@ -208,14 +203,11 @@ def generate_random_telecom(min_length: int = 8,
     Args:
         min_length (int, optional): The minimum length of the subscriber number (excluding country code). Defaults to 8.
         max_length (int, optional): The maximum length of the subscriber number (excluding country code). Defaults to 13.
-        country_code (str, optional): The ISO country code to determine the dialing prefix. Default is 'KR' (South Korea).
-        country_to_dial_map_file (Optional[str], optional): Path to the JSON file mapping country codes to their dialing prefixes. Defaults to None.
-
-    Raises:
-        KeyError: If the provided country_code is not found in the dialing code registry.
+        country_code (str, optional): ISO country code for the dialing prefix; unknown codes get no prefix. Defaults to 'KR'.
+        country_to_dial_map_file (Optional[str], optional): Path to the country-to-dial-code JSON file. Defaults to None.
 
     Returns:
-        str: A random telecom number string starting with the country dialing code, followed by a random sequence of digits.
+        str: The dialing code followed by random digits.
     """
     if country_to_dial_map_file == None:
         country_to_dial_map_file = str(resources.files("h_adminsim.assets.country").joinpath("country_code.json"))
@@ -240,8 +232,8 @@ def generate_random_date(start_date: Union[str, datetime] = '1960-01-01',
     Generate a random date string in 'YYYY-MM-DD' format between the given start and end dates.
 
     Args:
-        start_date (Union[str, datetime], optional): The start date in 'YYYY-MM-DD' format. Default is '2000-01-01'.
-        end_date (Union[str, datetime], optional): The end date in 'YYYY-MM-DD' format. Default is '2025-12-31'.
+        start_date (Union[str, datetime], optional): The start date in 'YYYY-MM-DD' format. Defaults to '1960-01-01'.
+        end_date (Union[str, datetime], optional): The end date in 'YYYY-MM-DD' format (inclusive). Defaults to '2000-12-31'.
 
     Returns:
         str: A randomly generated date string in 'YYYY-MM-DD' format.
@@ -262,16 +254,12 @@ def generate_random_id_number(start_date: Union[str, datetime] = '1960-01-01',
     Generate a random ID number consisting of a birth date and a random numeric sequence.
 
     Args:
-        start_date (Union[str, datetime], optional): The earliest possible date of birth 
-                                                     to consider when generating a random date. Defaults to '1960-01-01'.
-        end_date (Union[str, datetime], optional): The latest possible date of birth 
-                                                   to consider when generating a random date. Defaults to '2000-12-31'.
-        birth_date (Optional[str], optional): A specific birth date in 'YYYY-MM-DD' format. 
-                                              If provided, this date is used instead of generating a random one. Defaults to None.
+        start_date (Union[str, datetime], optional): Earliest random birth date. Defaults to '1960-01-01'.
+        end_date (Union[str, datetime], optional): Latest random birth date. Defaults to '2000-12-31'.
+        birth_date (Optional[str], optional): Birth date ('YYYY-MM-DD') to use instead of a random one. Defaults to None.
 
     Returns:
-        str: A randomly generated ID number in the format 'YYMMDD-XXXXXXX', 
-        where 'YYMMDD' is the birth date and 'XXXXXXX' is a 7-digit random number.
+        str: ID number 'YYMMDD-XXXXXXX' (birth date, then 7 random digits).
     """
     if not birth_date:
         birth_date = generate_random_date(start_date, end_date)
@@ -282,20 +270,16 @@ def generate_random_id_number(start_date: Union[str, datetime] = '1960-01-01',
 
 def generate_random_code(category: str) -> str:
     """
-    Generate a random code value based on the specified category.
-
-    Supported categories:
-        - 'use': returns either 'mobile' or 'work'
-        - 'gender': returns either 'male' or 'female'
+    Random code for a category: 'use' (mobile/work), 'gender' (male/female), or 'distance' (near/medium/far).
 
     Args:
-        category (str): The category for which to generate a code. Must be one of ['use', 'gender'].
+        category (str): One of 'use', 'gender', 'distance'.
+
+    Returns:
+        str: A randomly selected code.
 
     Raises:
-        ValueError: If the category is not one of the supported values.
-        
-    Returns:
-        str: A randomly selected code corresponding to the given category.
+        ValueError: If the category is not supported.
     """
     
     if category == 'use':
@@ -310,18 +294,16 @@ def generate_random_code(category: str) -> str:
 
 
 def generate_random_code_with_prob(codes: list[Any],
-                                   probs: list[float]) -> tuple[int, str]:
+                                   probs: list[float]) -> Any:
     """
-    Select a random code from the given list of codes based on the provided probabilities.
+    Pick one code at random with the given probabilities.
 
     Args:
-        codes (list[Any]): A list of codes from which to choose.
-        probs (list[float]): A list of probabilities corresponding to each code. 
-                             The probabilities must sum to 1.
+        codes (list[Any]): Codes to choose from.
+        probs (list[float]): Probability of each code; must sum to 1.
 
     Returns:
-        tuple[int, str]: The randomly chosen code. The exact type depends on the elements of `codes`.
-                         (Adjust this description if the return type is known specifically.)
+        Any: The chosen element of ``codes``.
     """
     assert round(sum(probs), 4) == 1, colorstr("red", f"The sum of the probabilities would be a 1, but got {probs}")
     assert len(codes) == len(probs), colorstr("red", f"The lengths of codes and probabilities must be the same, but got codes length: {len(codes)} and probs length: {len(probs)}")
@@ -341,12 +323,10 @@ def generate_random_specialty(department: str,
     Args:
         department (str): The name of the department to look up specialties for.
         specialty_path (Optional[str], optional): Path to the JSON file containing department-specialty mappings. Defaults to None.
-        verbose (bool, optional): Whether to log a warning message if the department is not found.
-                                  Defaults to True.
+        verbose (bool, optional): Warn when the department is not found. Defaults to True.
 
     Returns:
-        tuple[str, str]: A tuple containing a randomly selected specialty (str) and its code (int).
-                         If the department is not found, returns ('{PLACEHOLDER}', '{PLACEHOLDER}').
+        tuple[str, str]: ``(specialty, code)`` with code ``'<department code>-<index>'``, or ``('{PLACEHOLDER}', '{PLACEHOLDER}')`` if unknown.
     """
     if specialty_path == None:
         specialty_path = str(resources.files("h_adminsim.assets.departments").joinpath("department.json"))
@@ -370,8 +350,8 @@ def generate_random_occupation(occupation_file_path: Optional[str] = None) -> st
     Generate a random occupation from a predefined list of occupations. 
 
     Args:
-        occupation_file_path (Optional[str], optional): Path to the JSON file containing a list of occupations. If not provided, a default path is used.
-                                                        Defaults to None.
+        occupation_file_path (Optional[str], optional): Path to the occupation JSON file; None uses the bundled asset. Defaults to None.
+
     Returns:
         str: A randomly selected occupation.
     """
@@ -390,26 +370,20 @@ def generate_random_test_preference(distance: str,
                                     preference_candidates: list[str],
                                     occupation_file_path: Optional[str] = None) -> str:
     """
-    Generate a first-priority test scheduling preference based on distance and occupation data.
-    The occupation-based distribution is mixed with a `visit_min` one-hot distribution, where the
-    mixing weight grows with distance (see `variables.DISTANCE_VISIT_MIN_WEIGHT`):
-        - near: occupation only
-        - medium: partially shifted toward `visit_min`
-        - far: strongly shifted toward `visit_min`, weakening the occupation effect
+    Draw a first-priority test scheduling preference from occupation data, shifted toward `visit_min` with distance.
+    The shift weight per distance is `variables.DISTANCE_VISIT_MIN_WEIGHT` (near: occupation only).
 
     Args:
-        distance (str): Distance from the patient's home to the hospital (near, medium, or far).
+        distance (str): Distance from home to hospital (near, medium, or far).
         occupation (str): Occupation name to look up.
         preference_candidates (list[str]): Candidate preference types.
-        occupation_file_path (Optional[str], optional): Path to the JSON file containing occupation data.
-                                                        If not provided, a default path is used.
-                                                        Defaults to None.
-
-    Raises:
-        ValueError: If the distance is not one of the supported values.
+        occupation_file_path (Optional[str], optional): Path to the occupation JSON file; None uses the bundled asset. Defaults to None.
 
     Returns:
         str: First-priority test scheduling preference.
+
+    Raises:
+        ValueError: If the distance is not supported.
     """
     if distance not in variables.DISTANCE_VISIT_MIN_WEIGHT:
         raise ValueError(colorstr("red", f"Unsupported distance: {distance}"))
@@ -452,12 +426,10 @@ def generate_random_occupation_unavailable(occupation: str,
     Args:
         occupation (str): Occupation name to look up.
         dates (list[str]): Simulation date range.
-        occupation_file_path (Optional[str], optional): Path to the JSON file containing occupation data.
-                                                        If not provided, a default path is used.
-                                                        Defaults to None.
+        occupation_file_path (Optional[str], optional): Path to the occupation JSON file; None uses the bundled asset. Defaults to None.
 
     Returns:
-        dict: Unavailable schedule constraint.
+        dict: ``{'type', 'day', 'half_day', 'explanation'}``; ``type`` None when unconstrained.
     """
     if occupation_file_path == None:
         occupation_file_path = str(resources.files("h_adminsim.assets.patient").joinpath("occupation.json"))

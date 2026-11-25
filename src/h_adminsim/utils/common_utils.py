@@ -10,7 +10,6 @@ from collections.abc import (
     MutableSequence,
 )
 from decimal import Decimal, getcontext
-from typing import Optional, Union, Any
 from datetime import datetime, timedelta
 from google.genai.errors import ServerError, ClientError
 from openai import (
@@ -21,12 +20,13 @@ from openai import (
     InternalServerError,
     PermissionDeniedError,
 )
+from typing import Optional, Union, Any, Callable, Iterable
 
 from h_adminsim.registry import variables
 from h_adminsim.registry.models import Hospital
 from h_adminsim.registry.d_class import ConversationState
-from h_adminsim.registry.variables import HALF_DAY_BOUNDARY_HOUR, HALF_DAY_ALIASES, HALF_DAY_WORD, HALF_DAY_RANGE
 from h_adminsim.registry.phrases import OPFU_UNAVAILABLE_PHRASE_PATIENT, OPFU_UNAVAILABLE_PHRASE_STAFF
+from h_adminsim.registry.variables import HALF_DAY_BOUNDARY_HOUR, HALF_DAY_ALIASES, HALF_DAY_WORD, HALF_DAY_RANGE
 from h_adminsim.utils import Information, log, colorstr
 
 
@@ -36,16 +36,16 @@ def exponential_backoff(retry_count: int,
                         max_delay: int = 65,
                         jitter: bool = True) -> float:
     """
-    Exponential backoff function for API calling.
+    Delay before the next API retry: ``min(base_delay * 2**retry_count, max_delay)``, optionally jittered by ±20%.
 
     Args:
-        retry_count (int): Retry count.
-        base_delay (int, optional): Base delay seconds. Defaults to 5.
-        max_delay (int, optional): Maximum delay seconds. Defaults to 165.
-        jitter (bool, optional): Whether apply randomness. Defaults to True.
+        retry_count (int): Number of retries so far.
+        base_delay (int, optional): Base delay in seconds. Defaults to 5.
+        max_delay (int, optional): Maximum delay in seconds (before jitter). Defaults to 65.
+        jitter (bool, optional): Whether to apply random jitter. Defaults to True.
 
     Returns:
-        float: Final delay time.
+        float: Delay in seconds.
     """
     delay = min(base_delay * (2 ** retry_count), max_delay)
     if jitter:
@@ -56,14 +56,17 @@ def exponential_backoff(retry_count: int,
 
 def padded_int(n: int, total_digit_l: int = 3) -> str:
     """
-    Convert an integer to a zero-padded string of length 2.
+    Convert a non-negative integer to a zero-padded string.
 
     Args:
         n (int): The integer to convert.
-        total_digit_l (int): The total number of digits in the output string. Default is 3.
+        total_digit_l (int, optional): Minimum length of the output string. Defaults to 3.
 
     Returns:
-        str: The zero-padded string representation of the integer.
+        str: The zero-padded string.
+
+    Raises:
+        ValueError: If ``n`` is negative or ``total_digit_l`` is not positive.
     """
     if n < 0:
         raise ValueError(colorstr("red", "Negative integers are not supported"))
@@ -74,15 +77,15 @@ def padded_int(n: int, total_digit_l: int = 3) -> str:
 
 
 
-def to_dict(obj: Information) -> dict:
+def to_dict(obj: Any) -> Any:
     """
-    Convert an object to a dictionary representation.
+    Recursively convert ``Information`` objects (also inside dicts and lists) to plain dicts.
 
     Args:
-        obj (Information): The object to convert.
+        obj (Any): The object to convert.
 
     Returns:
-        dict: A dictionary representation of the object.
+        Any: The converted object; other values are returned as-is.
     """
     if isinstance(obj, Information):
         return {k: to_dict(v) for k, v in obj.__dict__.items()}
@@ -97,13 +100,13 @@ def to_dict(obj: Information) -> dict:
 
 def convert_info_to_obj(data: Information) -> Hospital:
     """
-    Convert an Information object to a Hospital object.
+    Convert hospital data held in an Information object to a Hospital object.
 
     Args:
-        data (Information): The Information object to convert.
+        data (Information): Hospital data with ``metadata``, ``department``, ``doctor``, and ``patient``.
 
     Returns:
-        Hospital: A Hospital object constructed from the Information data.
+        Hospital: The Hospital object.
     """
     data = to_dict(data)  # Convert Information to dict for easier access
     
@@ -139,10 +142,10 @@ def convert_obj_to_info(hospital_obj: Hospital) -> Information:
     Convert a Hospital object to an Information object.
 
     Args:
-        hospital (Hospital): The Hospital object to convert.
+        hospital_obj (Hospital): The Hospital object to convert.
 
     Returns:
-        Information: An Information object constructed from the Hospital data.
+        Information: Hospital data with ``metadata``, ``department``, ``doctor``, and ``patient``.
     """
     filtered_values = {k: v for k, v in hospital_obj.__dict__.items() if k not in ['department', 'time']}
     filtered_values['time'] = Information(**hospital_obj.time)
@@ -171,16 +174,16 @@ def convert_obj_to_info(hospital_obj: Hospital) -> Information:
 
 def str_to_datetime(iso_time: Union[str, datetime]) -> datetime:
     """
-    Convert a string representation of a date/time to a datetime object, or return the input if it's already a datetime/date object.
+    Parse an ISO 8601 string to a datetime; other values are returned as-is.
 
     Args:
-        iso_time (Union[str, datetime]): The input date/time, either as a string in the specified format or as a datetime/date object.
-
-    Raises:
-        ValueError: If `iso_time` is not a string or datetime/date object.
+        iso_time (Union[str, datetime]): ISO 8601 string or datetime/date object.
 
     Returns:
-        datetime: A datetime object corresponding to the input string, or the original datetime/date if already provided.
+        datetime: The parsed datetime, or the input if it was not a string.
+
+    Raises:
+        ValueError: If the string cannot be parsed.
     """
     try:
         if isinstance(iso_time, str): 
@@ -193,19 +196,17 @@ def str_to_datetime(iso_time: Union[str, datetime]) -> datetime:
 
 def datetime_to_str(iso_time: Union[str, datetime], format: str) -> str:
     """
-    Convert a datetime object to a formatted string, or return the input if it is already a string.
+    Format a datetime as a string; strings are returned as-is.
 
     Args:
-        iso_time (Union[str, datetime]): The input value to convert. If a datetime object, it will be formatted as a string. 
-                                         If already a string, it will be returned as-is.
-        format (str): The format string used to convert the datetime object to a string 
-                      (e.g., "%Y-%m-%d" or "%Y-%m-%dT%H:%M:%S").
-
-    Raises:
-        ValueError: If `iso_time` is neither a string nor a datetime object.
+        iso_time (Union[str, datetime]): Datetime/date object or string.
+        format (str): ``strftime`` format, e.g. ``"%Y-%m-%d"``.
 
     Returns:
-        str: The formatted string representation of the datetime, or the original string if input was a string.
+        str: The formatted string, or the input string unchanged.
+
+    Raises:
+        ValueError: If ``iso_time`` has no ``strftime``.
     """
     try:
         if not isinstance(iso_time, str): 
@@ -227,6 +228,9 @@ def generate_date_range(start_date: Union[str, datetime],
 
     Returns:
         list[str]: List of date strings in ISO format.
+
+    Raises:
+        ValueError: If ``days`` is not positive.
     """
     if days <= 0:
         raise ValueError(colorstr("red", f"`days` must be larger than 0, but got {days}"))
@@ -238,14 +242,12 @@ def generate_date_range(start_date: Union[str, datetime],
 def get_utc_offset(country_code: Optional[str] = None, 
                    time_zone: Optional[str] = None) -> str:
     """
-    Returns the current UTC offset (e.g., "+09:00") for a given country code or time zone.
-
-    Either `country_code` or `time_zone` must be provided. If the country has multiple time zones,
-    you should explicitly provide the `time_zone`.
+    Current UTC offset (e.g. "+09:00") for a country code or time zone.
+    One of the two is required; give ``time_zone`` for countries with several time zones.
 
     Args:
-        country_code (Optional[str], optional): ISO 3166-1 alpha-2 country code (e.g., 'KR', 'US').
-        time_zone (Optional[str], optional): IANA time zone string (e.g., 'Asia/Seoul', 'America/New_York').
+        country_code (Optional[str], optional): ISO 3166-1 alpha-2 country code (e.g., 'KR'). Defaults to None.
+        time_zone (Optional[str], optional): IANA time zone (e.g., 'Asia/Seoul'). Defaults to None.
 
     Returns:
         str: The UTC offset of the specified time zone in the format "+HH:MM" or "-HH:MM".
@@ -271,13 +273,13 @@ def get_utc_offset(country_code: Optional[str] = None,
 
 def hour_to_hhmmss(hours: Union[int, float]) -> str:
     """
-    Converts a decimal number of hours into HH:MM:SS format.
+    Convert decimal hours to "HH:MM:SS".
 
     Args:
-        hours (Union[int, float]): A float or integer representing the number of hours.
+        hours (Union[int, float]): Number of hours.
 
     Returns:
-        A string in the format "HH:MM:SS".
+        str: The time as "HH:MM:SS".
     """
     # Create a timedelta object from the given hours
     td = timedelta(hours=hours)
@@ -303,14 +305,14 @@ def get_iso_time(time_hour: Union[int, float],
 
     Args:
         time_hour (Union[int, float]): Time expressed in hours (e.g., 9.5 → 09:30:00).
-        date (Optional[Union[str, datetime]], optional): Date string in 'YYYY-MM-DD' format. Defaults to today's date.
-        utc_offset (Optional[str], optional): UTC offset in '+HH:MM' or '-HH:MM' format. Defaults to no offset.
-
-    Raises:
-        ValueError: If the `date` format is invalid.
+        date (Optional[Union[str, datetime]], optional): Date as 'YYYY-MM-DD' or a datetime; None means today. Defaults to None.
+        utc_offset (Optional[str], optional): UTC offset as '+HH:MM' or '-HH:MM'; None means no offset. Defaults to None.
 
     Returns:
         str: ISO 8601 formatted datetime string.
+
+    Raises:
+        ValueError: If the `date` format is invalid.
     """
     if date == None:
         date = datetime_to_str(datetime.today(), '%Y-%m-%d')
@@ -331,10 +333,10 @@ def get_iso_time(time_hour: Union[int, float],
 
 def iso_to_hour(iso_time: Union[str, datetime]) -> float:
     """
-    Extract time information from an ISO 8601 time and convert time to float hour.
+    Time of day of an ISO 8601 time, in float hours.
 
     Args:
-        iso_time_str (Union[str, datetime]): ISO 8601 time string (e.g., '2025-07-17T09:30:00+09:00')
+        iso_time (Union[str, datetime]): ISO 8601 time string (e.g., '2025-07-17T09:30:00+09:00') or datetime.
 
     Returns:
         float: Time represented in float hours (e.g., 9.5)
@@ -372,13 +374,13 @@ def generate_random_iso_time_between(min_iso_time: Union[str, datetime],
     Args:
         min_iso_time (Union[str, datetime]): The lower bound ISO 8601 time string (exclusive).
         max_iso_time (Union[str, datetime]): The upper bound ISO 8601 time string (exclusive).
-        epsilon (float, optional): Small buffer to exclude both bounds. Defaults to 1e-6 seconds.
+        epsilon (float, optional): Buffer in seconds to exclude both bounds. Defaults to 1e-6.
+
+    Returns:
+        str: A random ISO 8601 time string within the range.
 
     Raises:
         ValueError: If min_iso_time is not earlier than max_iso_time or epsilon is too large.
-        
-    Returns:
-        str: A randomly generated ISO 8601 time string within the specified range.
     """
     min_dt, max_dt = str_to_datetime(min_iso_time), str_to_datetime(max_iso_time)
 
@@ -430,12 +432,10 @@ def hours_between(later: Union[str, datetime], earlier: Union[str, datetime]) ->
 
 def add_hours_to_iso(iso_time: Union[str, datetime], hours: Union[int, float]) -> str:
     """
-    Add `hours` to an ISO 8601 time, preserving the original timezone suffix
-    and properly carrying overflow into the date.
+    Add `hours` to an ISO 8601 time, keeping a string's timezone suffix and carrying overflow into the date.
 
     Args:
-        iso_time (Union[str, datetime]): ISO 8601 time string (e.g. '2026-05-01T17:00:00+09:00')
-                                         or a datetime object.
+        iso_time (Union[str, datetime]): ISO 8601 time string (e.g. '2026-05-01T17:00:00+09:00') or a datetime.
         hours (Union[int, float]): Hours to add. Can exceed 24.
 
     Returns:
@@ -461,11 +461,14 @@ def generate_random_iso_date_between(min_date: Union[str, datetime],
     Generate a random date between min_date and max_date (inclusive).
 
     Args:
-        min_date Union[str, datetime]: Minimum date in ISO format (YYYY-MM-DD) or a date object.
-        max_date Union[str, datetime]: Maximum date in ISO format (YYYY-MM-DD) or a date object.
+        min_date (Union[str, datetime]): Minimum date in ISO format (YYYY-MM-DD) or a date object.
+        max_date (Union[str, datetime]): Maximum date in ISO format (YYYY-MM-DD) or a date object.
 
     Returns:
         str: Random date in ISO format (YYYY-MM-DD).
+
+    Raises:
+        ValueError: If ``max_date`` is before ``min_date``.
     """
     min_date, max_date = str_to_datetime(min_date).date(), str_to_datetime(max_date).date()
     delta_days = (max_date - min_date).days
@@ -483,24 +486,16 @@ def convert_time_to_segment(start: float,
                             interval: float, 
                             time_range: Optional[list[float]] = None) -> list[int]:
     """
-    Generate time segment indices between a start and end time, using a specified interval.
-
-    This function divides a time range (e.g., 0 to 24 hours) into equal segments 
-    and returns a list of integer indices representing those segments.
+    Indices of the ``interval``-sized segments of [start, end), e.g. (0, 24, 0.5) -> [0, ..., 47].
 
     Args:
         start (float): Start time in hours (e.g., 0.0 for 00:00).
         end (float): End time in hours (e.g., 24.0 for 24:00).
-        interval (float): Time interval in hours (e.g., 0.5 for 30 minutes).
-        time_range (Optional[list[float]], optional): If provided, should be a list of two floats 
-            [start_time, end_time]. Only segments within this subrange are returned.
+        interval (float): Segment length in hours (e.g., 0.5 for 30 minutes).
+        time_range (Optional[list[float]], optional): ``[start_time, end_time]`` subrange to return segments for; None means all. Defaults to None.
 
     Returns:
-        list[int]: List of segment indices, where each index corresponds to a time slot.
-
-    Example:
-        >>> convert_time_to_segment(0, 24, 0.5)
-        [0, 1, 2, ..., 47]  # Represents 48 half-hour segments from 00:00 to 24:00
+        list[int]: Segment indices.
     """
     assert start < end, colorstr("red", "Start time must be less than end time")
     assert interval > 0, colorstr("red", "Interval must be greater than 0")
@@ -528,20 +523,16 @@ def convert_segment_to_time(start: float,
                             interval: float, 
                             segments: list[int]) -> tuple[float, float]:
     """
-    Convert segment indices back to actual time values based on the given start time and interval.
+    Convert a run of consecutive segment indices back to its time span, e.g. (0, 24, 0.5, [0, 1, 2]) -> (0.0, 1.5).
 
     Args:
         start (float): Start time in hours (e.g., 0.0 for 00:00).
         end (float): End time in hours (e.g., 24.0 for 24:00).
-        interval (float): Time interval in hours (e.g., 0.5 for 30 minutes).
-        segments (list[int]): List of segment indices to convert (e.g., [0, 1, 2]).
+        interval (float): Segment length in hours (e.g., 0.5 for 30 minutes).
+        segments (list[int]): Consecutive segment indices (e.g., [0, 1, 2]).
 
     Returns:
-        list[float]: List of time values (in hours) corresponding to the given segments.
-
-    Example:
-        >>> convert_segment_to_time(0, 24, 0.5, [0, 1, 2])
-        [0.0, 1.5]
+        tuple[float, float]: ``(start, end)`` of the span in hours, with the end capped at ``end``.
     """
     assert start < end, colorstr("red", "Start time must be less than end time")
     assert interval > 0, colorstr("red", "Interval must be greater than 0")
@@ -566,24 +557,14 @@ def convert_segment_to_time(start: float,
 
 def group_consecutive_segments(segments: list[int]) -> list[list[int]]:
     """
-    Group a list of integer segments into consecutive blocks.
-
-    This function takes a list of integers and splits it into sublists where 
-    each sublist contains consecutive numbers. Numbers that are not consecutive
-    start a new group.
+    Split a list of integers into runs of consecutive values, e.g. [1, 2, 3, 5, 6, 8] -> [[1, 2, 3], [5, 6], [8]].
+    The input order is kept, so pass a sorted list; it must not be empty.
 
     Args:
-        segments (list[int]): A list of integer segments to be grouped. 
-                              The list should contain integers in any order; 
-                              typically sorted for meaningful consecutive grouping.
+        segments (list[int]): Integer segments to group.
 
     Returns:
-        list[list[int]]: A list of lists, where each sublist contains consecutive integers 
-                         from the input list.
-    
-    Example:
-        >>> group_consecutive_segments([1, 2, 3, 5, 6, 8])
-        [[1, 2, 3], [5, 6], [8]]
+        list[list[int]]: Runs of consecutive integers.
     """
     consecutive_blocks = []
     group = [segments[0]]
@@ -600,22 +581,14 @@ def group_consecutive_segments(segments: list[int]) -> list[list[int]]:
 
 def split_into_contiguous_chunks(segments: list[int], chunk_size: int) -> list[list[int]]:
     """
-    Split segments into contiguous chunks of a fixed size.
-
-    Groups consecutive segments together, then slices each consecutive block
-    into as many non-overlapping chunks of ``chunk_size`` as possible.
-    Remainders shorter than ``chunk_size`` are discarded.
+    Split segments into non-overlapping contiguous chunks of ``chunk_size``; shorter remainders are dropped.
 
     Args:
-        segments (list[int]): List of segment indices (not necessarily sorted or consecutive).
+        segments (list[int]): Segment indices (any order).
         chunk_size (int): Required size of each chunk.
 
     Returns:
-        list[list[int]]: List of contiguous chunks, each of length ``chunk_size``.
-
-    Example:
-        >>> split_into_contiguous_chunks([0, 1, 2, 3, 5, 6, 7, 8, 9, 12], 3)
-        [[0, 1, 2], [5, 6, 7]]
+        list[list[int]]: Contiguous chunks, each of length ``chunk_size`` (empty if ``chunk_size <= 0``).
     """
     if not segments or chunk_size <= 0:
         return []
@@ -635,28 +608,18 @@ def split_into_contiguous_chunks(segments: list[int], chunk_size: int) -> list[l
 def convert_time_list_to_merged_time(start: float,
                                      end: float,
                                      interval: float,
-                                     time_list: list[tuple[float, float]]) -> list[tuple[float, float]]:
+                                     time_list: list[Union[tuple[float, float], list[float]]]) -> list[Union[tuple[float, float], list[float]]]:
     """
-    Convert a list of time intervals into merged intervals based on a fixed segment grid.
-
-    This function maps each time interval in `time_list` into discrete segments
-    defined by the `start`, `end`, and `interval`. Consecutive segments are then
-    merged back into continuous time intervals.
+    Merge time intervals that cover consecutive segments of the ``interval`` grid.
 
     Args:
-        start (float): The start time of the overall time range (e.g., 9.0 for 9:00 AM).
-        end (float): The end time of the overall time range (e.g., 17.0 for 5:00 PM).
-        interval (float): The length of each time segment (e.g., 0.5 for 30 minutes).
-        time_list (list[tuple[float, float]]): A list of time intervals to convert and merge.
-                                               Each interval is a tuple (start_time, end_time).
+        start (float): Start of the overall time range in hours (e.g., 9.0).
+        end (float): End of the overall time range in hours (e.g., 17.0).
+        interval (float): Segment length in hours (e.g., 0.5 for 30 minutes).
+        time_list (list[Union[tuple[float, float], list[float]]]): ``(start_time, end_time)`` intervals to merge.
 
     Returns:
-        list[tuple[float, float]]: A list of merged time intervals as tuples (start_time, end_time).
-                                   Intervals are merged if they cover consecutive segments.
-
-    Example:
-        >>> convert_time_list_to_merged_time(9.0, 17.0, 0.5, [(9.0, 10.0), (10.0, 11.0), (13.0, 14.0)])
-        [(9.0, 11.0), (13.0, 14.0)]
+        list[Union[tuple[float, float], list[float]]]: Merged ``[start_time, end_time]`` lists (the input itself if empty).
     """
     if len(time_list) > 0:
         segments = sum([convert_time_to_segment(start, end, interval, t) for t in time_list], [])
@@ -668,13 +631,13 @@ def convert_time_list_to_merged_time(start: float,
 
 def calculate_age(birthdate_str: str) -> int:
     """
-    Calculate the current age in years based on a birthdate string.
+    Current age in years from a birthdate.
 
     Args:
         birthdate_str (str): Birthdate in 'YYYY-MM-DD' format.
 
     Returns:
-        int: Age in years as an integer.
+        int: Age in years.
     """
     birthdate = datetime.strptime(birthdate_str, "%Y-%m-%d").date()
     today = datetime.today().date()
@@ -689,14 +652,13 @@ def calculate_age(birthdate_str: str) -> int:
 
 def sort_schedule(data: Union[dict, list]) -> Union[dict, list]:
     """
-    Recursively sort schedule data for deterministic ordering.
+    Sort schedule data for deterministic ordering: lists are sorted, dicts are sorted by key with each value sorted.
 
     Args:
-        data (Union[dict, list]): Schedule data to be sorted. Lists are sorted directly, 
-                                  and dictionaries are sorted by keys with their values sorted.
+        data (Union[dict, list]): Schedule data.
 
     Returns:
-        Union[dict, list]: Sorted schedule data with consistent ordering.
+        Union[dict, list]: Sorted schedule data.
     """
     if isinstance(data, list):
         return sorted(data)
@@ -708,15 +670,15 @@ def personal_id_to_birth_date(personal_id: str,
                               start_date: str = "1960-01-01",
                               end_date: str = "2000-12-31") -> str:
     """
-    Convert a personal ID (YYMMDD) to a birth date (YYYY-MM-DD).
+    Convert a personal ID (YYMMDD) to a birth date (YYYY-MM-DD), choosing the century within the given year range.
 
     Args:
         personal_id (str): Personal ID in YYMMDD or YYMMDD-XXXX format.
-        start_date (str): Earliest possible birth date (YYYY-MM-DD).
-        end_date (str): Latest possible birth date (YYYY-MM-DD).
+        start_date (str, optional): Earliest possible birth date (YYYY-MM-DD). Defaults to "1960-01-01".
+        end_date (str, optional): Latest possible birth date (YYYY-MM-DD). Defaults to "2000-12-31".
 
     Returns:
-        str: Birth date in YYYY-MM-DD format.
+        str: Birth date in YYYY-MM-DD format (random century, unpadded, if no century fits).
     """
     yymmdd = personal_id.split("-")[0]
 
@@ -747,27 +709,40 @@ def personal_id_to_birth_date(personal_id: str,
 
 def init_result_dict() -> dict:
     """
-    Initialize result dictionary.
+    Empty result dictionary for a task run.
 
     Returns:
-        dict: Initialized result dictionary.
+        dict: ``{'gt', 'pred', 'status', 'status_code', 'trial', 'dialog', 'token'}`` mapped to empty lists.
     """
     return {'gt': [], 'pred': [], 'status': [], 'status_code': [], 'trial': [], 'dialog': [], 'token': []}
 
 
 
-def hour_to_str(x) -> str:
-    """Compact hour-float rendering (trims trailing zeros): 9.0 -> '9', 9.25 -> '9.25'."""
+def hour_to_str(x: Union[int, float]) -> str:
+    """
+    Compact hour rendering without trailing zeros: 9.0 -> '9', 9.25 -> '9.25'.
+
+    Args:
+        x (Union[int, float]): Hour value.
+
+    Returns:
+        str: The rendered hour.
+    """
     return f"{round(float(x), 4):g}"
 
 
 
-def free_windows(occupied, start_hour, end_hour) -> list:
+def free_windows(occupied: Iterable[Union[list, tuple, dict]], start_hour: float, end_hour: float) -> list[tuple[float, float]]:
     """
-    Complement of `occupied` intervals within [start_hour, end_hour] — the bookable windows.
+    Free (bookable) windows: the complement of the occupied intervals within [start_hour, end_hour].
 
-    `occupied` entries may be `[start, end]` pairs or `{'start', 'end'}` dicts; overlapping / unsorted
-    intervals are handled. Returns a sorted list of `(start, end)` free windows (possibly empty).
+    Args:
+        occupied (Iterable[Union[list, tuple, dict]]): ``[start, end]`` pairs or ``{'start', 'end'}`` dicts, possibly overlapping/unsorted; a falsy value means none.
+        start_hour (float): Opening hour.
+        end_hour (float): Closing hour.
+
+    Returns:
+        list[tuple[float, float]]: Sorted ``(start, end)`` free windows (possibly empty).
     """
     ivs = []
     for it in (occupied or []):
@@ -792,17 +767,16 @@ def free_windows(occupied, start_hour, end_hour) -> list:
 
 
 
-def render_availability_tables(items, start_hour, end_hour,
+def render_availability_tables(items: Iterable[tuple[str, dict]], start_hour: float, end_hour: float,
                                value_header: str = 'Free (bookable) windows, start-end') -> str:
     """
-    Render availability as compact per-entity markdown tables of FREE (bookable) windows, instead of a
-    verbose JSON dump of occupied intervals. Shared by the OPFV/OPFU reasoning-fallback prompts.
+    Render availability as per-entity markdown tables of free (bookable) windows, for reasoning prompts.
 
     Args:
-        items: Iterable of `(title, schedule)` where `schedule` is `{date: occupied intervals}`.
-        start_hour: Operating-hours opening bound used to compute free windows.
-        end_hour: Operating-hours closing bound used to compute free windows.
-        value_header (str): Header text for the free-windows column.
+        items (Iterable[tuple[str, dict]]): ``(title, schedule)`` pairs, ``schedule`` being ``{date: occupied intervals}``.
+        start_hour (float): Opening hour used to compute free windows.
+        end_hour (float): Closing hour used to compute free windows.
+        value_header (str, optional): Header of the free-windows column. Defaults to 'Free (bookable) windows, start-end'.
 
     Returns:
         str: Markdown tables (one `###` block per item), or a placeholder when `items` is empty.
@@ -821,15 +795,15 @@ def render_availability_tables(items, start_hour, end_hour,
 
 
 
-def preprocess_dialog(dialog: dict) -> str:
+def preprocess_dialog(dialog: list[dict]) -> str:
     """
-    Preprocess dialog data into a formatted string.
+    Render a dialog as ``role: content`` lines with whitespace collapsed.
 
     Args:
-        dialog (dict): Dialog data containing 'role' and 'content'.
+        dialog (list[dict]): Turns with 'role' and 'content'.
 
     Returns:
-        str: Pre-processed dialog string.
+        str: The rendered dialog.
     """
     return '\n'.join([f"{turn['role']}: {' '.join(turn['content'].split())}" for turn in dialog])
 
@@ -837,13 +811,13 @@ def preprocess_dialog(dialog: dict) -> str:
 
 def preprocess_utterance(utterance: str) -> str:
     """
-    Preprocess utterance data into a formatted string.
+    Collapse whitespace in an utterance; if it contains "#ACCEPT", strip the tag and end it with punctuation.
 
     Args:
         utterance (str): The content of the utterance.
 
     Returns:
-        str: Pre-processed utterance string.
+        str: The cleaned utterance ('Thanks.' if only the tag remained).
     """
     if "#ACCEPT" in utterance:
         utterance = utterance.replace("#ACCEPT", "")
@@ -860,7 +834,20 @@ def preprocess_utterance(utterance: str) -> str:
 
 
 
-def run_with_retry(func, *args, max_retries=8, **kwargs):
+def run_with_retry(func: Callable, *args: Any, max_retries: int = 8, **kwargs: Any) -> Any:
+    """
+    Call ``func`` and retry server/bad-request API errors with exponential backoff.
+    The last error is re-raised once ``max_retries`` retries are used up.
+
+    Args:
+        func (Callable): Function to call.
+        *args (Any): Positional arguments for ``func``.
+        max_retries (int, optional): Maximum number of retries. Defaults to 8.
+        **kwargs (Any): Keyword arguments for ``func``.
+
+    Returns:
+        Any: The return value of ``func``.
+    """
     retry_count = 0
 
     while 1:
@@ -885,8 +872,7 @@ def run_with_retry(func, *args, max_retries=8, **kwargs):
 
 def is_fatal_api_error(e: Exception) -> bool:
     """
-    Whether `e` is an LLM API infrastructure failure that should stop the run rather than
-    count as a simulation failure.
+    Whether `e` is an LLM API infrastructure failure that should stop the run rather than count as a simulation failure.
 
     Args:
         e (Exception): The exception to classify.
@@ -916,8 +902,8 @@ def staff_role(state: Optional[ConversationState] = None,
     Build the Staff log label, annotated with the MAS node that handled the turn.
 
     Args:
-        state (Optional[ConversationState], optional): Conversation state containing the current agent.
-        role (Optional[str], optional): Fallback role name when ``state`` is not provided.
+        state (Optional[ConversationState], optional): Conversation state containing the current agent. Defaults to None.
+        role (Optional[str], optional): Fallback role name when ``state`` is not provided. Defaults to None.
     
     Returns:
         str: A colored ``Staff (<agent name>)`` label.
@@ -939,16 +925,8 @@ def staff_role(state: Optional[ConversationState] = None,
 
 def normalize_unavailable(unavailable: dict) -> Optional[dict]:
     """
-    Normalize the patient's test-time unavailability into a single canonical shape.
-
-    Accepts the synthesized data shape (`{'type', 'day', 'half_day', 'explanation'}`, where `type`
-    is `None` / `'day'` / `'half_day'`) and the shape a scheduling tool builds from its arguments
-    (the same keys minus `type`, which is inferred), and returns `None` whenever nothing is actually
-    blocked — so every caller can simply test the result for truthiness.
-
-    The result uses those same keys, so normalizing an already-normalized record is a no-op — which
-    the scheduling path relies on, since a tool normalizes its arguments and `schedule_tests`
-    normalizes again.
+    Normalize the patient's test-time unavailability (data shape, or tool shape without `type`) to one canonical shape.
+    Idempotent: normalizing an already-normalized record returns the same record.
 
     Args:
         unavailable (dict): Raw unavailability record.
@@ -988,10 +966,7 @@ def unavailable_blocked_interval(half_day: str,
                                  start_hour: float,
                                  end_hour: float) -> Optional[list[float]]:
     """
-    Operating-hours interval blocked by a half-day constraint.
-
-    The morning / afternoon split is taken at `HALF_DAY_BOUNDARY_HOUR`, clipped to the hospital's
-    operating hours so an unusual opening time cannot produce an out-of-range interval.
+    Operating-hours interval blocked by a half-day constraint (split at `HALF_DAY_BOUNDARY_HOUR`, clipped to operating hours).
 
     Args:
         half_day (str): `'am'` (morning blocked) or `'pm'` (afternoon blocked).
@@ -1048,24 +1023,18 @@ def describe_unavailable(unavailable: dict, audience: str = 'patient') -> str:
 
 
 
-def calculate_idle_wait(assignments, priority_floor: float = float('inf')) -> float:
+def calculate_idle_wait(assignments: Iterable[dict], priority_floor: float = float('inf')) -> float:
     """
     Idle waiting hours the patient spends between consecutive same-day tests.
 
     Args:
-        assignments (Iterable[dict]): Placed test assignments, each carrying
-                                        `date`, `start`, `end`, and `priority` fields.
-                                        `start`/`end` may be ISO strings (scheduler output)
-                                        or float hours (reasoning postprocessing) — both are
-                                        interpreted as the hour of day.
-        priority_floor (float, optional): Only count gaps whose right test has a
-                                            strictly smaller priority. Defaults to +inf
-                                            (count every gap → the true objective).
+        assignments (Iterable[dict]): Test assignments with `date`, `start`, `end`, `priority`; `start`/`end` are ISO strings or float hours (hour of day).
+        priority_floor (float, optional): Only count gaps whose later test has a strictly smaller priority; inf counts every gap. Defaults to float('inf').
 
     Returns:
         float: Total (or priority-locked) idle waiting time in hours.
     """
-    def _hour(v):
+    def _hour(v: Union[int, float, str, datetime]) -> float:
         return v if isinstance(v, (int, float)) else iso_to_hour(v)
 
     by_date = defaultdict(list)
@@ -1088,17 +1057,8 @@ def calculate_idle_wait(assignments, priority_floor: float = float('inf')) -> fl
 
 def replace_none_value(config: Any) -> Any:
     """
-    Recursively replace the string `'None'` with a real `None` throughout a configuration object.
-
-    `Config.dumps()` writes a real `None` as the bare token `None`, which YAML reads back as the STRING
-    `'None'` — so a config saved by one run and reloaded by the next would hand every null value on as a
-    string. This restores them, letting `**config` calls fall back to their defaults as intended.
-
-    Containers are updated IN PLACE and returned, so the concrete type survives: the top level stays a
-    `Config` and nested levels stay `munch.Munch`, both of which the run code accesses by attribute
-    (`config.task_model`) and assigns to (`config.yaml_file = ...`). Rebuilding them as plain dicts
-    would break both. `Config` is duck-typed rather than a `Mapping` subclass, and only its top level is
-    a `Config` at all, so mappings are matched on either.
+    Recursively replace the string `'None'` (how a reloaded `Config.dumps()` null reads back) with `None`.
+    Mutable containers are updated in place so their types (`Config`, `Munch`) survive; tuples are rebuilt.
 
     Args:
         config (Any): A configuration object, container, or scalar value.
@@ -1122,12 +1082,8 @@ def replace_none_value(config: Any) -> Any:
 
 def to_builtin_scalar(value: Any) -> Any:
     """
-    Recursively cast a value down to plain built-in types so `orjson` can serialize it.
-
-    Values read from the YAML config arrive as `ruamel.yaml` scalars (e.g. `ScalarFloat`), which
-    subclass `float`/`int`/`str`, inside config containers (`Munch`, `CommentedMap`/`CommentedSeq`).
-    `orjson` refuses `float` subclasses, so a τ taken straight from the config blows up the result
-    save — after the file has already been truncated. Containers are rebuilt as `dict` / `list`.
+    Recursively cast scalars (e.g. `ruamel.yaml` `ScalarFloat`) to built-in types so `orjson` can serialize them.
+    Mappings are rebuilt as `dict`; lists, tuples, and sets as `list`.
 
     Args:
         value (Any): Scalar or container to normalize; other objects are returned untouched.
@@ -1154,10 +1110,7 @@ def to_builtin_scalar(value: Any) -> Any:
 def encode_non_finite(value: Any) -> Any:
     """
     Recursively copy `value` with every infinite float written as the string `'inf'` / `'-inf'`.
-
-    `orjson` serializes `inf` as `null`, which would make a free-win GPC / trigger index (`inf`)
-    indistinguishable from a value that was never computed (`None`). Apply it to the copy being
-    saved only, so in-memory values that are compared against `float('inf')` stay real floats.
+    `orjson` would save `inf` as `null`, indistinguishable from `None`; apply it only to the copy being saved.
 
     Args:
         value (Any): Structure to save (dicts, lists, scalars).

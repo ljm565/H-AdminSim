@@ -1,4 +1,5 @@
-from h_adminsim.utils import colorstr
+from typing import Any
+
 from h_adminsim.registry.errors import PolicyError
 from h_adminsim.registry.policy import POLICY_REQUIRES_PATIENT_PREFIX, POLICY_REQUIRES_METRIC_PREFIX
 from h_adminsim.policy.base import Policy
@@ -6,15 +7,16 @@ from h_adminsim.policy.metric import Metric
 from h_adminsim.policy.evaluation import Evaluation
 from h_adminsim.policy.builtin.result_gain import ResultGainPolicy
 from h_adminsim.policy.builtin.capacity_protection import CapacityProtectionPolicy
+from h_adminsim.utils import colorstr
 
 
 
-def _validate_requires(cls, kind: str):
+def _validate_requires(cls: type, kind: str) -> None:
     """
     Check the format of a policy / metric class's `requires`.
 
     Args:
-        cls: The policy or metric class.
+        cls (type): The policy or metric class.
         kind (str): ``'Policy'`` or ``'Metric'``, for the error message.
 
     Raises:
@@ -37,12 +39,12 @@ _REGISTRY: dict = {cls.name: cls for cls in (ResultGainPolicy, CapacityProtectio
 
 
 
-def validate_policy_class(cls) -> type:
+def validate_policy_class(cls: Any) -> type:
     """
     Check that `cls` can serve as a policy.
 
     Args:
-        cls: The candidate class.
+        cls (Any): The candidate class.
 
     Raises:
         PolicyError: If `cls` is not a `Policy` subclass, has no `name`, implements no hook, or declares metrics in
@@ -126,12 +128,12 @@ _METRIC_REGISTRY: dict = {}
 
 
 
-def validate_metric_class(cls) -> type:
+def validate_metric_class(cls: Any) -> type:
     """
     Check that `cls` can serve as a metric.
 
     Args:
-        cls: The candidate class.
+        cls (Any): The candidate class.
 
     Raises:
         PolicyError: If `cls` is not a `Metric` subclass, has no `name`, or does not implement `compute`.
@@ -212,12 +214,12 @@ _EVALUATION_REGISTRY: dict = {}
 
 
 
-def validate_evaluation_class(cls) -> type:
+def validate_evaluation_class(cls: Any) -> type:
     """
     Check that `cls` can serve as an evaluation.
 
     Args:
-        cls: The candidate class.
+        cls (Any): The candidate class.
 
     Raises:
         PolicyError: If `cls` is not an `Evaluation` subclass, has no `name`, or does not implement `evaluate`.

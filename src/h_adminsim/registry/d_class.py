@@ -8,6 +8,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class ConversationState:
+    """Dialog messages so far and the MAS agent currently handling the conversation."""
     messages: list[dict] = field(default_factory=list)
     current_agent: str | None = None
 
@@ -31,4 +32,5 @@ class MASNode:
 
     @property
     def is_leaf(self) -> bool:
+        """Whether the node has no children (a worker, not a router)."""
         return not self.children

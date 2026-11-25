@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Callable, Optional
 
 from h_adminsim.agent.base import BaseAgent
 from h_adminsim.registry.d_class import ConversationState, MASNode
@@ -8,6 +8,12 @@ from h_adminsim.utils import Information, colorstr, log
 
 class HospitalMAS:
     def __init__(self, mas_structure: dict):
+        """
+        Validate the MAS structure and build its node tree.
+
+        Args:
+            mas_structure (dict): Nested ``{name: {'agent', 'subagent', 'description'?}}`` dict with a single root.
+        """
         self._structure_check(mas_structure)
         self.mas_structure = mas_structure
         self.nodes = {}
@@ -19,30 +25,28 @@ class HospitalMAS:
         self.max_hops_per_turn = 50
 
 
-    def _structure_check(self, mas_structure: dict):
+    def _structure_check(self, mas_structure: dict) -> None:
         """
-        Check whether the MAS structure is valid. Each node should contain 'agent' and 'subagent' keys.
+        Check whether the MAS structure is valid; missing ``subagent`` / ``description`` keys are filled in place.
 
         Args:
             mas_structure (dict): A nested dictionary representing the MAS structure. Each node should contain 'agent' and 'subagent' keys.
                                   An optional 'description' string per node helps routers decide.
+
+        Raises:
+            ValueError: If the structure is not a dict or has more than one root.
         """
         def _recursive_check(structure: dict) -> None:
             """
-                Check whether all agents have `agent` and `subagent` keys.
-                {
-                    'orchestrator': {
-                        'agent': OrchestratorAgent(...),    # a BaseMASAgent instance
-                        'description': '...'   # optional, for router decision-making
-                        'subagent': {
-                            'intake': {
-                                'agent': IntakeAdminStaffAgent(...),
-                                'subagent': {}
-                            }, ...
-                        },
-                    }
-                }
-                """
+            Check that every node has a string name and a `BaseAgent` under ``agent``, e.g.
+            ``{'orchestrator': {'agent': OrchestratorAgent(...), 'description': '...', 'subagent': {'intake': {...}}}}``.
+
+            Args:
+                structure (dict): The (sub)structure to check.
+
+            Raises:
+                ValueError: If a node is malformed.
+            """
             for agent_name, agent_info in structure.items():
                 if not isinstance(agent_name, str):
                     raise ValueError(f"Agent name must be a string. Found: {type(agent_name)} type.")
@@ -86,7 +90,7 @@ class HospitalMAS:
 
         Args:
             structure (dict): A single-key structure dict (one node and its subtree).
-            parent (Optional[MASNode]): The parent node, for upward (bubble-up) links.
+            parent (Optional[MASNode], optional): The parent node, for upward (bubble-up) links. Defaults to None.
 
         Returns:
             MASNode: The constructed node, with children wired recursively.
@@ -118,7 +122,7 @@ class HospitalMAS:
         return self.nodes[name].agent
 
 
-    def reset(self, verbose: bool = True):
+    def reset(self, verbose: bool = True) -> None:
         """
         Reset the MAS for a fresh conversation.
 
@@ -137,8 +141,7 @@ class HospitalMAS:
 
     def aggregate_token_usages(self) -> dict:
         """
-        Merge every agent's ``client.token_usages`` (a dict of lists) into a single
-        dict by concatenating the per-key lists across all agents.
+        Merge every agent's ``client.token_usages`` (a dict of lists), concatenating the per-key lists.
 
         Returns:
             dict: Combined token usage across all MAS agents.
@@ -154,7 +157,7 @@ class HospitalMAS:
              user_prompt: str,
              using_multi_turn: bool = True,
              verbose: bool = True,
-             callback: Optional[callable] = None,
+             callback: Optional[Callable] = None,
              **kwargs) -> Information:
         """
         Feed one user message into the MAS and return the resulting reply.
@@ -163,8 +166,9 @@ class HospitalMAS:
             user_prompt (str): The user prompt to send to an agent.
             using_multi_turn (bool, optional): Whether to use multi-turn conversation. Defaults to True.
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
-            callback (Optional[callable], optional): Forwarded to the handling agent's ``act``; 
+            callback (Optional[Callable], optional): Forwarded to the handling agent's ``act``; 
                                                      a leaf worker may delegate its turn to it. Defaults to None.
+            **kwargs (Any): Extra arguments forwarded to the agents' ``act``.
 
         Returns:
             Information: ``(agent, reply, is_done)`` for the turn.
@@ -191,7 +195,7 @@ class HospitalMAS:
                    user_prompt: Optional[str] = None,
                    using_multi_turn: bool = True,
                    verbose: bool = True,
-                   callback: Optional[callable] = None,
+                   callback: Optional[Callable] = None,
                    **kwargs) -> Information:
         """
         Deterministically run one turn on ``agent_name``, bypassing the routers' free choice.
@@ -202,7 +206,8 @@ class HospitalMAS:
                                                    patient message already on the shared transcript.
             using_multi_turn (bool, optional): Whether to use multi-turn conversation. Defaults to True.
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
-            callback (Optional[callable], optional): Forwarded to the worker's ``act``. Defaults to None.
+            callback (Optional[Callable], optional): Forwarded to the worker's ``act``. Defaults to None.
+            **kwargs (Any): Extra arguments forwarded to the worker's ``act``.
 
         Returns:
             Information: ``(agent, reply, is_done)`` for the forced turn.
@@ -247,7 +252,7 @@ class HospitalMAS:
     def _advance(self,
                  using_multi_turn: bool = True,
                  verbose: bool = True,
-                 callback: Optional[callable] = None,
+                 callback: Optional[Callable] = None,
                  **kwargs) -> Information:
         """
         Route down to a leaf and run it for the current turn.
@@ -255,8 +260,9 @@ class HospitalMAS:
         Args:
             using_multi_turn (bool, optional): Whether to use multi-turn conversation. Defaults to True.
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
-            callback (Optional[callable], optional): Forwarded to the handling agent's ``act``; 
+            callback (Optional[Callable], optional): Forwarded to the handling agent's ``act``; 
                                                      a leaf worker may delegate its turn to it. Defaults to None.
+            **kwargs (Any): Extra arguments forwarded to the agents' ``act``.
 
         Returns:
             Information: ``(agent, reply, is_done)`` for the turn.
@@ -364,7 +370,7 @@ class HospitalMAS:
 
     def _pop(self) -> bool:
         """
-        Pop the active node, returning control to its parent. False if at root.
+        Pop the active node, returning control to its parent.
 
         Returns:
             bool: True if a node was popped, False if already at the root.
@@ -380,10 +386,10 @@ class HospitalMAS:
         Record an assistant reply in the shared state and return it.
 
         Args:
-            reply (str): Response to reply.
+            reply (str): The staff reply.
 
         Returns:
-            str: Response to reply.
+            str: `reply`.
         """
         self.state.messages.append({"role": "Staff", "content": reply})
         return reply

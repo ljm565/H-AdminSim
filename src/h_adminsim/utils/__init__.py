@@ -1,6 +1,7 @@
 import os
 import logging.config
 from importlib import resources
+from typing import Any, Optional
 
 
 
@@ -9,14 +10,30 @@ LOGGING_NAME = f"H-AdminSim_{open(version_file_path).read().strip()}"
 VERBOSE = True
 
 
-def set_logging(name=LOGGING_NAME, verbose=True, log_file=None):
-    """Sets up logging for the given name."""
+def set_logging(name: str = LOGGING_NAME, verbose: bool = True, log_file: Optional[str] = None) -> None:
+    """
+    Configure the named logger with a colored console handler and an optional file handler.
+
+    Args:
+        name (str, optional): Logger name. Defaults to LOGGING_NAME.
+        verbose (bool, optional): Log at INFO (on rank -1/0) instead of ERROR. Defaults to True.
+        log_file (Optional[str], optional): Path of a log file to append to as well. Defaults to None.
+    """
     rank = int(os.getenv('RANK', -1))  # rank in world for Multi-GPU trainings
     level = logging.INFO if verbose and rank in {-1, 0} else logging.ERROR
 
     class ColorFormatter(logging.Formatter):
         """Custom formatter to add colors to log messages using colorstr."""
-        def format(self, record):
+        def format(self, record: logging.LogRecord) -> str:
+            """
+            Color the message by level, then format the record.
+
+            Args:
+                record (logging.LogRecord): The log record.
+
+            Returns:
+                str: The formatted message.
+            """
             if record.levelname == "ERROR":
                 record.msg = colorstr("red", record.msg)
             elif record.levelname == "WARNING":
@@ -71,33 +88,16 @@ LOGGER = logging.getLogger(LOGGING_NAME)
 
 
 
-def colorstr(*input):
+def colorstr(*input: Any) -> str:
     """
-    Colors a string based on the provided color and style arguments. Utilizes ANSI escape codes.
-    See https://en.wikipedia.org/wiki/ANSI_escape_code for more details.
-
-    This function can be called in two ways:
-        - colorstr('color', 'style', 'your string')
-        - colorstr('your string')
-
-    In the second form, 'blue' and 'bold' will be applied by default.
+    Wrap a string in ANSI color/style codes, e.g. ``colorstr('red', 'bold', 'text')``.
+    With a single argument, 'blue' and 'bold' are applied.
 
     Args:
-        *input (str): A sequence of strings where the first n-1 strings are color and style arguments,
-                      and the last string is the one to be colored.
-
-    Supported Colors and Styles:
-        Basic Colors: 'black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'
-        Bright Colors: 'bright_black', 'bright_red', 'bright_green', 'bright_yellow',
-                       'bright_blue', 'bright_magenta', 'bright_cyan', 'bright_white'
-        Misc: 'end', 'bold', 'underline'
+        *input (Any): Color/style names ('red', 'bright_blue', 'bold', 'underline', ...) followed by the value to color.
 
     Returns:
-        (str): The input string wrapped with ANSI escape codes for the specified color and style.
-
-    Examples:
-        >>> colorstr('blue', 'bold', 'hello world')
-        >>> '\033[34m\033[1mhello world\033[0m'
+        str: The colored string, terminated by the reset code.
     """
     *args, string = input if len(input) > 1 else ('blue', 'bold', input[0])  # color arguments, string
     colors = {
@@ -124,7 +124,15 @@ def colorstr(*input):
 
 
 
-def log(message, level='info', color=False):
+def log(message: Any, level: str = 'info', color: bool = False) -> None:
+    """
+    Log a message through the package logger.
+
+    Args:
+        message (Any): Message to log.
+        level (str, optional): 'warning', 'error', or anything else for INFO. Defaults to 'info'.
+        color (bool, optional): Color INFO messages with ``colorstr``. Defaults to False.
+    """
     if level.lower() == 'warning':
         LOGGER.warning(message)
     elif level.lower() == 'error':
@@ -138,15 +146,31 @@ def log(message, level='info', color=False):
 
 
 class Information:
-    def __init__(self, **kwargs):
+    """Attribute container that also supports ``obj[key]`` and ``key in obj``."""
+    def __init__(self, **kwargs: Any):
+        """
+        Store the keyword arguments as attributes.
+
+        Args:
+            **kwargs (Any): Attribute names and values.
+        """
         self.__dict__.update(kwargs)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         return self.__dict__[key]
     
-    def update(self, **kwargs):
+    def update(self, **kwargs: Any) -> 'Information':
+        """
+        Set or overwrite attributes.
+
+        Args:
+            **kwargs (Any): Attribute names and values.
+
+        Returns:
+            Information: This object.
+        """
         self.__dict__.update(kwargs)
         return self
     
-    def __contains__(self, key):
+    def __contains__(self, key: str) -> bool:
         return key in self.__dict__

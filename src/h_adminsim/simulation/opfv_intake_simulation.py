@@ -1,5 +1,5 @@
-from typing import Optional, TYPE_CHECKING
 from patientsim import PatientAgent, CheckerAgent
+from typing import Iterator, Optional, TYPE_CHECKING
 
 from h_adminsim.registry.errors import AgentSelectionError
 from h_adminsim.simulation.op_simulation import OPSimulation
@@ -19,7 +19,15 @@ class OPFVIntakeSimulation(OPSimulation):
                  admin_staff_mas: "HospitalMAS",
                  checker_agent: Optional[CheckerAgent] = None,
                  max_inferences: int = 5):
+        """
+        Set up the first-visit intake simulation.
 
+        Args:
+            patient_agent (PatientAgent): The simulated patient.
+            admin_staff_mas (HospitalMAS): The administration staff multi-agent system.
+            checker_agent (Optional[CheckerAgent], optional): Agent that detects staff termination cues. Defaults to None.
+            max_inferences (int, optional): Maximum number of dialogue rounds. Defaults to 5.
+        """
         super().__init__(patient_agent, admin_staff_mas)
 
         # Initialize simulation parameters
@@ -30,14 +38,11 @@ class OPFVIntakeSimulation(OPSimulation):
         self._sanity_check()
 
 
-    def _sanity_check(self):
+    def _sanity_check(self) -> None:
         """
-        Verify and synchronize the maximum number of inference rounds
-        between the Administration Staff agent and the OP simulation.
+        Align the intake agent's `max_inferences` with the simulation's (warning and prompt rebuild on mismatch).
 
-        If the configured values do not match, a warning is logged and
-        the Administration Staff agent's configuration is updated to align with the
-        OP simulation. The system prompt is also rebuilt accordingly.
+        Also asserts the checker and patient agents share a visit type.
         """
         if not self.intake_agent.max_inferences == self.max_inferences:
             log("The maximum number of inferences between the Administration Staff agent and the OP simulation does not match.", level="warning")
@@ -55,23 +60,21 @@ class OPFVIntakeSimulation(OPSimulation):
                  verbose: bool = True, 
                  patient_kwargs: dict = {},
                  staff_kwargs: dict = {},
-                 **kwargs) -> list[dict]:
+                 **kwargs) -> dict:
         """
-        Run a full conversation simulation between the Administration Staff and Patient agents in the outpatient setting.
-
-        The simulation alternates turns between the Administration Staff and Patient until
-        the maximum number of inference rounds is reached or early termination
-        is detected. During the final turn, the Administration Staff agent should assign the department to the patient.
+        Run the intake dialogue until `max_inferences` rounds or early termination.
 
         Args:
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
             patient_kwargs (dict, optional): Additional keyword arguments for the Patient agent. Defaults to {}.
             staff_kwargs (dict, optional): Additional keyword arguments for the Administration Staff agent. Defaults to {}.
-        
+            **kwargs: Additional keyword arguments passed to both agents.
+
         Returns:
-            list[dict]: Dialogue history, where each dict contains:
-                - "role" (str): "Staff" or "Patient"
-                - "content" (str): Text content of the dialogue turn
+            dict: ``dialog_history`` (list of ``{role, content}``), ``patient_token_usage``, ``admin_staff_token_usage``.
+
+        Raises:
+            AgentSelectionError: If a staff agent other than the intake agent answers.
         """
         # Initialize agents
         self._init_agents(verbose=verbose)
@@ -154,13 +157,11 @@ class OPFVIntakeSimulation(OPSimulation):
                         verbose: bool = True,
                         patient_kwargs: dict = {},
                         staff_kwargs: dict = {},
-                        **kwargs):
+                        **kwargs) -> Iterator[tuple[str, str]]:
         """
-        Run a streaming conversation simulation, yielding each utterance as it is produced.
+        Streaming variant of `simulate()` that yields each utterance as it is produced.
 
-        Functionally equivalent to `simulate()`, but yields each formatted utterance
-        immediately after it is generated rather than returning the full result at the end.
-        Useful for real-time display or downstream streaming pipelines.
+        A misrouted staff turn is forced to the intake agent instead of raising.
 
         Args:
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
@@ -169,8 +170,7 @@ class OPFVIntakeSimulation(OPSimulation):
             **kwargs: Additional keyword arguments passed to both agents.
 
         Yields:
-            tuple[str, str]: A 2-tuple of (role, content) where role is 'Staff' or 'Patient'
-                             and content is the whitespace-normalized utterance text.
+            tuple[str, str]: ``(role, content)``, role 'Staff' or 'Patient', content whitespace-normalized.
         """
         # Initialize agents
         self._init_agents(verbose=verbose)

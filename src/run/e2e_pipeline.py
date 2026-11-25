@@ -3,7 +3,7 @@ import sys
 import random
 import numpy as np
 from sconf import Config
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
 from h_adminsim.agent import SupervisorAgent
@@ -21,7 +21,14 @@ from h_adminsim.utils.policy_utils import check_policy_requirements
 
 
 
-def env_setup(config, resume):
+def env_setup(config: Config, resume: bool) -> None:
+    """
+    Seed ``random`` and NumPy; on a fresh FHIR-integrated run, delete existing Appointment and Patient resources.
+
+    Args:
+        config (Config): Simulation config.
+        resume (bool): Whether the run resumes a previous one.
+    """
     random.seed(config.seed)
     np.random.seed(config.seed)
 
@@ -34,13 +41,28 @@ def env_setup(config, resume):
         fhir_manager.delete_all(patient_entries, verbose=False)
 
 
-def load_config(config_path):
+def load_config(config_path: str) -> Config:
+    """
+    Load a YAML config, turning ``'None'`` strings into ``None``.
+
+    Args:
+        config_path (str): Path to the config file.
+
+    Returns:
+        Config: The loaded config.
+    """
     config = Config(config_path)
     config = replace_none_value(config)
     return config
 
 
-def main(args):
+def main(args: Namespace) -> None:
+    """
+    End-to-end run: synthesize data (FHIR-converted), then simulate the configured tasks.
+
+    Args:
+        args (Namespace): Parsed CLI arguments.
+    """
     # Init config
     d_config = load_config(args.data_config) if args.data_config else None
     s_config = load_config(args.simulation_config)

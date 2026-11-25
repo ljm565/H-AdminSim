@@ -1,19 +1,34 @@
 import os
 import sys
 from sconf import Config
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
 from h_adminsim.pipeline import DataGenerator
 
 
 
-def load_config(config_path):
+def load_config(config_path: str) -> Config:
+    """
+    Load a YAML config.
+
+    Args:
+        config_path (str): Path to the config file.
+
+    Returns:
+        Config: The loaded config.
+    """
     config = Config(config_path)
     return config
 
 
-def main(args):
+def main(args: Namespace) -> None:
+    """
+    Synthesize hospital data (optionally sanity-checked and converted to FHIR) and build agent data.
+
+    Args:
+        args (Namespace): Parsed CLI arguments.
+    """
     # Init config
     config = load_config(args.config)
     config.yaml_file = args.config

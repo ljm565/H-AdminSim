@@ -1,6 +1,6 @@
 import os
-from typing import Optional
 from importlib import resources
+from typing import Callable, Optional
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -30,7 +30,24 @@ class SchedulingAdminStaffAgent(BaseAgent):
                  prompt_kwargs: dict = {},
                  log_verbose: bool = True,
                  **kwargs):
-        
+        """
+        Set up the scheduling staff agent.
+
+        Args:
+            target_task (str): ``'first_visit_scheduling'`` or ``'follow_up_visit_scheduling'``.
+            model (str): The agent's model.
+            api_key (Optional[str], optional): API key for the model. Defaults to None.
+            use_vllm (bool, optional): Whether to use the vLLM client. Defaults to False.
+            vllm_endpoint (Optional[str], optional): vLLM server endpoint. Defaults to None.
+            system_prompt_path (Optional[str], optional): Custom system prompt file. Defaults to None.
+            scheduling_user_prompt_path (Optional[str], optional): Custom scheduling user prompt file. Defaults to None.
+            tool_calling_prompt_path (Optional[str], optional): Custom tool-calling prompt file. Defaults to None.
+            sc_tool_calling_prompt_path (Optional[str], optional): Custom scheduling-only tool-calling prompt file.
+                                                                   Defaults to None.
+            prompt_kwargs (dict, optional): Format arguments per prompt, passed to `_init_prompt`. Defaults to {}.
+            log_verbose (bool, optional): Whether to log initialization. Defaults to True.
+            **kwargs (Any): Environment settings passed to `BaseAgent` (e.g. greetings and suggestion templates).
+        """
         super().__init__(
             model=model,
             api_key=api_key,
@@ -57,9 +74,13 @@ class SchedulingAdminStaffAgent(BaseAgent):
             log("Scheduling adminStaffAgent initialized successfully", color=True)
     
 
-    def _init_env(self, **kwargs):
+    def _init_env(self, **kwargs) -> None:
         """
-        Initialize the environment with default settings.
+        Initialize the environment with default settings and the staff's phrase templates.
+
+        Args:
+            **kwargs (Any): Overrides for the base settings and the phrase templates (``appn_greet``, ``test_greet``,
+                            ``schedule_suggestion``, ...).
         """
         super()._init_env(**kwargs)
         self.appn_greet = kwargs.get('appn_greet', "How would you like to schedule the appointment?")
@@ -121,9 +142,9 @@ class SchedulingAdminStaffAgent(BaseAgent):
                      scheduling_user_prompt_path: Optional[str] = None,
                      tool_calling_prompt_path: Optional[str] = None,
                      sc_tool_calling_prompt_path: Optional[str] = None,
-                     **kwargs) -> tuple[str, str, str, str]:
+                     **kwargs) -> None:
         """
-        Initialize the system prompt for the administration staff agent.
+        Load the staff's system, scheduling user, tool-calling and scheduling-only tool-calling prompts.
 
         Args:
             system_prompt_path (Optional[str], optional): Path to a custom system prompt file. 
@@ -134,9 +155,11 @@ class SchedulingAdminStaffAgent(BaseAgent):
                                                                 If not provided, the default tool calling prompt will be used. Defaults to None.
             sc_tool_calling_prompt_path (Optional[str], optional): Path to a custom scheduling tool calling prompt file. 
                                                                 If not provided, the default scheduling tool calling prompt will be used. Defaults to None.
+            **kwargs (Any): Optional format arguments per prompt (``system_prompt``, ``scheduling_user_prompt``,
+                            ``tool_calling_prompt``, ``sc_tool_calling_prompt``), each a dict.
 
         Raises:
-            FileNotFoundError: If the specified system prompt file does not exist.
+            FileNotFoundError: If a specified prompt file does not exist.
         """
         # =====================================================================================
         # Initialilze with the default system prompt
@@ -233,7 +256,7 @@ class SchedulingAdminStaffAgent(BaseAgent):
                     patient_schedule_list: Optional[list[dict]] = None,
                     gt_idx: Optional[int] = None,
                     only_schedule_tool: bool = False,
-                    reschedule_pipeline: Optional[callable] = None,
+                    reschedule_pipeline: Optional[Callable] = None,
                     required_test_codes: Optional[list] = None,
                     test_device_information: Optional[dict] = None,
                     patient_unavailable: Optional[dict] = None) -> AgentExecutor:
@@ -246,14 +269,13 @@ class SchedulingAdminStaffAgent(BaseAgent):
             patient_schedule_list (Optional[list[dict]], optional): A list of the patient's scheduled appointments. Defaults to None.
             gt_idx (Optional[int], optional): Ground-truth index of the appointment to be cancelled or rescheduled. Defaults to None.
             only_schedule_tool (bool, optional): Whether use only scheduling tools or not. Defaults to False.
-            reschedule_pipeline (Optional[callable], optional): Callable executing the post-retrieval rescheduling pipeline. Defaults to None.
+            reschedule_pipeline (Optional[Callable], optional): Callable executing the post-retrieval rescheduling pipeline. Defaults to None.
             required_test_codes (Optional[list], optional): Codes of the tests the patient must take. Defaults to None.
-            test_device_information (Optional[dict], optional): Test device schedules — enables the test-scheduling tools together with ``required_test_codes``, and feeds the test-cancellation tool. Defaults to None.
-            patient_unavailable (Optional[dict], optional): The patient's test-time unavailability, when it is already known
-                                                            from a stored booking (rescheduling / waiting-list re-runs). Given
-                                                            here, it overrides whatever the agent passes to the scheduling tools.
-                                                            Leave it None during a live dialogue, where the constraint must come
-                                                            from what the patient actually said. Defaults to None.
+            test_device_information (Optional[dict], optional): Test device schedules; with ``required_test_codes`` enables
+                                                                the test-scheduling tools. Defaults to None.
+            patient_unavailable (Optional[dict], optional): The patient's known test-time unavailability (from a stored
+                                                            booking); overrides what the agent passes to the tools. Leave
+                                                            None in a live dialogue. Defaults to None.
 
         Returns:
             AgentExecutor: A LangChain agent executor with the scheduling tools.
@@ -330,7 +352,7 @@ class SchedulingAdminStaffAgent(BaseAgent):
             verbose: bool = True,
             is_done: bool = False,
             sub_agents: Optional[dict] = None,
-            callback: Optional[callable] = None,
+            callback: Optional[Callable] = None,
             **kwargs) -> tuple[str, bool]:
         """
         MAS entry point: handle one scheduling turn.
@@ -341,8 +363,9 @@ class SchedulingAdminStaffAgent(BaseAgent):
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
             is_done (bool, optional): Caller-supplied termination flag for the fallback path. Defaults to False.
             sub_agents (Optional[dict], optional): Unused; leaf workers have no children. Defaults to None.
-            callback (Optional[callable], optional): A ``callback(user_prompt) -> (reply, is_done)`` that
-                                                     performs the structured staff turn. When provided, the agent delegates to it. Defaults to None.
+            callback (Optional[Callable], optional): A ``callback(user_prompt) -> (reply, is_done)`` performing the
+                                                     structured staff turn; when given, the agent delegates to it. Defaults to None.
+            **kwargs (Any): Extra arguments passed to the LLM client.
 
         Returns:
             tuple[str, bool]: ``(reply, is_done)``.
@@ -368,15 +391,16 @@ class SchedulingAdminStaffAgent(BaseAgent):
                  verbose: bool = True,
                  **kwargs) -> str:
         """
-        Call the patient agent with a user prompt and return the response.
+        Run one staff LLM call on the user prompt.
 
         Args:
-            user_prompt (str): The user prompt to send to the patient agent.
+            user_prompt (str): The prompt for the staff model.
             using_multi_turn (bool, optional): Whether to use multi-turn conversation. Defaults to True.
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
+            **kwargs (Any): Extra arguments passed to the LLM client.
 
         Returns:
-            str: The response from the patient agent.
+            str: The staff's reply.
         """
         response = self.client(
             user_prompt=user_prompt,

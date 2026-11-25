@@ -61,6 +61,12 @@ class ToolCallingError(Exception):
     error_code = "TOOL_CALLING_ERROR"
 
     def __init__(self, message: str):
+        """
+        Store the error message.
+
+        Args:
+            message (str): Error message.
+        """
         super().__init__(message)
         self.message = message
 
@@ -69,6 +75,12 @@ class DataNotFoundError(Exception):
     error_code = "DATA_NOT_FOUND_ERROR"
 
     def __init__(self, message: str):
+        """
+        Store the error message.
+
+        Args:
+            message (str): Error message.
+        """
         super().__init__(message)
         self.message = message
 
@@ -77,6 +89,12 @@ class SchedulingError(Exception):
     error_code = "SCHEDULING_ERROR"
 
     def __init__(self, message: str):
+        """
+        Store the error message.
+
+        Args:
+            message (str): Error message.
+        """
         super().__init__(message)
         self.message = message
 
@@ -86,35 +104,45 @@ class ToolSelectionError(Exception):
     error_code = "TOOL_SELECTION_ERROR"
 
     def __init__(self, message: str):
+        """
+        Store the error message.
+
+        Args:
+            message (str): Error message.
+        """
         super().__init__(message)
         self.message = message
 
 
 class PolicyError(ValueError):
     """
-    Raised when a follow-up scheduling policy is configured incorrectly (policy config file, source, parameters) or
-    returns something the simulation cannot use. A `ValueError`, so callers catching `ValueError` keep working.
+    Raised when a follow-up scheduling policy is misconfigured or returns something the simulation cannot use.
+    Subclasses `ValueError`, so callers catching `ValueError` keep working.
     """
     error_code = "POLICY_ERROR"
 
     def __init__(self, message: str):
+        """
+        Store the error message.
+
+        Args:
+            message (str): Error message.
+        """
         super().__init__(message)
         self.message = message
 
 
 class PolicyCompositionError(PolicyError):
     """
-    Raised when several policies cannot run together (duplicate policy ids, or `review` policies asking for different
-    values of the same shared negotiation-metrics parameter).
+    Raised when policies cannot run together (duplicate ids, or conflicting shared negotiation-metrics parameters).
     """
     error_code = "POLICY_COMPOSITION_ERROR"
 
 
 class PolicyRequirementError(PolicyError):
     """
-    Raised when a policy or metric needs something the run does not provide (a `requires` patient field missing from the
-    agent data, or a `requires` metric no metric computes), or reads a patient field / metric it did not declare in
-    `requires`.
+    Raised when a policy or metric requires a patient field / metric the run does not provide, or reads one it did not
+    declare in `requires`.
     """
     error_code = "POLICY_REQUIREMENT_ERROR"
 
@@ -123,6 +151,13 @@ class AgentSelectionError(Exception):
     error_code = "WRONG_AGENT_SELECTION"
 
     def __init__(self, message: str, dialog_history: Optional[list] = None):
+        """
+        Store the error message and the dialog that led to it.
+
+        Args:
+            message (str): Error message.
+            dialog_history (Optional[list], optional): Dialog up to the failure. Defaults to None.
+        """
         super().__init__(message)
         self.message = message
         self.dialog_history = dialog_history

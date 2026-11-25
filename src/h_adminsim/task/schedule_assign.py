@@ -12,10 +12,7 @@ from h_adminsim.utils.common_utils import (
 class ScheduleAssigner:
     def __init__(self, start: float, end: float, interval: float):
         """
-        Initialize a ScheduleAssigner for generating random schedules or appointments.
-
-        This class divides a given time range into fixed-size segments and provides methods
-        to assign schedules or appointments by selecting and grouping these segments.
+        Divide a time range into fixed-size segments for random schedule / appointment assignment.
 
         Args:
             start (float): Start time in hours (e.g., 9.0 for 09:00).
@@ -32,28 +29,14 @@ class ScheduleAssigner:
                                 p: float,
                                 segments: Optional[list[int]] = None) -> list[list[int]]:
         """
-        Randomly assign a proportion of schedule time segments into grouped consecutive blocks.
-
-        This method selects a random subset of segments, where the number of segments is 
-        determined by the proportion `p` (e.g., 0.5 means 50% of all segments).
-        The selected segments are then grouped into lists of consecutive segment indices.
+        Randomly pick ``round(len(segments) * p)`` segments and group them into consecutive runs.
 
         Args:
             p (float): Proportion of total segments to assign, between 0 and 1.
             segments (Optional[list[int]], optional): Specific segments. Defaults to None.
 
         Returns:
-            list[list[int]]: A list of groups, where each group is a list of consecutive segment indices.
-                            For example, [[0, 1], [3, 4, 5], [7]].
-
-        Example:
-            If segments = [0, 1, 2, ..., 11] and p = 0.5,
-            this function might return something like:
-                [[0, 1], [4], [6, 7, 8]]
-
-        Notes:
-            - The segment indices are selected randomly each time the function is called.
-            - Groups are always composed of consecutive indices from the selected subset.
+            list[list[int]]: Groups of consecutive segment indices, e.g. [[0, 1], [3, 4, 5], [7]].
         """
         segments = self.segments if segments == None else segments
         segment_n = round(len(segments) * p)
@@ -76,9 +59,7 @@ class ScheduleAssigner:
         """
         Randomly place non-overlapping fixed-size blocks until about a proportion `p` of segments is covered.
 
-        Unlike `schedule_segment_assign`, which scatters single segments, each occupancy here is one
-        `block_size`-long booking (e.g. one exam), so the free time left between blocks is mostly long
-        enough to hold another booking of the same size.
+        Each block is one `block_size`-long booking (e.g. one exam), so the gaps left mostly fit another such booking.
 
         Args:
             p (float): Target proportion of segments to cover, between 0 and 1.
@@ -163,34 +144,23 @@ class ScheduleAssigner:
     def __call__(self,
                  p: float,
                  is_appointment: bool = False,
-                 segments: Optional[list[list[int]]] = None,
+                 segments: Optional[list[int]] = None,
                  block_size: Optional[int] = None,
                  **kwargs) -> tuple[list[list[int]], list[list[float]]]:
         """
-        Generate grouped time ranges by randomly selecting and grouping a proportion of time segments.
-
-        This method allows the ScheduleAssigner instance to be called directly with a proportion `p`.
-        It selects a subset of time segments based on `p`, groups them into consecutive segment blocks,
-        and converts each group of segment indices into their corresponding time values.
+        Randomly select a proportion `p` of time segments, group them into consecutive runs and convert them to times.
 
         Args:
             p (float): Proportion of total segments to select, between 0 and 1.
             is_appointment (bool, optional): Whether the generated schedules are for appointments. Defaults to False.
-            segments (Optional[list[list[int]]], optional): Specific segemnts. Defaults to None.
+            segments (Optional[list[int]], optional): Specific segments (None -> all). Defaults to None.
             block_size (Optional[int], optional): If given (and not an appointment), place `block_size`-long
                                                   blocks instead of scattering single segments. Defaults to None.
+            **kwargs (Any): ``min_chunk_size`` / ``max_chunk_size`` for `appointment_segment_assign`.
 
         Returns:
-            list[list[float]]: A list of grouped time segments. Each group is a list of time segemnt values.
-                            For example: [[2, 3], [5, 6, 7]].
-            list[list[float]]: A list of grouped time ranges. Each group is a list of time values (in hours),
-                            corresponding to consecutive time segments.
-                            For example: [[0.0, 0.5], [2.0, 3.0]].
-
-        Example:
-            >>> assigner = ScheduleAssigner(0, 12, 0.5)
-            >>> assigner(0.25)
-            [[1.0, 1.5], [4.5], [6.0, 6.5]]
+            tuple[list[list[int]], list[list[float]]]: The segment groups (e.g. [[2, 3], [5, 6, 7]]) and the
+                                                       corresponding time values in hours (``([], [])`` if none).
         """
         if is_appointment:
             time_segments = self.appointment_segment_assign(p, segments=segments, **kwargs)

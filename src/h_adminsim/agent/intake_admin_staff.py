@@ -1,6 +1,6 @@
 import os
 from importlib import resources
-from typing import Union, Optional
+from typing import Callable, Union, Optional
 from patientsim.utils.common_utils import detect_op_termination
 
 from h_adminsim.agent.base import BaseAgent
@@ -22,7 +22,24 @@ class IntakeAdminStaffAgent(BaseAgent):
                  system_prompt_path: Optional[str] = None,
                  log_verbose: bool = True,
                  **kwargs):
-        
+        """
+        Set up the intake staff agent.
+
+        Args:
+            model (str): The agent's model.
+            department_list (Optional[list[str]], optional): Available departments; may be set later with
+                                                             `set_departments`. Defaults to None.
+            max_inferences (int, optional): Maximum number of staff turns. Defaults to 5.
+            api_key (Optional[str], optional): API key for the model. Defaults to None.
+            use_azure (bool, optional): Whether to use the Azure OpenAI client. Defaults to False.
+            use_vertex (bool, optional): Whether to use the Google Vertex AI client. Defaults to False.
+            use_vllm (bool, optional): Whether to use the vLLM client. Defaults to False.
+            azure_endpoint (Optional[str], optional): Azure OpenAI endpoint. Defaults to None.
+            vllm_endpoint (Optional[str], optional): vLLM server endpoint. Defaults to None.
+            system_prompt_path (Optional[str], optional): Custom system prompt file (None -> the default). Defaults to None.
+            log_verbose (bool, optional): Whether to log initialization. Defaults to True.
+            **kwargs (Any): Environment settings passed to `BaseAgent`.
+        """
         super().__init__(
             model=model,
             api_key=api_key,
@@ -50,11 +67,9 @@ class IntakeAdminStaffAgent(BaseAgent):
             log("Intake adminStaffAgent initialized successfully", color=True)
 
 
-    def set_departments(self, department_list: list[str]):
+    def set_departments(self, department_list: list[str]) -> None:
         """
         Inject the (per-hospital) department list and re-render the system prompt.
-        Departments are only known at task call time, so the agent can be
-        constructed with departments deferred and have them set later.
 
         Args:
             department_list (list[str]): The list of available departments.
@@ -73,6 +88,9 @@ class IntakeAdminStaffAgent(BaseAgent):
 
         Raises:
             FileNotFoundError: If the specified system prompt file does not exist.
+
+        Returns:
+            str: The system prompt template.
         """
         # Initialilze with the default system prompt
         if not system_prompt_path:
@@ -89,7 +107,7 @@ class IntakeAdminStaffAgent(BaseAgent):
         return system_prompt
 
 
-    def build_prompt(self):
+    def build_prompt(self) -> None:
         """
         Build the system prompt for the administration office agent using the provided template and patient conditions.
         """
@@ -101,7 +119,7 @@ class IntakeAdminStaffAgent(BaseAgent):
         )
     
 
-    def update_system_prompt(self):
+    def update_system_prompt(self) -> None:
         """
         Identify the current inference round stage and update the system prompt accordingly.
         """
@@ -119,23 +137,24 @@ class IntakeAdminStaffAgent(BaseAgent):
             verbose: bool = True,
             is_done: bool = False,
             sub_agents: Optional[dict] = None,
-            callback: Optional[callable] = None,
+            callback: Optional[Callable] = None,
             **kwargs) -> tuple[Union[str, dict], bool]:
         """
         Execute a single interaction step and determine whether the conversation should terminate.
 
         Args:
-            user_prompt (str): The user prompt to send to the patient agent.
+            user_prompt (str): The patient's message.
             using_multi_turn (bool, optional): Whether to use multi-turn conversation. Defaults to True.
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
             is_done (bool, optional): Explicit flag indicating whether the agent action should terminate. Defaults to False.
-            sub_agents (Optional[dict], optional): Optional dictionary of sub-agent descriptions to include in the system prompt. Defaults to None.
-            callback (Optional[callable], optional): A ``callback(user_prompt) -> (reply, is_done)`` that
-                                                     performs the structured staff turn. When provided, the agent delegates to it. Defaults to None.
+            sub_agents (Optional[dict], optional): Ignored by this agent (accepted for a uniform signature). Defaults to None.
+            callback (Optional[Callable], optional): Ignored by this agent (accepted for a uniform `act` signature).
+                                                     Defaults to None.
+            **kwargs (Any): Extra arguments passed to the LLM client.
 
         Returns:
-            tuple[Union[str, dict], bool]: ``(response, is_done)`` — the routing
-                dict (or direct reply) and whether the subtree is finished.
+            tuple[Union[str, dict], bool]: ``(response, is_done)``; done once the staff ends the dialogue or
+                                           `max_inferences` is reached.
         """
         response = self(
             user_prompt=user_prompt,
@@ -156,16 +175,17 @@ class IntakeAdminStaffAgent(BaseAgent):
                  sub_agents: Optional[dict] = None,
                  **kwargs) -> str:
         """
-        Call the patient agent with a user prompt and return the response.
+        Run one staff turn on the patient's message.
 
         Args:
-            user_prompt (str): The user prompt to send to the patient agent.
+            user_prompt (str): The patient's message.
             using_multi_turn (bool, optional): Whether to use multi-turn conversation. Defaults to True.
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
-            sub_agents (Optional[dict], optional): Optional dictionary of sub-agent descriptions to include in the system prompt. Defaults to None.
+            sub_agents (Optional[dict], optional): Ignored by this agent (accepted for a uniform signature). Defaults to None.
+            **kwargs (Any): Extra arguments passed to the LLM client.
 
         Returns:
-            str: The response from the patient agent.
+            str: The staff's reply.
         """
         self.update_system_prompt()
         response = self.client(

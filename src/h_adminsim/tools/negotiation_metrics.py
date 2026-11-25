@@ -21,9 +21,9 @@ if TYPE_CHECKING:
 
 def frontload_pairs(booked: set, free: set) -> tuple[int, int]:
     """
-    Mann-Whitney pair counts behind the front-loading score: for each booked slot, the free slots that come
-    after it on a single flattened slot axis. `good / total` is the score (1.0 = every booking precedes every
-    free slot, 0.0 = fully back-loaded); keeping the two counts lets callers pool them across devices.
+    Mann-Whitney pair counts behind the front-loading score (booked slots followed by a free slot).
+
+    `good / total` is the score (1.0 = fully front-loaded, 0.0 = fully back-loaded); counts can be pooled across devices.
 
     Args:
         booked (set): Booked slot indices on the axis.
@@ -52,10 +52,8 @@ class NegotiationMetrics:
     - ``R``    Result-time gain (hours) from switching P -> T.
     - ``U``    Per-patient availability proxy (front-loading gain P -> T).
 
-    Slot-level quantities (``tcl``, ``U``) are read off the same ``filtered_test_device_information``
-    the scheduler used, so they reflect the device state just before this booking commits. Whether to
-    negotiate is not decided here: the staff negotiation policy turns these metrics into its own
-    trigger index (see ``h_adminsim.policy.ResultGainPolicy.trigger_index``).
+    Slot-level quantities (``tcl``, ``U``) reflect the device state just before this booking commits.
+    Whether to negotiate is decided by the policies, not here.
     """
 
     def __init__(self,
@@ -68,20 +66,16 @@ class NegotiationMetrics:
                  time_budget_s: float = 10.0,
                  tcl_temperature: float = 1.0):
         """
+        Store the booking's inputs; metrics are computed lazily.
+
         Args:
-            preference (str): The booking's scheduling preference ('visit_min', 'stay_min',
-                              'throughput_max', or 'indifferent'; the latter is treated as throughput_max).
-            achieved_schedule (dict): The preference schedule P the patient was booked into
-                                      (the `pred_schedule` shape: `test_schedule`, `test_visit_dates`,
-                                      `idle_waiting_time`, `all_results_ready_at`).
-            filtered_test_device_information (dict): Device schedules keyed as
-                                                     `{'test': {code: {'duration_hour', 'devices': {device: {'schedule': {date: [[s, e], ...]}}}}}}`.
-            rule (SchedulingRule): Rule instance used to recompute the throughput_max counterfactual T.
-            environment (HospitalEnvironment): Environment supplying `current_time`.
-            unavailable (Optional[dict], optional): The patient's test-time unavailability. The throughput_max
-                                                    counterfactual T is searched under it, since T is what a won
-                                                    negotiation actually books the patient into. Defaults to None.
-            time_budget_s (float, optional): Wall-clock cap on the throughput_max backtracking search. Defaults to 10.0.
+            preference (str): Booking preference ('visit_min', 'stay_min', 'throughput_max' or 'indifferent').
+            achieved_schedule (dict): The preference schedule P (`test_schedule`, `test_visit_dates`, `idle_waiting_time`, `all_results_ready_at`).
+            filtered_test_device_information (dict): Device schedules, `{'test': {code: {'duration_hour', 'devices': {device: {'schedule': ...}}}}}`.
+            rule (SchedulingRule): Rule used to recompute the throughput_max counterfactual T.
+            environment (HospitalEnvironment): Supplies `current_time`.
+            unavailable (Optional[dict], optional): Patient's test-time unavailability; T is searched under it. Defaults to None.
+            time_budget_s (float, optional): Wall-clock cap (seconds) on the throughput_max search. Defaults to 10.0.
             tcl_temperature (float, optional): Softmax temperature for TCL (lower emphasizes the bottleneck test). Defaults to 1.0.
         """
         self.preference = preference
@@ -114,9 +108,13 @@ class NegotiationMetrics:
 
     def _last_test_end(self, schedule: dict) -> Optional[str]:
         """
-        ISO end time of the last test in `schedule` (None if it has no tests). `test_schedule` is
-        sorted by (date, start) and the patient's tests never overlap, so the last entry is the
-        latest-ending one; its end is its `date` + hour-float `end` (or a `schedule` [start, end] pair).
+        ISO end time of the last test in `schedule` (relies on `test_schedule` being sorted by date/start).
+
+        Args:
+            schedule (dict): A schedule with `test_schedule` entries carrying `end` or a `schedule` pair.
+
+        Returns:
+            Optional[str]: The ISO end time, or None without tests.
         """
         tests = schedule.get('test_schedule') or []
         if not tests:
@@ -131,7 +129,8 @@ class NegotiationMetrics:
     @cached_property
     def _T(self) -> dict:
         """
-        throughput_max counterfactual schedule for the same test set (side-effect-free search).
+        throughput_max counterfactual schedule T for the same test set (side-effect-free search).
+
         `test_schedule` is normalized to a start-sorted list with hour-float start/end, matching P.
         """
         schedule = self._rule.schedule_tests(
@@ -165,8 +164,7 @@ class NegotiationMetrics:
     @property
     def te_pref(self) -> Optional[str]:
         """
-        Last test end time (ISO) of the preference schedule P — the slot window's end anchor
-        (device slots free at test end, unlike result-ready which comes later).
+        Last test end time (ISO) of the preference schedule P (a slot window end anchor).
         """
         return self._last_test_end(self._P)
 
@@ -180,9 +178,15 @@ class NegotiationMetrics:
 
 
     # ---- Slot-level Helpers --------------------------------------------------
-    def _busy_segments(self, intervals) -> set:
+    def _busy_segments(self, intervals: list) -> set:
         """
-        Set of occupied segment indices for a list of `[start_hour, end_hour]` busy intervals.
+        Occupied segment indices of `[start_hour, end_hour]` busy intervals (invalid intervals skipped).
+
+        Args:
+            intervals (list): Busy `[start_hour, end_hour]` pairs (None is treated as empty).
+
+        Returns:
+            set: The occupied segment indices.
         """
         segs = set()
         for interval in intervals or []:
@@ -196,10 +200,9 @@ class NegotiationMetrics:
     @cached_property
     def _window(self) -> tuple:
         """
-        Window bounds (start_date, start_hour, end_date, end_hour) for
-        [current_time, max(te_pref, te_thr)] — ending at the later schedule's LAST TEST END (when the
-        device slots free), not result-ready (which comes later). Falls back to a same-day window
-        ending at the working-day close when no test end is available.
+        Window bounds (start_date, start_hour, end_date, end_hour) for [current_time, max(te_pref, te_thr)].
+
+        Ends at the last test end (not result-ready); without test ends, at the same day's close.
         """
         ct = self._environment.current_time
         start_date, start_hour = iso_to_date(ct), iso_to_hour(ct)
@@ -216,9 +219,13 @@ class NegotiationMetrics:
 
     def _available_segments(self, date: str) -> set:
         """
-        Schedulable segment indices on `date` within the window: the first day is clipped to
-        [current_hour, END], the last day to [START, t_1_hour], middle days span the full working
-        day. Empty when `date` is outside the window or the clipped range is empty.
+        Schedulable segment indices on `date` within the window (first/last days clipped).
+
+        Args:
+            date (str): Date (`YYYY-MM-DD`).
+
+        Returns:
+            set: The segment indices (empty outside the window).
         """
         if date in self._avail_cache:
             return self._avail_cache[date]
@@ -240,8 +247,7 @@ class NegotiationMetrics:
     @cached_property
     def R(self) -> float:
         """
-        Result-time gain (hours) from switching P -> T: hours(R_pref) - hours(R_thr),
-        floored at 0 (throughput never finishes later than the preference schedule).
+        Result-time gain (hours) from switching P -> T, floored at 0 (0.0 if either result time is missing).
         """
         if not self.r_pref or not self.r_thr:
             return 0.0
@@ -252,8 +258,9 @@ class NegotiationMetrics:
     @cached_property
     def G(self) -> float:
         """
-        Preference concession to switch P -> T, in preference-native units and floored at 0:
-        visit_min -> extra visit days; stay_min -> extra idle hours; throughput_max -> 0 (already at T).
+        Preference concession to switch P -> T, floored at 0.
+
+        visit_min: extra visit days; stay_min: extra idle hours; otherwise 0.
         """
         if self.preference == 'visit_min':
             p_days = len(self._P.get('test_visit_dates') or [])
@@ -269,14 +276,9 @@ class NegotiationMetrics:
     @property
     def gpc(self) -> float:
         """
-        Gain Per Concession = R / G (result-hours gained per unit concession).
+        Gain Per Concession = R / G: 0.0 if R == 0, inf if G == 0 and R > 0.
 
-        Three regimes:
-        - R == 0        -> 0.0  : no result-time gain, so negotiating buys nothing (regardless of G).
-        - G > 0         -> R / G: the usual benefit-per-concession trade-off.
-        - G == 0, R > 0 -> inf  : throughput is strictly earlier at zero concession (free win), so it
-                                  must be negotiated. NOTE: inf is not strict-JSON and poisons averages
-                                  -> treat these as a separate 'dominant' bucket / filter before aggregating.
+        inf is not strict JSON and poisons averages; filter it before aggregating.
         """
         if self.R == 0:
             return 0.0
@@ -288,8 +290,13 @@ class NegotiationMetrics:
     # ---- Test Congestion Level (TCL) -----------------------------------------
     def _free_slots_for_test(self, code: str) -> int:
         """
-        Free device slots for one test across its compatible devices within the window
-        (boundary days clipped to schedulable hours).
+        Free device slots for one test across its devices within the window.
+
+        Args:
+            code (str): Test code.
+
+        Returns:
+            int: Number of free segments.
         """
         test_info = self._tdi.get('test', {}).get(code, {})
         free = 0
@@ -303,7 +310,13 @@ class NegotiationMetrics:
 
     def _demand_slots_for_test(self, code: str) -> int:
         """
-        Slots one instance of the test occupies (Q_s).
+        Slots one instance of the test occupies (Q_s, at least 1).
+
+        Args:
+            code (str): Test code.
+
+        Returns:
+            int: Number of segments.
         """
         getcontext().prec = 10
         dur = self._tdi.get('test', {}).get(code, {}).get('duration_hour', 0) or 0
@@ -313,8 +326,14 @@ class NegotiationMetrics:
     @staticmethod
     def _softmax_weighted_mean(values: list, temperature: float) -> float:
         """
-        Softmax(values / temperature)-weighted mean of `values` (numerically stabilized).
-        Highlights the bottleneck as the temperature rises.
+        Softmax(values / temperature)-weighted mean of `values`; a lower temperature leans toward the max.
+
+        Args:
+            values (list): Non-empty list of values.
+            temperature (float): Softmax temperature; <= 0 returns the max.
+
+        Returns:
+            float: The weighted mean.
         """
         if temperature <= 0:
             return max(values)
@@ -328,8 +347,7 @@ class NegotiationMetrics:
     @cached_property
     def tcl(self) -> float:
         """
-        Test Congestion Level: softmax-weighted mean of per-test load L_s = Q_s / F_s over the
-        window, clamped to (0, 1] (the window always holds the booked schedule). 0.0 when no tests.
+        Test Congestion Level: softmax-weighted mean of per-test load Q_s / F_s, each capped at 1 (0.0 without tests).
         """
         loads = []
         for code in self.test_codes:
@@ -342,10 +360,13 @@ class NegotiationMetrics:
     # ---- Device Utility (U) --------------------------------------------------
     def _patient_slots(self, schedule: dict) -> dict:
         """
-        `{device: {date: set(busy_segments)}}` for this patient's placements in `schedule`.
+        This patient's placements in `schedule`, clipped to the window.
 
-        Both P and T carry start/end as hour floats here (T is normalized to floats in `_T`); a
-        placement may instead store them as a `schedule` [start, end] pair, which is also handled.
+        Args:
+            schedule (dict): A schedule whose `test_schedule` entries carry hour-float start/end or a `schedule` pair.
+
+        Returns:
+            dict: `{device: {date: set of busy segments}}`.
         """
         out = defaultdict(lambda: defaultdict(set))
         items = schedule.get('test_schedule')
@@ -365,13 +386,15 @@ class NegotiationMetrics:
 
     def _frontload_score(self, patient_slots: dict) -> float:
         """
-        Pooled front-loading score (Mann-Whitney compactness) on the patient's devices, over a
-        per-device timeline flattened across all window dates. Among the slots available to the patient
-        (window slots minus other patients' bookings), it is the fraction of (booking-before-free)
-        pairs: 1.0 = every booking precedes every free slot (packed at the earliest days/hours, leaving
-        a clean tail), 0.0 = fully back-loaded, 0.5 = interleaved. Higher is better. Since the booking
-        count and free count are identical for P and T (same test set), the two share a denominator, so
-        score(T) - score(P) is a clean comparison.
+        Pooled front-loading score on the patient's devices over the date-flattened window slots.
+
+        Fraction of (booking, later free slot) pairs: 1.0 = fully front, 0.0 = fully back, 0.0 if no pairs.
+
+        Args:
+            patient_slots (dict): `{device: {date: set of busy segments}}` from `_patient_slots`.
+
+        Returns:
+            float: The score in [0, 1].
         """
         devices = set(patient_slots)
 
@@ -421,8 +444,7 @@ class NegotiationMetrics:
     @cached_property
     def u_pref(self) -> float:
         """
-        Front-loading score of the preference schedule P (Mann-Whitney compactness over the
-        date-flattened slot axis; 1.0 = fully front, 0.0 = fully back). 0.0 on computation failure.
+        Front-loading score of the preference schedule P (1.0 = fully front); 0.0 on failure.
         """
         try:
             return self._frontload_score(self._patient_slots(self._P))
@@ -433,7 +455,7 @@ class NegotiationMetrics:
     @cached_property
     def u_thr(self) -> float:
         """
-        Front-loading score of the throughput_max counterfactual T (see `u_pref`).
+        Front-loading score of the throughput_max counterfactual T; 0.0 on failure.
         """
         try:
             return self._frontload_score(self._patient_slots(self._T))
@@ -444,13 +466,9 @@ class NegotiationMetrics:
     @cached_property
     def U(self) -> float:
         """
-        Per-patient availability proxy: front-loading gain from switching P -> T, in isolation.
-        U = u_thr - u_pref. Positive = T books earlier and tighter, leaving a larger contiguous tail
-        for later patients.
+        Per-patient availability proxy U = u_thr - u_pref (positive = T is more front-loaded).
 
-        NOTE: this is an isolated per-patient proxy. The true cohort availability gain is non-additive
-        (patients share the slot pool) and must be measured by an ON/OFF full-simulation A/B; do not
-        sum this across patients.
+        Not additive across patients; the cohort gain needs an ON/OFF A/B simulation.
         """
         return self.u_thr - self.u_pref
 
@@ -458,9 +476,10 @@ class NegotiationMetrics:
     # ---- export --------------------------------------------------------------
     def to_dict(self) -> dict:
         """
-        All metrics (plus preference) as a plain dict. The trigger index `ti` and the negotiation
-        decision are added by the caller from the staff policy; negotiation friction is tracked by the
-        simulation as `negotiation_rounds`.
+        All metrics plus the preference and both schedules as a plain dict.
+
+        Returns:
+            dict: `preference`, `gpc`, `tcl`, `G`, `R`, `U`, `U_pref`, `U_thr`, `_P`, `_T`.
         """
         return {
             'preference': self.preference,

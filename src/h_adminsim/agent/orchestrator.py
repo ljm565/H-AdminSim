@@ -1,6 +1,6 @@
 import os
 from importlib import resources
-from typing import Union, Optional
+from typing import Callable, Union, Optional
 
 from h_adminsim.agent.base import BaseAgent
 from h_adminsim.utils import colorstr, log
@@ -16,7 +16,18 @@ class OrchestratorAgent(BaseAgent):
                  system_prompt_path: Optional[str] = None,
                  log_verbose: bool = True,
                  **kwargs):
+        """
+        Set up the routing agent.
 
+        Args:
+            model (str): The agent's model.
+            api_key (Optional[str], optional): API key for the model. Defaults to None.
+            use_vllm (bool, optional): Whether to use the vLLM client. Defaults to False.
+            vllm_endpoint (Optional[str], optional): vLLM server endpoint. Defaults to None.
+            system_prompt_path (Optional[str], optional): Custom routing system prompt file. Defaults to None.
+            log_verbose (bool, optional): Whether to log initialization. Defaults to True.
+            **kwargs (Any): Environment settings passed to `BaseAgent`.
+        """
         super().__init__(
             model=model,
             api_key=api_key,
@@ -36,9 +47,9 @@ class OrchestratorAgent(BaseAgent):
 
     
     def _init_prompt(self,
-                     system_prompt_path: Optional[str] = None):
+                     system_prompt_path: Optional[str] = None) -> None:
         """
-        Initialize the system prompt for the administration staff agent.
+        Initialize the routing system prompt.
 
         Args:
             system_prompt_path (Optional[str], optional): Path to a custom system prompt file. 
@@ -67,7 +78,7 @@ class OrchestratorAgent(BaseAgent):
             verbose: bool = True,
             is_done: bool = False,
             sub_agents: Optional[dict] = None,
-            callback: Optional[callable] = None,
+            callback: Optional[Callable] = None,
             **kwargs) -> tuple[Union[str, dict], bool]:
         """
         MAS entry point: route among the sub-agents for this turn.
@@ -78,12 +89,13 @@ class OrchestratorAgent(BaseAgent):
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
             is_done (bool, optional): Caller-supplied termination flag; ORed with the router's own ROUTE_DONE decision. Defaults to False.
             sub_agents (Optional[dict], optional): The candidate child agents (name -> ``MASNode``). Defaults to None.
-            callback (Optional[callable], optional): A ``callback(user_prompt) -> (reply, is_done)`` that
-                                                     performs the structured staff turn. When provided, the agent delegates to it. Defaults to None.
+            callback (Optional[Callable], optional): Ignored by the router (accepted for a uniform `act` signature).
+                                                     Defaults to None.
+            **kwargs (Any): Extra arguments passed to the LLM client.
 
         Returns:
-            tuple[Union[str, dict], bool]: ``(response, is_done)`` — the routing
-                dict (or direct reply) and whether the conversation is finished.
+            tuple[Union[str, dict], bool]: ``(response, is_done)``: the routing dict (or the raw reply if it never
+                                           parsed as JSON) and whether the conversation is finished.
         """
         sub_agents = sub_agents or {}
         if not sub_agents:                       # degenerate router with no children -> nothing to route to
@@ -107,18 +119,20 @@ class OrchestratorAgent(BaseAgent):
                  verbose: bool = True,
                  sub_agents: Optional[dict] = None,
                  max_retries: int = 3,
-                 **kwargs) -> str:
+                 **kwargs) -> Union[str, dict]:
         """
-        Call the patient agent with a user prompt and return the response.
+        Ask the router for this turn's routing decision, retrying while the reply is not a JSON object.
 
         Args:
-            user_prompt (str): The user prompt to send to the patient agent.
+            user_prompt (str): The user prompt to route on.
             using_multi_turn (bool, optional): Whether to use multi-turn conversation. Defaults to True.
             verbose (bool, optional): Whether to print verbose output. Defaults to True.
-            sub_agents (Optional[dict], optional): Optional dictionary of sub-agent descriptions to include in the system prompt. Defaults to None.
+            sub_agents (Optional[dict], optional): Sub-agents (name -> node) listed in the system prompt. Defaults to None.
+            max_retries (int, optional): Retries after a non-JSON reply. Defaults to 3.
+            **kwargs (Any): Extra arguments passed to the LLM client.
 
         Returns:
-            str: The response from the patient agent.
+            Union[str, dict]: The parsed routing dict, or the raw reply if retries ran out.
         """
         if sub_agents is not None:
             routers = self.build_subagent_routings(sub_agents)

@@ -35,7 +35,15 @@ class HospitalEnvironment:
                  fhir_url: Optional[str] = None,
                  fhir_max_connection_retries: int = 5,
                  start_day_before: float = 3):
-        
+        """
+        Hospital state for a simulation: current time, patient schedules, waiting list, test capacity, FHIR cache.
+
+        Args:
+            agent_test_data (dict): One hospital's agent data (``metadata``, ``doctor``, ``test``, ``agent_data``).
+            fhir_url (Optional[str], optional): FHIR server URL; None disables FHIR. Defaults to None.
+            fhir_max_connection_retries (int, optional): Retries when FHIR appointments lag behind the local state. Defaults to 5.
+            start_day_before (float, optional): Days before the start date at which the clock starts. Defaults to 3.
+        """
         # FHIR manager
         self.fhir_manager = FHIRManager(fhir_url) if fhir_url else None
         
@@ -84,10 +92,10 @@ class HospitalEnvironment:
 
     def __calculate_max_time_increment(self) -> float:
         """
-        Calculate the maximum average time increment (gap) between patient booking within the defined scheduling period.
+        Average gap between patient bookings: the scheduling period divided by the number of patients.
 
         Returns:
-            float: The average time gap (in hours) between patients.
+            float: The average gap in hours.
         """
         st = str_to_datetime(get_iso_time(self._START_HOUR, self._START_DATE, self._utc_offset))
         tr = str_to_datetime(get_iso_time(self._END_HOUR, self._END_DATE, self._utc_offset))
@@ -98,16 +106,14 @@ class HospitalEnvironment:
 
     def __calculate_test_capacity(self, test_information: dict) -> tuple[dict, dict, dict]:
         """
-        Total working hours and fixed (pre-booked) hours of every test per date, pooled over its devices.
-        Fixed device schedules are bookings of patients outside the simulation, except a device-date covered
-        entirely, which marks a closed day and contributes to neither.
+        Working hours and fixed (pre-booked) hours of every test per date, pooled over its devices.
+        A fully booked device-date is a closed day and counts toward neither.
 
         Args:
             test_information (dict): Static test data `{department: [test_dict, ...]}` holding fixed device schedules.
 
         Returns:
-            tuple[dict, dict, dict]: `{(test_code, date): capacity_hours}`, `{(test_code, date): fixed_booked_hours}`
-                                     (as `Decimal`) and `{test_code: duration_hour}`.
+            tuple[dict, dict, dict]: `{(test_code, date): capacity_hours}`, `{(test_code, date): fixed_booked_hours}` (`Decimal`), `{test_code: duration_hour}`.
         """
         capacity, fixed, duration = defaultdict(Decimal), defaultdict(Decimal), {}
         day_hours = Decimal(str(self._END_HOUR)) - Decimal(str(self._START_HOUR))
@@ -127,14 +133,11 @@ class HospitalEnvironment:
 
     def booked_test_hours(self, exclude: Optional[dict] = None) -> dict:
         """
-        Test hours already booked per (test, date): the fixed bookings plus follow-up patients of any urgency —
-        the usage the urgent capacity protection compares against its booking limit (nested protection: urgent
-        bookings use up the same capacity). Follow-up bookings are read from `patient_schedules`, so
-        cancellations, reschedules and resumes are reflected without separate bookkeeping.
+        Test hours already booked per (test, date): fixed bookings plus non-cancelled follow-up bookings of any urgency.
+        Read from `patient_schedules`, so cancellations, reschedules, and resumes are reflected.
 
         Args:
-            exclude (Optional[dict], optional): A booking to leave out (the one being rescheduled, whose slots are
-                                                about to be freed). Defaults to None.
+            exclude (Optional[dict], optional): A booking to leave out (e.g. the one being rescheduled). Defaults to None.
 
         Returns:
             dict: `{(test_code, date): booked_hours}`.
@@ -157,11 +160,10 @@ class HospitalEnvironment:
         Build a doctor information dictionary from FHIR resources for simulation.
 
         Args:
-            use_cache (bool): If True, reuse cached FHIR resources if available. Defaults to True.
+            use_cache (bool, optional): Reuse cached FHIR resources (appointments are always re-read). Defaults to True.
 
         Returns:
-            dict: doctor_information (dict): Dictionary of doctor data including their existing schedules.
-                                             Each key is a doctor's name, and each value includes a 'schedule' field.
+            dict: ``{doctor name: info with 'schedule'}``.
         """
         if self.doctor_first_verbose_flag:
             log('Build doctor information from the FHIR resources..')
@@ -232,10 +234,10 @@ class HospitalEnvironment:
         Build a test information dictionary from FHIR resources for simulation.
 
         Args:
-            use_cache (bool): If True, reuse cached FHIR resources if available. Defaults to True.
+            use_cache (bool, optional): Reuse cached FHIR resources (appointments are always re-read). Defaults to True.
 
         Returns:
-            dict: test_information (dict): Dictionary of test data including their existing schedules.
+            dict: ``{department: [test info with device schedules]}``.
         """
         if self.test_first_verbose_flag:
             log('Build test information from the FHIR resources..')
@@ -320,10 +322,10 @@ class HospitalEnvironment:
             department (str): Target department name.
             doctor_information (Optional[dict], optional): Simulation doctor data (used when fhir_integration is False). Defaults to None.
             fhir_integration (bool, optional): If True, build schedules from FHIR resources. Defaults to False.
-            express_detail (bool, optional): If True, express schedules with explicit start/end fields. Defualtsto False.
+            express_detail (bool, optional): If True, express schedules with explicit start/end fields. Defaults to False.
 
         Returns:
-            dict: Filtered doctor scheduling information.
+            dict: ``{'doctor': {doctor name: {'department', 'specialty', 'schedule', 'workload', 'outpatient_duration'}}}``.
         """
         def __build_single_doctor_schedule(practitioner_role: dict) -> tuple[str, dict]:
             """
@@ -442,16 +444,12 @@ class HospitalEnvironment:
 
         Args:
             test_code (list[str]): Test codes the patient must take.
-            test_device_information (Optional[dict], optional): Simulation test data structured as
-                                                                ``{department: [test_dict, ...]}`` (used when
-                                                                ``fhir_integration`` is False). Defaults to None.
+            test_device_information (Optional[dict], optional): Simulation test data ``{department: [test_dict, ...]}`` (used when ``fhir_integration`` is False). Defaults to None.
             fhir_integration (bool, optional): If True, build schedules from FHIR resources. Defaults to False.
-            express_detail (bool, optional): If True, express each device schedule with explicit
-                                             ``start``/``end`` fields. Defaults to False.
+            express_detail (bool, optional): If True, express device schedules with explicit ``start``/``end`` fields. Defaults to False.
 
         Returns:
-            dict: Filtered test device scheduling information of the form
-                  ``{'test': {test_code: {..., 'devices': {device_name: {'schedule': {...}}}}}}``.
+            dict: ``{'test': {test_code: {..., 'devices': {device_name: {'schedule': {...}}}}}}``.
         """
         filtered_test_device_information = {'test': {}}
 
@@ -482,18 +480,13 @@ class HospitalEnvironment:
         return filtered_test_device_information
     
 
-    def resume(self, agent_results: dict, virtual_first_visits: Optional[list] = None):
+    def resume(self, agent_results: dict, virtual_first_visits: Optional[list] = None) -> None:
         """
-        Resume the hospital environment from previously saved agent results.
+        Restore schedules, booking counts, waiting list, and time from previously saved agent results.
 
         Args:
-            agent_results (dict): Previously saved results from the agent's simulation.
-            virtual_first_visits (Optional[list], optional): Virtual first-visit bookings seeded by
-                                                              the previous run. They hold a doctor
-                                                              slot but are predicted by no task, so
-                                                              they are replayed from their sidecar
-                                                              instead of from `agent_results`.
-                                                              Defaults to None.
+            agent_results (dict): Previously saved results of the simulation.
+            virtual_first_visits (Optional[list], optional): Virtual first-visit bookings of the previous run (not in `agent_results`). Defaults to None.
         """
         new_time = None
 
@@ -540,15 +533,13 @@ class HospitalEnvironment:
 
     
 
-    def schedule_cancel_event(self, idx: int, verbose: bool = False):
+    def schedule_cancel_event(self, idx: int, verbose: bool = False) -> None:
         """
-        Cancel a scheduled event for the patient.
-        This method updates the status of a scheduled event at the given index
-        to 'cancelled'. Index values greater than or equal to 0 are allowed.
+        Cancel the patient schedule at ``idx`` (removing it from the waiting list); negative indices are ignored.
 
         Args:
-            idx (int): The index of the schedule to cancel. Must be 0 or a positive integer.
-            verbose (bool, optional): Whether logging the each result or not. Defaults to False.
+            idx (int): Index into ``patient_schedules``.
+            verbose (bool, optional): Whether to log the result. Defaults to False.
         """
         if idx >= 0:
             for turn, (i, _) in enumerate(self.waiting_list):
@@ -562,13 +553,13 @@ class HospitalEnvironment:
                 log(f'{colorstr("[CANCELLED]")}: {self.patient_schedules[idx]} schedule is cancelled.')
     
 
-    def add_waiting_list(self, idx: int, verbose: bool = False):
+    def add_waiting_list(self, idx: int, verbose: bool = False) -> None:
         """
-        Add a schedule to the waiting list for an earlier appointment if needed.
+        Add a schedule to the waiting list for an earlier appointment, unless already there; negative indices are ignored.
 
         Args:
-            idx (int): The index of the schedule to add to the waiting list. Must be 0 or a positive integer.
-            verbose (bool, optional): Whether logging the each result or not. Defaults to False.
+            idx (int): Index into ``patient_schedules``.
+            verbose (bool, optional): Whether to log the result. Defaults to False.
         """
         if idx >= 0:
             requested_schedule = self.patient_schedules[idx]
@@ -579,13 +570,13 @@ class HospitalEnvironment:
                     log(f'{colorstr("[WAITING LIST ADDED]")}: {requested_schedule} schedule is appended to the waiting list.')
 
     
-    def pop_waiting_list(self, idx: Union[list[int], int], verbose: bool = False):
+    def pop_waiting_list(self, idx: Union[list[int], int], verbose: bool = False) -> None:
         """
-        Pop a schedule to the waiting list.
+        Remove entries from the waiting list and renumber the rest.
 
         Args:
-            idx (Union[list[int], int]): The index list (or index) of the schedule to pop from the waiting list.
-            verbose (bool, optional): Whether logging the each result or not. Defaults to False.
+            idx (Union[list[int], int]): Waiting-list position(s) to remove.
+            verbose (bool, optional): Whether to log the result. Defaults to False.
         """
         if isinstance(idx, int) and idx >= 0:
             idx = [idx]
@@ -602,12 +593,12 @@ class HospitalEnvironment:
                 schedule['waiting_order'] = i
 
 
-    def update_fhir(self, fhir_resources: dict):
+    def update_fhir(self, fhir_resources: dict) -> None:
         """
-        Update resources on the FHIR server.
+        Create the Patient and Appointment resources on the FHIR server; other types are skipped.
 
-        fhir_resources (dict): Dictionary where each key is a FHIR resource type (e.g., 'Appointment', 'Slot'),
-                               and each value is the corresponding FHIR resource data to be updated.
+        Args:
+            fhir_resources (dict): ``{resource type: resource or list of resources}``.
         """
         # Update new FHIR resources
         for resource_type, resource in fhir_resources.items():
@@ -619,13 +610,12 @@ class HospitalEnvironment:
                     self.fhir_manager.create(resource_type, item, verbose=False)
                 
 
-    def delete_fhir(self, fhir_resources: dict):
+    def delete_fhir(self, fhir_resources: dict) -> None:
         """
-        Delete resources on the FHIR server.
+        Delete the Patient and Appointment resources from the FHIR server; other types are skipped.
 
         Args:
-            fhir_resources (dict): Dictionary where each key is a FHIR resource type (e.g., 'Appointment', 'Slot'),
-                                   and each value is the corresponding FHIR resource data to be updated.
+            fhir_resources (dict): ``{resource type: resource}``.
         """
         # Delete the existing FHIR resources
         for resource_type, resource in fhir_resources.items():
@@ -633,12 +623,12 @@ class HospitalEnvironment:
                 self.fhir_manager.delete(resource_type, resource['id'], verbose=False)
     
 
-    def update_current_time(self, new_time: Optional[str] = None):
+    def update_current_time(self, new_time: Optional[str] = None) -> None:
         """
-        Update the current hospital time.
+        Advance the hospital time and refresh patient statuses.
 
         Args:
-            new_time: Custom new current time.
+            new_time (Optional[str], optional): New ISO time; None advances by a random amount up to ``avg_gap`` hours. Defaults to None.
         """
         if new_time is None:
             min_iso_time = self.current_time
@@ -650,9 +640,9 @@ class HospitalEnvironment:
             self.update_patient_status()
 
     
-    def update_patient_status(self):
+    def update_patient_status(self) -> None:
         """
-        Update the status of each patient based on the current hospital time.
+        Update the status of each non-cancelled consultation and test from the current hospital time.
         """
         def _update_status(st_iso_time: Optional[str] = None, 
                            tr_iso_time: Optional[str] = None,
@@ -708,9 +698,9 @@ class HospitalEnvironment:
                     test_info['status'] = _update_status(is_not_yet=True)
 
 
-    def reset_variable(self):
+    def reset_variable(self) -> None:
         """
-        Reset variables.
+        Reset per-booking variables (currently a no-op).
         """
         pass
 
@@ -718,15 +708,14 @@ class HospitalEnvironment:
     def update_env(self, 
                    status: bool,
                    patient_schedule: Union[dict, str],
-                   fhir_resources: dict):
+                   fhir_resources: dict) -> None:
         """
-        Update the hospital environment after successfully assigning an appointment.
+        Record a successful booking: push FHIR resources, store the schedule, advance time, count the doctor's booking.
 
         Args:
-            status (bool): Whether the appointment was successfully assigned.
-            patient_schedule (Union[dict, str]): The patient's new schedule to add. Should contain a 'schedule' key with start and end time.
-            fhir_resources (dict): Dictionary where each key is a FHIR resource type (e.g., 'Appointment', 'Slot'),
-                                   and each value is the corresponding FHIR resource data to be updated.
+            status (bool): Whether the appointment was successfully assigned; nothing is recorded otherwise.
+            patient_schedule (Union[dict, str]): The new schedule (with 'schedule' and 'attending_physician').
+            fhir_resources (dict): ``{resource type: resource}`` to create on the FHIR server.
         """
         if status:
             self.update_fhir(fhir_resources)

@@ -26,6 +26,7 @@ from h_adminsim.utils.common_utils import (
 )
 
 if TYPE_CHECKING:
+    from h_adminsim.utils import Information
     from h_adminsim.tools.scheduling_rule import SchedulingRule
     from h_adminsim.environment.hospital import HospitalEnvironment
     from h_adminsim.agent.scheduling_admin_staff import SchedulingAdminStaffAgent
@@ -97,14 +98,13 @@ class OPSchedulingSimulation(OPSimulation, ABC):
         """
         Turn a structured staff result into the utterance shown to the patient.
 
-        Subclasses may take further arguments; the shared cancellation and rescheduling
-        dialogues call this with ``(prediction, reply_type)`` alone. Rendering is
-        visit-type specific, so the default raises rather than returning a value a
-        `super()` call would record as a staff turn.
+        The shared cancellation and rescheduling dialogues call this with ``(prediction, reply_type)`` alone.
 
         Args:
             prediction (dict): The structured tool-calling/reasoning result for this turn.
             reply_type (str): Which reply the staff agent is making ('cancel', 'reschedule', ...).
+            *args: Subclass-specific positional arguments.
+            **kwargs: Subclass-specific keyword arguments.
 
         Returns:
             str: The staff utterance to show the patient.
@@ -166,11 +166,9 @@ class OPSchedulingSimulation(OPSimulation, ABC):
         Args:
             client (AgentExecutor): The agent executor to handle tool calls or conversation.
             patient_intention (str): The patient's utterance expressing a rescheduling request.
-            doctor_information (Optional[dict], optional): Accepted for call-site symmetry; the
-                                                           rescheduling pipeline already captures
-                                                           it, and the simulation guards it before
-                                                           the dialogue starts. Defaults to None.
+            doctor_information (Optional[dict], optional): Unused; accepted for call-site symmetry. Defaults to None.
             chat_history (list, optional): Chat history. Defaults to [].
+            **kwargs: Unused extra keyword arguments.
 
         Raises:
             TypeError: If the returned type is not supported.
@@ -238,24 +236,26 @@ class OPSchedulingSimulation(OPSimulation, ABC):
                          max_inferences: int = 5,
                          patient_kwargs: dict = {},
                          tool_data: Optional[dict] = None,
-                         **kwargs) -> tuple[dict, dict]:
+                         **kwargs) -> tuple[Optional[dict], dict]:
         """
         Drive a multi-turn cancellation dialogue and record its outcome.
 
         Args:
             key (str): Dialogue-history key of the running simulation.
-            gt_idx (Optional[int], optional): Ground-truth index of the booking to be cancelled.
-            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s).
-            patient_schedules (Optional[list[dict]], optional): List of patient appointment schedules.
+            gt_idx (Optional[int], optional): Ground-truth index of the booking to be cancelled. Defaults to None.
+            doctor_information (Optional[dict], optional): Doctor information (required without FHIR). Defaults to None.
+            patient_schedules (Optional[list[dict]], optional): Patient bookings; None uses the environment's. Defaults to None.
             verbose (bool, optional): Whether to print conversation logs. Defaults to True.
-            max_inferences (int, optional): Maximum number of dialogue turns.
-            patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent.
-            tool_data (Optional[dict], optional): Extra domain data this visit type's tools
-                                                   need, handed to `build_agent`.
+            max_inferences (int, optional): Maximum number of dialogue turns. Defaults to 5.
+            patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent. Defaults to {}.
+            tool_data (Optional[dict], optional): Extra domain data handed to `build_agent`. Defaults to None.
             **kwargs: Additional keyword arguments passed to the patient agent.
 
         Returns:
-            tuple[dict, dict]: Resolved doctor information and the result dictionary.
+            tuple[Optional[dict], dict]: Resolved doctor information and the result dictionary.
+
+        Raises:
+            DataNotFoundError: On a wrong identification (caught here and recorded in the result).
         """
         # Sanity Check
         if not self.fhir_integration:
@@ -346,30 +346,31 @@ class OPSchedulingSimulation(OPSimulation, ABC):
                              patient_kwargs: dict = {},
                              staff_kwargs: dict = {},
                              tool_data: Optional[dict] = None,
-                             **kwargs) -> tuple[dict, dict]:
+                             **kwargs) -> tuple[Optional[dict], dict]:
         """
         Drive a multi-turn rescheduling dialogue and record its outcome.
 
         Args:
             key (str): Dialogue-history key of the running simulation.
             pipeline_factory (Callable): ``(doctor_information, **tool_data, **staff_kwargs) -> pipeline``
-                                          building the post-retrieval rescheduling pipeline for this
-                                          visit type.
-            gt_idx (Optional[int], optional): Ground-truth index of the booking to be rescheduled.
-            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s).
-            patient_schedules (Optional[list[dict]], optional): List of patient appointment schedules.
+                                          building the post-retrieval rescheduling pipeline.
+            gt_idx (Optional[int], optional): Ground-truth index of the booking to be rescheduled. Defaults to None.
+            doctor_information (Optional[dict], optional): Doctor information (required without FHIR). Defaults to None.
+            patient_schedules (Optional[list[dict]], optional): Patient bookings; None uses the environment's. Defaults to None.
             verbose (bool, optional): Whether to print conversation logs. Defaults to True.
-            max_inferences (int, optional): Maximum number of dialogue turns.
-            patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent.
-            staff_kwargs (dict, optional): Additional keyword arguments passed to the staff agent.
-            tool_data (Optional[dict], optional): Extra domain data this visit type's tools need.
-                                                   Both the tool-calling agent and the rescheduling
-                                                   pipeline receive it, so a subclass declares it once
-                                                   instead of binding it into `pipeline_factory`.
+            max_inferences (int, optional): Maximum number of dialogue turns. Defaults to 5.
+            patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent. Defaults to {}.
+            staff_kwargs (dict, optional): Additional keyword arguments passed to the staff agent. Defaults to {}.
+            tool_data (Optional[dict], optional): Extra domain data given to both the tool-calling agent and the pipeline. Defaults to None.
             **kwargs: Additional keyword arguments passed to both agents.
 
         Returns:
-            tuple[dict, dict]: Resolved doctor information and the result dictionary.
+            tuple[Optional[dict], dict]: Resolved doctor information and the result dictionary.
+
+        Raises:
+            DataNotFoundError: On a failed identification (caught here and recorded in the result).
+            SchedulingError: On a failed reschedule (caught here and recorded in the result).
+            TypeError: On an unexpected tool result (caught here and recorded in the result).
         """
         # Sanity Check
         if not self.fhir_integration:
@@ -483,21 +484,15 @@ class OPSchedulingSimulation(OPSimulation, ABC):
     def _update_patient_system_prompt(self,
                                       patient_condition: Optional[dict] = None,
                                       rejected_preference: Optional[str] = None,
-                                      new_system_prompt: Optional[str] = None):
+                                      new_system_prompt: Optional[str] = None) -> None:
         """
-        Swap the patient agent's system prompt, either into the rejection scenario or to a
-        caller-supplied one.
+        Swap the patient agent's system prompt into the rejection scenario or to a caller-supplied one.
 
         Args:
-            patient_condition (Optional[dict], optional): Patient ground-truth condition including
-                                                           current preference. Given together with
-                                                           `rejected_preference` to enter the
-                                                           rejection scenario.
-            rejected_preference (Optional[str], optional): The scheduling preference proposed by the
-                                                           staff agent in the previous turn that the
-                                                           patient must explicitly reject.
-            new_system_prompt (Optional[str], optional): System prompt to switch to instead, used to
-                                                          steer the patient's closing reaction.
+            patient_condition (Optional[dict], optional): Patient ground-truth condition; with `rejected_preference`
+                                                           enters the rejection scenario. Defaults to None.
+            rejected_preference (Optional[str], optional): The staff's previous preference the patient must reject. Defaults to None.
+            new_system_prompt (Optional[str], optional): System prompt to switch to otherwise. Defaults to None.
 
         Raises:
             ValueError: If neither the rejection pair nor a replacement prompt was given.
@@ -524,15 +519,11 @@ class OPSchedulingSimulation(OPSimulation, ABC):
 
     def _open_staff_turn(self, key: str, greet: Optional[str] = None) -> None:
         """
-        Take the staff turn that opens a dialogue, seeding the orchestrator's own
-        message log alongside the dialogue history so the greeting is part of both.
+        Take the opening staff turn, recording the greeting in both the dialogue history and the MAS log.
 
         Args:
             key (str): Dialogue-history key of the running simulation.
-            greet (Optional[str], optional): Greeting to open with. Defaults to the
-                                              orchestrator's, which every flow uses except
-                                              first-visit scheduling — that one opens with
-                                              the scheduling worker's own appointment greeting.
+            greet (Optional[str], optional): Greeting to open with; None uses the orchestrator's. Defaults to None.
         """
         staff_greet = greet or self.admin_staff_mas.root.agent.staff_greet
         self.dialog_history[key].append({"role": "Staff", "content": staff_greet})
@@ -551,16 +542,9 @@ class OPSchedulingSimulation(OPSimulation, ABC):
 
         Args:
             key (str): Dialogue-history key of the running simulation.
-            label (str): Short tag shown next to 'Patient' in the log — the operation for the
-                          cancellation and rescheduling flows ('cancel', 'move'), the patient's
-                          current scheduling preference for the scheduling ones.
-            prompt (Optional[str], optional): What to send the patient agent. Defaults to the
-                                               last utterance in the dialogue; the streaming flow
-                                               overrides it to steer the patient's closing reaction.
-            max_retries (Optional[int], optional): Retry the agent call this many times. Demo
-                                                    paths retry so a transient API error cannot end
-                                                    the stream; evaluation paths let it surface and
-                                                    be recorded. Defaults to None (no retry).
+            label (str): Short tag shown next to 'Patient' in the log (operation or current preference).
+            prompt (Optional[str], optional): What to send the patient; None sends the last utterance. Defaults to None.
+            max_retries (Optional[int], optional): Retry the agent call this many times; None means no retry. Defaults to None.
             **patient_kwargs: Additional keyword arguments forwarded to the patient agent.
 
         Returns:
@@ -595,22 +579,11 @@ class OPSchedulingSimulation(OPSimulation, ABC):
         Args:
             key (str): Dialogue-history key of the running simulation.
             label (str): Short tag shown next to 'Patient' in the log.
-            natural_express (bool, optional): Whether to have the patient react in their own words.
-                                               When False the dialogue closes on the fixed thank-you
-                                               without spending a turn on the agent — what the
-                                               cancellation and rescheduling flows use, since the
-                                               tool has already settled the request and the patient
-                                               has nothing left to weigh up. Defaults to True.
-            closing (str, optional): How the schedule was settled, which picks the closing persona.
-                                     `'satisfied'` got what they asked for (a positive thank-you);
-                                     `'conceded'` was talked out of their preference but agreed to the
-                                     schedule, so they confirm it reluctantly; `'imposed'` never agreed
-                                     and had it arranged anyway, so they react with irritation. Keeping
-                                     the latter two apart matters: a patient who has just said yes must
-                                     not turn round and call the same schedule "not what I asked for".
-                                     Defaults to 'satisfied'.
-            max_retries (Optional[int], optional): Retry the agent call this many times; see
-                                                    `_patient_turn`. Defaults to None (no retry).
+            natural_express (bool, optional): Let the patient react in their own words; False closes on the fixed
+                                               thank-you without an agent call. Defaults to True.
+            closing (str, optional): How the schedule was settled: `'satisfied'`, `'conceded'` (agreed reluctantly)
+                                     or `'imposed'` (never agreed); picks the closing persona. Defaults to 'satisfied'.
+            max_retries (Optional[int], optional): Retry the agent call this many times; None means no retry. Defaults to None.
             **patient_kwargs: Additional keyword arguments forwarded to the patient agent.
 
         Returns:
@@ -641,13 +614,13 @@ class OPSchedulingSimulation(OPSimulation, ABC):
         )
 
 
-    def _record_staff_turn(self, key: str, output) -> str:
+    def _record_staff_turn(self, key: str, output: "Information") -> str:
         """
         Record the staff utterance produced by a MAS turn.
 
         Args:
             key (str): Dialogue-history key of the running simulation.
-            output: The MAS output carrying the rendered reply and the agent that produced it.
+            output (Information): The MAS output carrying the rendered reply and the agent that produced it.
 
         Returns:
             str: The recorded staff utterance, which the streaming flow also yields.
@@ -658,16 +631,13 @@ class OPSchedulingSimulation(OPSimulation, ABC):
         return staff_response
 
 
-    def _init_prompt(self, schedule_rejection_prompt_path: Optional[str] = None):
+    def _init_prompt(self, schedule_rejection_prompt_path: Optional[str] = None) -> None:
         """
         Initialize the patient-side prompts used across the scheduling simulations.
 
         Args:
-            schedule_rejection_prompt_path (Optional[str], optional): Path to a custom schedule
-                                                                      rejection system prompt file.
-                                                                      If not provided, the subclass's
-                                                                      `REJECTION_PROMPT` is used.
-                                                                      Defaults to None.
+            schedule_rejection_prompt_path (Optional[str], optional): Custom rejection system prompt file; None uses
+                                                                      the subclass's `REJECTION_PROMPT`. Defaults to None.
 
         Raises:
             FileNotFoundError: If the specified system prompt file does not exist.
@@ -695,26 +665,14 @@ class OPSchedulingSimulation(OPSimulation, ABC):
                     respond: Callable[[str], tuple[str, dict]],
                     force_on_misroute: bool = False) -> tuple[object, dict]:
         """
-        Route one staff turn through the MAS and recover both of its results.
-
-        ``admin_staff_mas.chat`` drives the staff turn through a callback that may only
-        return the utterance to show the patient, but the simulation also needs the
-        structured prediction behind it. This carries that prediction out of the callback
-        so callers get both, and applies the simulation's misrouting policy.
-
-        Throughout the simulations, ``staff_response`` names the utterance shown to the
-        patient and ``prediction`` names the structured tool-calling/reasoning result.
+        Route one staff turn through the MAS and recover both the utterance and the structured prediction.
 
         Args:
             user_prompt (str): The patient utterance that opens this turn.
             respond (Callable[[str], tuple[str, dict]]): Produces ``(staff_response,
                                                           prediction)`` for a prompt.
-            force_on_misroute (bool, optional): Whether to deterministically re-run the turn on
-                                                 the chief agent when the orchestrator picks the
-                                                 wrong one, instead of raising. Demo/streaming
-                                                 paths must not surface a misroute, whereas
-                                                 evaluation paths record it as a failure.
-                                                 Defaults to False.
+            force_on_misroute (bool, optional): Re-run a misrouted turn on the chief agent instead of raising
+                                                 (demo/streaming paths). Defaults to False.
 
         Raises:
             AgentSelectionError: If the orchestrator activated the wrong agent and
@@ -761,9 +719,7 @@ class OPSchedulingSimulation(OPSimulation, ABC):
         """
         Translate a retrieval tool's verdict into a result dictionary.
 
-        The retrieval tools decide correctness themselves — ``gt_idx`` is baked into the
-        agent at build time — so nothing is judged here; the verdict the tool already
-        returned is only reshaped into the recording format.
+        The tool already judged correctness (``gt_idx`` is baked in); this only reshapes its verdict.
 
         Args:
             prediction (dict): A ``type == 'tool'`` staff result whose ``'result'`` carries
@@ -790,14 +746,14 @@ class OPSchedulingSimulation(OPSimulation, ABC):
 
     def _failure_result(self,
                         key: str,
-                        gt,
+                        gt: dict,
                         status_code: str) -> dict:
         """
         Build the standard single-entry failure result for a simulation run.
 
         Args:
             key (str): Dialogue-history key of the running simulation.
-            gt: Ground-truth entry to record alongside the failure.
+            gt (dict): Ground-truth entry to record alongside the failure.
             status_code (str): Status code describing why the run failed.
 
         Returns:
@@ -815,32 +771,27 @@ class OPSchedulingSimulation(OPSimulation, ABC):
     def _resolve_simulation_error(self,
                                   e: Exception,
                                   key: str,
-                                  gt,
+                                  gt: dict,
                                   error_codes: dict,
                                   result_dict: Optional[dict] = None,
                                   dialog_only: tuple = ()) -> dict:
         """
         Translate an exception that ended a simulation loop into a result dictionary.
 
+        Fatal LLM API errors (`is_fatal_api_error`) are re-raised so the run stops and can be resumed.
+
         Args:
             e (Exception): The exception that ended the loop.
             key (str): Dialogue-history key of the running simulation.
-            gt: Ground-truth entry to record alongside the failure.
-            error_codes (dict): ``{exception type: status code}`` for this simulation,
-                                 ordered most specific first. Anything not listed falls
-                                 through to ``STATUS_CODES['unexpected']``.
-            result_dict (Optional[dict], optional): Result accumulated so far; required
-                                                     only when `dialog_only` is used.
-            dialog_only (tuple, optional): Exception types whose `result_dict` was already
-                                            populated by the inner tool-calling step, so the
-                                            dialogue is appended instead of replacing it.
+            gt (dict): Ground-truth entry to record alongside the failure.
+            error_codes (dict): ``{exception type: status code}``, most specific first; unlisted ones map to
+                                 ``STATUS_CODES['unexpected']``.
+            result_dict (Optional[dict], optional): Result so far; required only when `dialog_only` is used. Defaults to None.
+            dialog_only (tuple, optional): Exception types whose `result_dict` is already filled, so only the dialogue
+                                            is appended. Defaults to ().
 
         Returns:
             dict: The result dictionary to return from the simulation.
-
-        Raises:
-            Exception: `e` itself when it is an LLM API infrastructure failure (see `is_fatal_api_error`),
-                       so the run stops and the caller saves the partial results for resumption.
         """
         # API infrastructure failure: abort the run instead of recording it against the agents.
         if is_fatal_api_error(e):
@@ -910,7 +861,7 @@ class OPSchedulingSimulation(OPSimulation, ABC):
 
     def _finish_scheduling_turn(self,
                                 reply_type: str,
-                                verbose: bool = False):
+                                verbose: bool = False) -> None:
         """
         Hand the floor back to the orchestrator once the scheduling eval loop is done.
 

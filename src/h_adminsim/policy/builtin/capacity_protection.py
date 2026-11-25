@@ -1,10 +1,10 @@
 from typing import ClassVar
 from dataclasses import dataclass
 
-from h_adminsim.utils import colorstr
 from h_adminsim.registry.errors import PolicyError
 from h_adminsim.policy.base import Policy
 from h_adminsim.policy.context import RestrictContext
+from h_adminsim.utils import colorstr
 
 
 
@@ -52,12 +52,28 @@ class CapacityProtectionPolicy(Policy):
 
 
     def is_protected(self, lead_hours: float) -> bool:
-        """Whether a date whose opening is `lead_hours` away from now is still held back for `urgent` patients."""
+        """
+        Whether a date whose opening is `lead_hours` away from now is still held back for `urgent` patients.
+
+        Args:
+            lead_hours (float): Hours until the date opens.
+
+        Returns:
+            bool: True if the date is protected.
+        """
         return self.release_hours <= lead_hours < self.horizon_days * 24
 
 
     def normal_limit(self, capacity_hours: float) -> float:
-        """Total booked hours of a (test, date) up to which `normal` patients may still book."""
+        """
+        Total booked hours of a (test, date) up to which `normal` patients may still book.
+
+        Args:
+            capacity_hours (float): Total working hours of the test on the date.
+
+        Returns:
+            float: The booking limit in hours.
+        """
         return (1 - self.ratio) * capacity_hours
 
 
@@ -66,6 +82,12 @@ class CapacityProtectionPolicy(Policy):
         A `normal` patient is blocked from a protected date of a test once the hours already booked there plus this
         test's duration would exceed the booking limit; `urgent` patients are never blocked. Closed days (no capacity)
         are skipped, as nobody can book them.
+
+        Args:
+            ctx (RestrictContext): Snapshot for the patient about to be scheduled.
+
+        Returns:
+            set: Blocked ``(test_code, date)`` pairs.
         """
         blocked = set()
         if ctx.patient['urgency'] != 'normal':

@@ -6,7 +6,7 @@ from collections import defaultdict
 from contextlib import contextmanager
 from langchain.tools import tool
 from langchain.agents import AgentExecutor
-from typing import Union, Optional, TYPE_CHECKING
+from typing import Union, Callable, Iterable, Iterator, Optional, TYPE_CHECKING
 
 from h_adminsim.registry.errors import SchedulingError
 from h_adminsim.tools.data_converter import DataConverter
@@ -27,6 +27,8 @@ from h_adminsim.utils.common_utils import (
 )
 
 if TYPE_CHECKING:
+    from langchain_core.tools import BaseTool
+    from h_adminsim.tools.callback import TokenUsageCallback
     from h_adminsim.environment.hospital import HospitalEnvironment
 
 
@@ -37,7 +39,15 @@ class SchedulingRule:
                  department_data: dict,
                  environment: "HospitalEnvironment",
                  fhir_integration: bool = False):
-        
+        """
+        Initialize the scheduling rule for one hospital.
+
+        Args:
+            metadata (dict): Hospital metadata (``time`` holds ``start_hour``/``end_hour``/``interval_hour``).
+            department_data (dict): Department information of the hospital.
+            environment (HospitalEnvironment): The hospital environment the rule reads and books into.
+            fhir_integration (bool, optional): Whether bookings are mirrored to the FHIR server. Defaults to False.
+        """
         # Initialize parameters
         self.environment = environment
         self.current_time = self.environment.current_time
@@ -51,16 +61,14 @@ class SchedulingRule:
         self._blocked = frozenset()    # (test_code, date) the current patient may not book (see `set_blocked`)
 
 
-    def set_blocked(self, pairs) -> frozenset:
+    def set_blocked(self, pairs: Iterable[tuple[str, str]]) -> frozenset:
         """
         Set the `(test_code, date)` pairs the current patient may not book (the run's `restrict` policy output).
 
-        Held as rule state so every scheduler call made for this patient — the staff's scheduling tools, the
-        negotiation counterfactual, the sanity checker's optimum and the rescheduling pipeline — sees the same
-        feasible set.
+        Held as rule state so every scheduler call for this patient sees the same feasible set.
 
         Args:
-            pairs (Iterable[tuple[str, str]]): The blocked `(test_code, date)` pairs (empty to lift every restriction).
+            pairs (Iterable[tuple[str, str]]): The blocked `(test_code, date)` pairs (empty or None lifts every restriction).
 
         Returns:
             frozenset: The blocked pairs now in effect.
@@ -76,10 +84,12 @@ class SchedulingRule:
 
 
     @contextmanager
-    def restrictions_lifted(self):
+    def restrictions_lifted(self) -> Iterator[None]:
         """
-        Temporarily schedule as if nothing were restricted (e.g. to measure what a restriction cost a patient),
-        restoring the current patient's blocked pairs afterwards.
+        Context manager that schedules as if nothing were restricted, restoring the blocked pairs afterwards.
+
+        Returns:
+            Iterator[None]: The context-manager generator (yields once).
         """
         saved, self._blocked = self._blocked, frozenset()
         try:
@@ -418,16 +428,15 @@ class SchedulingRule:
         return doctor_info
 
 
-    def _unavailable_windows(self, unavailable: Optional[dict]) -> tuple:
+    def _unavailable_windows(self, unavailable: Optional[dict] = None) -> tuple:
         """
         Split a normalized unavailability into the pieces the slot search needs.
 
         Args:
-            unavailable (Optional[dict]): Normalized unavailability (see `normalize_unavailable`), or None.
+            unavailable (Optional[dict], optional): Normalized unavailability (see `normalize_unavailable`). Defaults to None.
 
         Returns:
-            tuple[set, Optional[list[float]]]: The blocked dates, and the `[start, end]` hour interval blocked
-                                               on each of them — `None` meaning the whole date is blocked.
+            tuple: ``(blocked dates, [start, end] hour interval blocked on each)``; interval None means the whole date.
         """
         if not unavailable:
             return set(), None
@@ -451,36 +460,29 @@ class SchedulingRule:
         """
         Enumerate candidate (device, date, start_iso, end_iso) windows for a single test.
 
-        Mirrors `physician_filter` slot logic but iterates per device under
-        `test_info['devices']` and merges any same-call `extra_busy` bookings
-        into the device's pre-existing fixed segments before computing free time.
+        Same-call `extra_busy` bookings, the patient's busy intervals and unavailability are merged into each
+        device's fixed segments; dates blocked by the `restrict` policy (`set_blocked`) are skipped.
 
         Args:
-            mode (str): 'throughput_max', 'visit_min', or 'stay_min' — which scheduler this enumeration serves.
-                        Affects candidate reduction: `throughput_max`/`visit_min` prune to a few endpoints, while
-                        `stay_min` keeps every feasible start so the backtracker can pack tests back-to-back.
+            mode (str): 'throughput_max', 'visit_min', or 'stay_min'; `stay_min` keeps every feasible start,
+                        the others prune to run endpoints.
             test_info (dict): One entry from `filtered_test_device_information['test'][code]`.
-            after_iso (str): Earliest acceptable ISO start time considering priority and depends_on conditions.
+            after_iso (str): Earliest acceptable ISO start time (priority and depends_on constraints).
             forbidden_dates (set): Dates blocked by an already-placed test in `avoid_same_day`.
-                                   Dates of this test blocked by the run's `restrict` policy
-                                   (`set_blocked`) are skipped as well.
-            extra_busy (Optional[dict]): `{device_name: {date: [[start_hr, end_hr], ...]}}` of slots booked earlier in this call. Defaults to None.
-            patient_busy (Optional[dict]): `{date: [[start_hr, end_hr], ...]}` of intervals during which the patient is already occupied by previously-placed tests. 
-                                           Applied to every device (a patient cannot be at two devices at once). Defaults to None.
-            is_last_test (bool): Whether this is the last test in the sequence. Defaults to False.
-            is_last_in_priority_cluster (bool): True if no subsequent test in `ordered` shares this test's priority.
-                                                `throughput_max` additionally collapses to one globally earliest candidate; `visit_min` collapses to one earliest per date; `stay_min` performs no such collapse (all feasible starts are kept). Defaults to False.
-            placed_dates (Optional[set]): Set of dates already used by previously-placed tests in this branch.
-                                          Only consulted when `is_last_test and mode == 'visit_min'` to keep at most one
-                                          candidate (existing-date earliest if any, else new-date earliest). Defaults to None.
-            unavailable (Optional[dict]): Normalized patient unavailability (see `normalize_unavailable`). A `'day'`
-                                          constraint drops the whole date; a `'half_day'` one is merged into the date's
-                                          busy intervals, so the run/endpoint logic below never yields a blocked slot.
-                                          Defaults to None.
+            extra_busy (Optional[dict], optional): `{device_name: {date: [[start_hr, end_hr], ...]}}` booked earlier in this call. Defaults to None.
+            patient_busy (Optional[dict], optional): `{date: [[start_hr, end_hr], ...]}` the patient is already occupied, applied to every device. Defaults to None.
+            is_last_test (bool, optional): Whether this is the last test in the sequence. Defaults to False.
+            is_last_in_priority_cluster (bool, optional): True if no later test shares this test's priority; then
+                                                          `throughput_max` keeps one global earliest, `visit_min` one earliest per date. Defaults to False.
+            placed_dates (Optional[set], optional): Dates already used in this branch; only read by `visit_min` for the last test. Defaults to None.
+            unavailable (Optional[dict], optional): Normalized patient unavailability; a `'day'` drops the date, a
+                                                    `'half_day'` blocks that half. Defaults to None.
 
         Returns:
-            list[tuple[str, str, str, str]]: `(device_name, date, start_iso, end_iso)` tuples
-                                              sorted by `(start_iso, device_name)` ascending.
+            list: `(device_name, date, start_iso, end_iso)` tuples sorted by `(start_iso, device_name)`.
+
+        Raises:
+            ValueError: If `mode` is not one of the three supported modes.
         """
         candidates = []
         duration = test_info['duration_hour']
@@ -633,7 +635,7 @@ class SchedulingRule:
             tuple[list[str], list[str]]: Topologically ordered test codes and any codes
                                          left over due to a cycle.
         """
-        def sort_key(c):
+        def sort_key(c: str) -> tuple:
             # Stable per-level priority: 
             #   - lower priority int first: Hard constraint
             #   - longer result_hours first: Jackson's rule / Longest Delivery Time (LDT) first
@@ -692,11 +694,7 @@ class SchedulingRule:
         """
         Detect `depends_on` edges that contradict the priority ordering.
 
-        Priority is a hard time constraint: `priority(A) < priority(B)` implies
-        `A` finishes no later than `B` starts. So a test cannot depend on
-        another test that has a strictly higher (numerically larger) priority,
-        because that would force the depended-on test to be scheduled later in
-        time than the dependent — contradicting both rules at once.
+        A test cannot depend on a test with a numerically larger priority (that one must run later).
 
         Args:
             tests (dict): `{test_code: test_info}`.
@@ -716,33 +714,17 @@ class SchedulingRule:
 
     def _backtrack_schedule(self,
                             tests: dict,
-                            ordered: list,
+                            ordered: list[str],
                             avoid: dict,
                             mode: str,
                             time_budget_s: Optional[float] = None,
                             unavailable: Optional[dict] = None) -> dict:
         """
-        Branch-and-bound backtracking search across slot/device choices.
+        Branch-and-bound backtracking search across slot/device choices, with a "skip" branch per test.
 
-        Tries every (device, date, start) candidate per test in `ordered`; if a
-        choice blocks a later test, undoes it and tries the next candidate. Also
-        considers a "skip" branch per test so the search degrades gracefully to
-        a partial schedule when no full assignment is feasible.
-
-        Objective (lex-min):
-
-        - `mode == 'throughput_max'`: `(per_priority_unscheduled, max_result_ready_at)`.
-        - `mode == 'visit_min'`: `(per_priority_unscheduled, num_test_visit_dates, max_result_ready_at)`.
-        - `mode == 'stay_min'`: `(per_priority_unscheduled, total_idle_wait_hours)`
-
-        `per_priority_unscheduled` is a tuple indexed by priority ascending
-        (lower number first), so the search first protects the most important
-        tests from being dropped before optimizing the secondary objectives.
-
-        Priority time ordering is enforced by computing `after_iso` per test
-        as `max(current_time, every lower-priority placed test's end, every
-        dep's result_ready_at)` — any candidate before that is rejected by
-        `_enumerate_device_slots`.
+        Lex-min objective: `throughput_max` `(per_priority_unscheduled, max_result_ready_at)`, `visit_min`
+        `(per_priority_unscheduled, num_test_visit_dates, max_result_ready_at)`, `stay_min`
+        `(per_priority_unscheduled, total_idle_wait_hours)`; the unscheduled tuple is indexed by priority ascending.
 
         Args:
             tests (dict): `{test_code: test_info}`.
@@ -750,9 +732,8 @@ class SchedulingRule:
             avoid (dict): Symmetric closure of `avoid_same_day`.
             mode (str): `'throughput_max'`, `'visit_min'`, or `'stay_min'`.
             time_budget_s (Optional[float], optional): Wall-clock cap on the backtracking search. `stay_min` can
-                                                       blow up combinatorially when tests share a priority. `None` disables the cap. Defaluts to None.
-            unavailable (Optional[dict], optional): Normalized patient unavailability applied to every candidate slot
-                                                    (see `_enumerate_device_slots`). Defaults to None.
+                                                       blow up combinatorially when tests share a priority. `None` disables the cap. Defaults to None.
+            unavailable (Optional[dict], optional): Normalized patient unavailability applied to every candidate slot. Defaults to None.
 
         Returns:
             dict: `{'placed': {code: assignment}, 'unscheduled': [codes], 'objective': tuple}`.
@@ -771,9 +752,17 @@ class SchedulingRule:
         for i in range(len(ordered) - 1, -1, -1):
             suffix_min_priority[i] = min(tests[ordered[i]].get('priority', 0), suffix_min_priority[i + 1])
 
-        def pu_tuple(idx, extra_skip_priority=None):
-            """Per-priority unscheduled count for ordered[0..idx-1] given the current
-            `assigned` state, optionally adding 1 at `extra_skip_priority`."""
+        def pu_tuple(idx: int, extra_skip_priority: Optional[int] = None) -> tuple:
+            """
+            Per-priority unscheduled count for `ordered[:idx]` given the current `assigned` state.
+
+            Args:
+                idx (int): Number of leading tests in `ordered` to count.
+                extra_skip_priority (Optional[int], optional): Priority to add one extra skipped test at. Defaults to None.
+
+            Returns:
+                tuple: Unscheduled counts indexed by priority ascending.
+            """
             counts = [0] * n_priorities
             for i in range(idx):
                 c = ordered[i]
@@ -783,7 +772,7 @@ class SchedulingRule:
                 counts[priority_to_idx[extra_skip_priority]] += 1
             return tuple(counts)
 
-        def compute_after_iso(code):
+        def compute_after_iso(code: str) -> str:
             info = tests[code]
             priority = info.get('priority', 0)
             after_iso = self.current_time
@@ -795,7 +784,7 @@ class SchedulingRule:
                     after_iso = assigned[dep]['result_ready_at']
             return after_iso
 
-        def leaf_objective():
+        def leaf_objective() -> tuple:
             pu = pu_tuple(len(ordered))
             # Minimize same-day idle waiting only; result-ready time is intentionally ignored because of time limits
             if mode == 'stay_min':
@@ -810,15 +799,21 @@ class SchedulingRule:
                 return (pu, max_ready)
             return (pu, num_dates, max_ready)
 
-        def _future_max_ready_lb(hypo_end, hypo_ready, hypo_pri, base_max_ready, start_idx):
-            """Accumulate per-future-test minimum-possible `result_ready_at` for `ordered[start_idx..]`,
-            assuming each is eventually placed at its earliest feasible time given only priority and
-            depends_on constraints (resource/avoid_same_day/patient_busy are ignored, all of which only
-            push starts later — so the bound stays a true lower bound).
+        def _future_max_ready_lb(hypo_end: dict, hypo_ready: dict, hypo_pri: dict, base_max_ready: str, start_idx: int) -> str:
+            """
+            Lower bound on the latest `result_ready_at` once every test in `ordered[start_idx:]` is placed.
 
-            `hypo_*` dicts seed the hypothetical placement state (existing assigned + possibly the
-            current candidate). They are mutated in place as each future test's LB is folded in,
-            allowing later tests in the same call to chain off earlier-computed bounds.
+            Only priority and depends_on are considered (resources ignored), so it is a true lower bound.
+
+            Args:
+                hypo_end (dict): `{code: end_iso}` of the hypothetical placement; mutated in place.
+                hypo_ready (dict): `{code: result_ready_at}` of the hypothetical placement; mutated in place.
+                hypo_pri (dict): `{code: priority}` of the hypothetical placement; mutated in place.
+                base_max_ready (str): Latest result-ready ISO time already locked in.
+                start_idx (int): Index in `ordered` of the first future test.
+
+            Returns:
+                str: The lower-bound ISO time.
             """
             max_lb = base_max_ready
             for j in range(start_idx, len(ordered)):
@@ -845,7 +840,7 @@ class SchedulingRule:
                     max_lb = u_lb_ready
             return max_lb
 
-        def lb_with_placement(idx, ready, start_iso, end_iso, date):
+        def lb_with_placement(idx: int, ready: str, start_iso: str, end_iso: str, date: str) -> tuple:
             # Place `code` here and fold in the minimum-possible result_ready_at of every remaining test via `_future_max_ready_lb`
             pu = pu_tuple(idx)
             code = ordered[idx]
@@ -876,7 +871,7 @@ class SchedulingRule:
             hyp_dates.add(date)
             return (pu, len(hyp_dates), hyp_ready)
 
-        def lb_with_skip(idx):
+        def lb_with_skip(idx: int) -> tuple:
             # Skip `code` (do not seed it into the hypothetical placement) but still fold in the minimum-possible result_ready_at of every remaining test
             cur_priority = tests[ordered[idx]].get('priority', 0)
             pu = pu_tuple(idx, extra_skip_priority=cur_priority)
@@ -909,7 +904,7 @@ class SchedulingRule:
         deadline = (time.monotonic() + time_budget_s) if time_budget_s else None
         stay_min_optimum = (tuple([0] * n_priorities), 0.0)
 
-        def recurse(idx):
+        def recurse(idx: int) -> None:
             if search['stop']:
                 return
             search['nodes'] += 1
@@ -1049,43 +1044,31 @@ class SchedulingRule:
     def schedule_tests(self,
                        mode: str,
                        filtered_test_device_information: dict,
-                       test_codes: list,
+                       test_codes: list[str],
                        time_budget_s: Optional[float] = None,
                        unavailable: Optional[dict] = None) -> dict:
         """
-        Unified backtracking test scheduler. Searches every (device, date, start)
-        combination via `_backtrack_schedule` and returns the lex-minimal assignment
-        for the requested `mode`. Priority is a hard time-ordering constraint
-        (`priority(A) < priority(B)` implies `A.end <= B.start`); `depends_on` and
-        `avoid_same_day` are enforced during the search.
+        Schedule the patient's tests with the lex-minimal backtracking assignment for `mode`.
 
-        The objective per mode (all lexicographically minimized, most-important-tests
-        protected from being dropped first):
-
-        - `'throughput_max'`: `(per_priority_unscheduled, max_result_ready_at)` — get every
-          result ready as early as possible, regardless of visit count or on-site waiting.
-        - `'visit_min'`: `(per_priority_unscheduled, num_test_visit_dates, max_result_ready_at)`
-          — pack tests into the fewest distinct visit days.
-        - `'stay_min'`: `(per_priority_unscheduled, total_idle_wait_hours)` — minimize the patient's
-          idle waiting between consecutive same-day tests, so tests are split across days rather than
-          left with long same-day gaps. Completion (result-ready) time is not optimized.
+        Priority is a hard time order (`priority(A) < priority(B)` implies `A.end <= B.start`); `depends_on` and
+        `avoid_same_day` are enforced. `stay_min` minimizes same-day idle waiting only, not completion time.
 
         Args:
             mode (str): `'throughput_max'`, `'visit_min'`, or `'stay_min'`.
             filtered_test_device_information (dict): Output of `HospitalEnvironment.get_test_device_schedule`.
             test_codes (list[str]): Codes of the tests the patient must take.
             time_budget_s (Optional[float], optional): Wall-clock cap on the backtracking search. `stay_min` can
-                                                       blow up combinatorially when tests share a priority. `None` disables the cap. Defaluts to None.
-            unavailable (Optional[dict], optional): The patient's test-time unavailability, in either shape accepted by
-                                                    `normalize_unavailable`. Blocked dates / half-days are removed from
-                                                    the candidate slots, so no test can be placed when the patient cannot
-                                                    attend (a test with no remaining feasible slot is left unscheduled,
-                                                    exactly like any other infeasible test). Defaults to None.
+                                                       blow up combinatorially when tests share a priority. `None` disables the cap. Defaults to None.
+            unavailable (Optional[dict], optional): The patient's test-time unavailability (any shape `normalize_unavailable`
+                                                    accepts); tests with no attendable slot are left unscheduled. Defaults to None.
 
         Returns:
             dict: `{'test_schedule', 'test_visit_dates', 'idle_waiting_time', 'all_results_ready_at', 'unscheduled', 'status'}`
                   (see `_assemble_schedule_result`) plus `preference_type` and the `applied_unavailable` constraint;
                   the empty-input fast path returns the same keys with empty values.
+
+        Raises:
+            SchedulingError: If the test graph has a cycle, unknown codes, or a priority/depends_on contradiction.
         """
         unavailable = normalize_unavailable(unavailable)
         empty_result = {
@@ -1125,12 +1108,12 @@ class SchedulingRule:
         return output
 
 
-def _known_schedule_dates(test_device_information: Optional[dict]) -> set:
+def _known_schedule_dates(test_device_information: Optional[dict] = None) -> set:
     """
     Every date the hospital's test devices are scheduled over — the horizon a patient-stated date must land in.
 
     Args:
-        test_device_information (Optional[dict]): Filtered test device information.
+        test_device_information (Optional[dict], optional): Filtered test device information. Defaults to None.
 
     Returns:
         set[str]: ISO dates (YYYY-MM-DD) appearing in any device schedule.
@@ -1144,12 +1127,9 @@ def _known_schedule_dates(test_device_information: Optional[dict]) -> set:
 
 def _resolve_unavailable_dates(raw_dates: Union[str, list, None], known_dates: set) -> tuple:
     """
-    Split the dates a staff agent passed into those the scheduling horizon actually contains and those it does not.
+    Split the dates a staff agent passed into those the scheduling horizon contains and those it does not.
 
-    A date counts only as an exact `YYYY-MM-DD` match. The agent is required to take the year from the
-    patient rather than invent one, so a date that is not in the booking window — a guessed year, or a
-    month and day with no year at all — is handed back for clarification instead of being quietly
-    mapped onto whichever horizon date happens to share its month and day.
+    Only an exact `YYYY-MM-DD` match counts (no month/day guessing); with no known dates every date is accepted.
 
     Args:
         raw_dates (Union[str, list, None]): Dates as the agent wrote them (a single string is accepted too).
@@ -1177,7 +1157,7 @@ def _resolve_unavailable_dates(raw_dates: Union[str, list, None], known_dates: s
     return sorted(matched), unmatched
 
 
-def _unavailable_clarification(unresolved_dates: list) -> dict:
+def _unavailable_clarification(unresolved_dates: list[str]) -> dict:
     """
     Tool result telling the caller to go back to the patient for a full date.
 
@@ -1201,21 +1181,45 @@ def create_tools(rule: SchedulingRule,
                  patient_schedule_list: Optional[list[dict]] = None,
                  gt_idx: Optional[int] = None,
                  only_schedule_tool: bool = False,
-                 reschedule_pipeline: Optional[callable] = None,
+                 reschedule_pipeline: Optional[Callable] = None,
                  test_device_information: Optional[dict] = None,
                  required_test_codes: Optional[list] = None,
-                 patient_unavailable: Optional[dict] = None) -> list[tool]:
+                 patient_unavailable: Optional[dict] = None) -> list["BaseTool"]:
+    """
+    Build the LangChain tools the staff agent may call, bound to this rule and patient state.
+
+    Args:
+        rule (SchedulingRule): The scheduling rule the tools run against.
+        doctor_info (dict): Filtered doctor information.
+        patient_schedule_list (Optional[list[dict]], optional): The patient's existing bookings (for cancel/reschedule). Defaults to None.
+        gt_idx (Optional[int], optional): Index of the ground-truth booking, used to grade cancel/reschedule. Defaults to None.
+        only_schedule_tool (bool, optional): Return only the scheduling tools. Defaults to False.
+        reschedule_pipeline (Optional[Callable], optional): Callable that re-runs scheduling for a rescheduled booking. Defaults to None.
+        test_device_information (Optional[dict], optional): Filtered test device information (follow-up tests). Defaults to None.
+        required_test_codes (Optional[list], optional): Codes of the tests the patient must take. Defaults to None.
+        patient_unavailable (Optional[dict], optional): Known unavailability that overrides what the agent passes;
+                                                        None during a live dialogue. Defaults to None.
+
+    Returns:
+        list[BaseTool]: The follow-up test tools when test info and codes are given, else the basic tools.
+    """
     # Dates / half-days the patient cannot attend. Supplied by the caller only when the constraint is already
     # known from a stored booking (rescheduling, waiting-list re-runs); during a live dialogue it stays None and
     # the agent must pass what the patient said through the tool arguments below.
     known_schedule_dates = _known_schedule_dates(test_device_information)
 
-    def resolve_unavailable(unavailable_dates, unavailable_half_day):
+    def resolve_unavailable(unavailable_dates: Optional[list[str]] = None,
+                            unavailable_half_day: Optional[str] = None) -> tuple[Optional[dict], list[str]]:
         """
         Bound constraint when the caller supplied one, else the constraint the agent extracted from the patient.
 
-        Returns `(unavailable, unresolved_dates)`; a non-empty `unresolved_dates` means the agent named a
-        date the booking window does not contain, and the caller must ask the patient instead of scheduling.
+        Args:
+            unavailable_dates (Optional[list[str]], optional): Dates the patient cannot attend. Defaults to None.
+            unavailable_half_day (Optional[str], optional): `'am'`/`'pm'` half blocked on those dates. Defaults to None.
+
+        Returns:
+            tuple[Optional[dict], list[str]]: Normalized unavailability, and dates outside the booking window
+                                              (non-empty means ask the patient instead of scheduling).
         """
         if patient_unavailable is not None:
             return normalize_unavailable(patient_unavailable), []
@@ -1771,7 +1775,7 @@ def create_tools(rule: SchedulingRule,
 def scheduling_tool_calling(client: AgentExecutor, 
                             user_prompt: str,
                             history: list = [],
-                            callback = None) -> dict:
+                            callback: Optional["TokenUsageCallback"] = None) -> dict:
     """
     Make an appointment using tool-calling agent.
 

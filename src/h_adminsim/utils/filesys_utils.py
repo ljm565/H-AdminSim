@@ -1,10 +1,13 @@
 import os
 import json
 import orjson
-from typing import Any
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Optional
 
 from h_adminsim.utils import log
+
+if TYPE_CHECKING:
+    from sconf import Config
 
 
 
@@ -32,16 +35,16 @@ def json_load(path: str) -> Any:
         path (str): Path to the JSON file.
 
     Returns:
-        Any: The parsed Python object (usually a dict or list) from the JSON file.
+        Any: The parsed object (usually a dict or list).
     """
     with open(path, 'r') as f:
         return json.load(f)
 
 
 
-def json_save(path: str, data: dict):
+def json_save(path: str, data: dict) -> None:
     """
-    Save json file.
+    Save data as an indented JSON file.
 
     Args:
         path (str): Path to the json file.
@@ -52,9 +55,9 @@ def json_save(path: str, data: dict):
 
 
 
-def json_save_fast(path: str, data: dict):
+def json_save_fast(path: str, data: dict) -> None:
     """
-    Save json file more faster.
+    Save data as an indented JSON file using ``orjson`` (faster; infinities become null).
 
     Args:
         path (str): Path to the json file.
@@ -65,13 +68,13 @@ def json_save_fast(path: str, data: dict):
 
 
 
-def yaml_save(file: str='data.yaml', data: Any = None):
+def yaml_save(file: str='data.yaml', data: Any = None) -> None:
     """
-    Save data to an YAML file.
+    Save a config object (anything with ``dumps()``, e.g. ``sconf.Config``) to a YAML file.
 
     Args:
-        file (str, optional): File name. Default is 'data.yaml'.
-        data (Any, optional): Data to save in YAML format.
+        file (str, optional): Output file path. Defaults to 'data.yaml'.
+        data (Any, optional): Config object to save. Defaults to None.
     """
     save_path = Path(file)
     log(data.dumps())
@@ -81,19 +84,19 @@ def yaml_save(file: str='data.yaml', data: Any = None):
 
 
 
-def get_files(path: str, ext: str = None) -> list[str]:
+def get_files(path: str, ext: Optional[str] = None) -> list[str]:
     """
-    Get all files in a directory with a specific extension.
+    Recursively list the files under a directory, optionally filtered by filename suffix.
 
     Args:
-        path (str): Folder path to search for files.
-        ext (str, optional): Extension that you want to filter. Defaults to None.
-
-    Raises:
-        ValueError: If file does not exist.
+        path (str): Directory to search.
+        ext (Optional[str], optional): Filename suffix to keep; None keeps every file. Defaults to None.
 
     Returns:
-        list[str]: List of file paths that match the given extension.
+        list[str]: Matching file paths.
+
+    Raises:
+        ValueError: If ``path`` is not a directory.
     """
     if not os.path.isdir(path):
         raise ValueError(f"Path {path} is not a directory.")
@@ -108,15 +111,15 @@ def get_files(path: str, ext: str = None) -> list[str]:
 
 
 
-def make_project_dir(config) -> Path:
+def make_project_dir(config: 'Config') -> Path:
     """
-    Make project folder.
+    Create ``<project>/<data_name>``; if it exists, a numbered name is used and written back to ``config.data_name``.
 
     Args:
-        config: yaml config.
+        config (Config): Config with ``project`` and ``data_name``.
 
     Returns:
-        (path): project folder path.
+        Path: The created folder.
     """
     prefix = log('Make project folder')
     project = config.project

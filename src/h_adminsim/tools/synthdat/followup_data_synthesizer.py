@@ -2,11 +2,11 @@ import math
 import random
 from tqdm import tqdm
 from copy import deepcopy
-from typing import Optional
 from datetime import timedelta
 from importlib import resources
 from collections import defaultdict
 from decimal import Decimal, getcontext
+from typing import Callable, Optional, TYPE_CHECKING
 
 from h_adminsim.registry import variables
 from h_adminsim.task.schedule_assign import ScheduleAssigner
@@ -32,10 +32,23 @@ from h_adminsim.utils.random_utils import (
     generate_random_occupation_unavailable,
 )
 
+if TYPE_CHECKING:
+    from sconf import Config
+
 
 
 class FollowUpDataSynthesizer(DataSynthesizer):
-    def __init__(self, config, source_data_dir: Optional[str] = None):
+    def __init__(self, config: 'Config', source_data_dir: Optional[str] = None):
+        """
+        Set up follow-up synthesis, merging into existing hospital files if a source directory is given.
+
+        Args:
+            config (Config): Data synthesis config.
+            source_data_dir (Optional[str], optional): Directory of existing ``hospital_*.json`` files to merge into (standalone mode if None). Defaults to None.
+
+        Raises:
+            FileNotFoundError: If ``source_data_dir`` has no JSON files.
+        """
         super().__init__(config, source_data_dir)
         getcontext().prec = 10
 
@@ -53,21 +66,16 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                    sanity_check: bool = False,
                    department_info_path: Optional[str] = None) -> list[dict]:
         """
-        Synthesize follow-up patients.
+        Synthesize test schedules and follow-up patients, then save each hospital file.
 
-        If source_data_dir was provided, reads existing hospital_*.json files and
-        merges follow-up patients into them. Otherwise, generates hospital infrastructure
-        from scratch using DataSynthesizer.define_hospital_info() and adds follow-up
-        patients with doctor capacity-based count.
+        Merges into the source files if given, otherwise builds new hospitals first.
 
         Args:
-            sanity_check (bool, optional): Whether to validate generated data. Defaults to False.
-            department_info_path (Optional[str], optional): Path to a file containing department information. 
-                                                            Only available in standalone mode. If provided, it will be used to load names. 
-                                                            Defaults to None.
+            sanity_check (bool, optional): If True, validate each hospital's data. Defaults to False.
+            department_info_path (Optional[str], optional): Department info file; the packaged ``department.json`` if None. Defaults to None.
 
         Returns:
-            list[dict]: List of hospital data dicts containing follow_up_visit patients.
+            list[dict]: The hospital data of each hospital, with follow-up patients.
         """
         try:
             all_data = []
@@ -129,23 +137,21 @@ class FollowUpDataSynthesizer(DataSynthesizer):
     
     
     @staticmethod
-    def generate_test_schedule(config, 
+    def generate_test_schedule(config: 'Config', 
                                hospital_data: dict,
                                department_info_path: Optional[str] = None) -> dict:
         """
-        Generate hospital test schedules and merge them into hospital data.
+        Pick each department's tests and generate their devices' fixed schedules.
 
-        Reads hospital metadata and departments information from existing hospital data, 
-        generates test schedules and merges them into the same patient dict.
+        Test durations are rounded up to a multiple of the hospital time unit.
 
         Args:
-            config: Configuration object with hospital_data.follow_up_visit settings.
-            hospital_data (dict): Existing hospital data containing metadata and department dicts.
-            department_info_path (Optional[str], optional): Path to a file containing department information. 
-                                                            Defaults to None.
+            config (Config): Data synthesis config (``hospital_data.follow_up_visit`` settings).
+            hospital_data (dict): Hospital data with ``metadata`` and ``department``.
+            department_info_path (Optional[str], optional): Department info file; the packaged ``department.json`` if None. Defaults to None.
 
         Returns:
-            dict: Hospital data with test schedules merged into the hospital data dict.
+            dict: ``{department: [test dict with devices and schedules]}`` (the value for ``hospital_data['test']``).
         """
         # Hospital time parameters
         metadata = hospital_data['metadata']
@@ -220,35 +226,37 @@ class FollowUpDataSynthesizer(DataSynthesizer):
 
 
     @staticmethod
-    def _generate_test_combination(config,
+    def _generate_test_combination(config: 'Config',
                                    department: str,
                                    prev_end_iso: str,
                                    code_to_test: dict,
                                    vacant_test_schedules: dict,
-                                   cross_dept_prob: Optional[float] = 0.2,
-                                   max_failures: int = 3) -> list[dict]:
+                                   cross_dept_prob: float = 0.2,
+                                   max_failures: int = 3) -> tuple[list[dict], dict]:
         """
-        Generate a combination of follow-up tests based on the provided configuration and constraints.
+        Build one patient's follow-up test combination and book its slots.
+
+        Falls back to the largest partial combination if none reaches the minimum test count.
 
         Args:
-            config: Configuration object with hospital_data.follow_up_visit settings.
-            department (str): Department of the attending physician for the follow-up patient, used to determine eligible tests.
-            prev_end_iso (str): ISO format datetime string representing the end time of the previous appointment (e.g. first-visit consultation), used to schedule follow-up tests after this time.
-            code_to_test (dict): Mapping from test codes to test names, used to build the output combination with test names.
-            vacant_test_schedules (dict): Dictionary containing the current vacant schedules for all tests, used to find available time slots for the follow-up tests. The structure is:
-            cross_dept_prob (Optional[float], optional): Probability of scheduling tests in a different department. Defaults to 0.2.
-            max_failures (int, optional): Maximum number of failures allowed before stopping the generation process. Defaults to 3.
+            config (Config): Data synthesis config (``hospital_data.follow_up_visit`` settings).
+            department (str): Attending physician's department; the first test must be from it.
+            prev_end_iso (str): ISO end time of the previous appointment; tests start after it.
+            code_to_test (dict): ``{test code: test name}``.
+            vacant_test_schedules (dict): ``{(priority, code, department, device): vacancy entry}``; booked slots are removed in place.
+            cross_dept_prob (float, optional): Ignored; overridden by ``cross_department_test_prob`` in the config. Defaults to 0.2.
+            max_failures (int, optional): Consecutive too-short combinations allowed before giving up. Defaults to 3.
 
         Returns:
-            list[dict]: A list of dictionaries representing the generated follow-up test combinations.
+            tuple[list[dict], dict]: The test combination (empty if none) and the updated vacant schedules.
         """
-        def _get_available_tests(vacant_test_schedule: dict, func: callable) -> list[tuple]:
+        def _get_available_tests(vacant_test_schedule: dict, func: Callable) -> list[tuple]:
             """
             Get available test keys that satisfy the condition defined by func, sorted by priority and shuffled within the same priority level.
 
             Args:
                 vacant_test_schedule (dict): Dictionary containing vacant test schedules with their details.
-                func (callable): A function that takes a test key and its corresponding schedule details, 
+                func (Callable): A function that takes a test key and its corresponding schedule details, 
                                  and returns True if the test is considered available based on custom conditions.
 
             Returns:
@@ -272,13 +280,13 @@ class FollowUpDataSynthesizer(DataSynthesizer):
             return shuffled_candidates
         
 
-        def _get_available_slots(schedules: list[list[str]], func: callable) -> list[tuple[int, list[str]]]:
+        def _get_available_slots(schedules: list[list[str]], func: Callable) -> list[tuple[int, list[str]]]:
             """
             Filter time slots from a schedule list based on a condition function.
 
             Args:
                 schedules (list[list[str]]): List of [start_iso, end_iso] time pairs representing candidate slots.
-                func (callable): Filter function that receives (start_iso, end_iso) and returns True
+                func (Callable): Filter function that receives (start_iso, end_iso) and returns True
                                  if the slot satisfies the scheduling conditions (e.g. after prev_end_iso,
                                  not on a blocked date, after all depends_on result times).
 
@@ -416,20 +424,18 @@ class FollowUpDataSynthesizer(DataSynthesizer):
     
 
     @staticmethod
-    def generate_followup_patients(config, hospital_data: dict) -> dict:
+    def generate_followup_patients(config: 'Config', hospital_data: dict) -> dict:
         """
-        Generate follow-up patient profiles and merge them into hospital data.
+        Add a follow-up visit (tests and optional consultation) for each first-visit patient.
 
-        Reads hospital metadata, departments, and doctor information from existing hospital data, 
-        generates follow-up patients who need medical tests scheduled, and merges them into the same patient dict.
+        Patients for whom no test combination can be built are skipped.
 
         Args:
-            config: Configuration object with hospital_data.follow_up_visit settings.
-            hospital_data (dict): Existing hospital data containing
-                                   metadata, department, doctor, and patient dicts.
+            config (Config): Data synthesis config (``hospital_data.follow_up_visit`` settings).
+            hospital_data (dict): Hospital data with ``metadata``, ``department``, ``doctor``, ``test`` and first-visit ``patient`` entries.
 
         Returns:
-            dict: Hospital data with follow-up patients merged into the patient dict.
+            dict: ``metadata``, ``department``, ``doctor``, ``test`` and ``patient`` with follow-up visits appended.
         """
         # Hospital time parameters and data
         visit_type = 'follow_up_visit'
@@ -626,17 +632,16 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                             max_n_per_department: int, 
                             file_path: Optional[str] = None) -> list[dict]:
         """
-        Generate a list of test per department.
-        
+        Randomly pick a department's tests, always including their dependencies.
+
         Args:
             department (str): Target department.
-            min_n_per_department (int): Minimum number of the test per department.
-            max_n_per_department (int): Maximum number of the test per department.
-            file_path (Optional[str], optional): Path to a file containing department and test information. 
-                                                 If provided, it will be used to load names. Defaults to None.
+            min_n_per_department (int): Minimum number of tests (only warned about if not met).
+            max_n_per_department (int): Maximum number of tests.
+            file_path (Optional[str], optional): Department/test JSON file; the packaged ``department.json`` if None. Defaults to None.
         
         Returns:
-            list[dict]: Dictionary list of tests per department.
+            list[dict]: The selected test dicts.
         """
         if file_path == None:
             file_path = str(resources.files("h_adminsim.assets.departments").joinpath("department.json"))
@@ -656,7 +661,15 @@ class FollowUpDataSynthesizer(DataSynthesizer):
             test['depends_on'] = [dep if isinstance(dep, str) else random.choice(dep) for dep in test['depends_on']]
 
         def _transitive_closure(code: str) -> set:
-            """Return the full set of codes required by code (including itself)."""
+            """
+            Codes required by ``code``, transitively, including itself.
+
+            Args:
+                code (str): Test code.
+
+            Returns:
+                set: The required test codes.
+            """
             visited, stack = set(), [code]
             while stack:
                 c = stack.pop()
@@ -718,8 +731,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
             required_size (int): Number of contiguous segments needed.
 
         Returns:
-            list[list[int]]: All possible contiguous segment blocks of `required_size`.
-                             Empty list if no block fits.
+            list[list[int]]: All contiguous blocks of `required_size` (empty if none fits).
         """
         if len(available_segments) < required_size:
             return []
@@ -746,15 +758,12 @@ class FollowUpDataSynthesizer(DataSynthesizer):
 
 
     @staticmethod
-    def _sanity_check(merged_data: dict):
+    def _sanity_check(merged_data: dict) -> None:
         """
-        Validate merged data consistency.
+        Validate merged data consistency with assertions (visit fields, test order, consultation after tests).
 
         Args:
             merged_data (dict): Merged hospital data with both visit types.
-
-        Raises:
-            AssertionError: If validation fails.
         """
         for patient_name, visits in merged_data['patient'].items():
             assert isinstance(visits, list) and len(visits) > 0, \

@@ -76,13 +76,11 @@ class DataGenerator:
 
     def load_config(self, config: Optional[Union[str, Config]] = None) -> Config:
         """
-        Load a configuration object.
-        If `config` is None, a default configuration is loaded based on the given `self._care_level`. 
-        If `config` is a string, it is treated as a file path and loaded as a Config object. 
-        If a Config instance is provided, it is returned as-is.
+        Load a configuration object: the built-in `self._care_level` preset for None, a file for a str, or a Config
+        as-is.
 
         Args:
-            config (Optional[Union[str, Config]]): A file path or Config instance. Defaults to None.
+            config (Optional[Union[str, Config]], optional): A file path or Config instance. Defaults to None.
 
         Raises:
             TypeError: If `config` is not None, str, or Config.
@@ -153,7 +151,7 @@ class DataGenerator:
         return _task
 
 
-    def __env_setup(self, config: Config):
+    def __env_setup(self, config: Config) -> None:
         """
         Initialize environment-level random seeds using the given configuration.
 
@@ -173,9 +171,7 @@ class DataGenerator:
         """
         Build the complete data pipeline based on the configured task set.
 
-        Dispatches to first-visit and/or follow-up data synthesis depending on
-        which tasks are in `self.task`. The execution order is always:
-        first_visit -> follow_up_visit (follow-up requires existing first-visit data).
+        Runs first-visit then follow-up synthesis (as requested), then the optional FHIR conversion and agent data.
 
         Args:
             sanity_check (bool, optional): Whether to perform validation checks. Defaults to True.
@@ -186,12 +182,8 @@ class DataGenerator:
             symptom_file_path (Optional[str], optional): Path to the symptom file used during agent construction. Defaults to None.
 
         Returns:
-            Information:
-                A structured container holding:
-                    - `data`: first-visit synthesized dataset (or None)
-                    - `fhir_data`: list of FHIR resources (or None)
-                    - `agent_data`: processed agent input data (or None)
-                    - `followup_data`: follow-up merged data (or None)
+            Information: ``data`` (the synthesized data, merged with follow-ups when requested), ``fhir_data`` (FHIR
+                         resources) and ``agent_data`` (agent input data); each None when not built.
         """
         data, all_resource_list, agent_data_list = None, None, None
 
@@ -258,13 +250,13 @@ class DataGenerator:
 
     def upload_to_fhir(self,
                        fhir_data_dir: str,
-                       fhir_url: Optional[str] = None):
+                       fhir_url: Optional[str] = None) -> None:
         """
         Upload synthesized FHIR resources to the specified FHIR server.
 
         Args:
             fhir_data_dir (str): Directory containing FHIR resource JSON files (e.g., practitioner, practitionerrole, schedule, slot).
-            fhir_url (Optional[str], optional): Base URL of the FHIR server. If not provided, the instance's default FHIR URL is used.
+            fhir_url (Optional[str], optional): Base URL of the FHIR server (None -> the config's `fhir_url`). Defaults to None.
         """
         # Initialize FHIR URL and manager
         if not fhir_url:

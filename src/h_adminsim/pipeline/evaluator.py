@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Union
 
 from h_adminsim.policy.evaluation import run_evaluations
 from h_adminsim.tools.evaluator import FirstVisitEvaluator, FollowUpVisitEvaluator
@@ -27,6 +27,8 @@ class Evaluator:
                  fu_custom_configs: Optional[list[str]] = None,
                  model_name: Optional[str] = None):
         """
+        Store the results locations the evaluations read.
+
         Args:
             fv_path (Optional[str], optional): First-visit (intake and/or scheduling) results directory.
                                                Required for the `fv_*` evaluations. Defaults to None.
@@ -57,7 +59,7 @@ class Evaluator:
         self.model_name = model_name
 
 
-    def _check_tasks(self, tasks: list[str]):
+    def _check_tasks(self, tasks: list[str]) -> None:
         """
         Check that the requested evaluations are known and that their inputs were given.
 
@@ -83,12 +85,12 @@ class Evaluator:
             raise ValueError(colorstr("red", "`fu_custom_paths` is required for `fu_custom`."))
 
 
-    def evaluate(self, tasks: list[str], save: bool = False, tau_n: int = 4) -> dict:
+    def evaluate(self, tasks: Union[str, list[str]], save: bool = False, tau_n: int = 4) -> dict:
         """
         Run the requested evaluations and log their results.
 
         Args:
-            tasks (list[str]): Evaluations to run.
+            tasks (Union[str, list[str]]): Evaluation(s) to run.
                 - `fv_task`: Task accuracy of each first-visit task.
                 - `fv_department`: Department recommendation accuracy of the intake task.
                 - `fv_rounds`: Average number of intake dialogue rounds.

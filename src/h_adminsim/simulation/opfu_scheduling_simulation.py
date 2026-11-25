@@ -7,7 +7,7 @@ from collections import defaultdict
 from patientsim import PatientAgent
 from decimal import Decimal, getcontext
 from langchain.agents import AgentExecutor
-from typing import Union, Optional, TYPE_CHECKING
+from typing import Union, Callable, Iterator, Optional, TYPE_CHECKING
 
 from h_adminsim.registry.errors import (
     STATUS_CODES,
@@ -104,7 +104,24 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                  sanity_checker: Optional[SanityChecker] = None,
                  policies: Optional[PolicyStack] = None,
                  patient_records: Optional[dict] = None):
+        """
+        Set up the follow-up test-scheduling simulation.
 
+        Args:
+            patient_agent (PatientAgent): The simulated patient.
+            admin_staff_mas (HospitalMAS): The administration staff multi-agent system.
+            metadata (dict): Hospital metadata (``time`` and ``days``).
+            department_data (dict): Department information of the hospital.
+            environment (HospitalEnvironment): The hospital environment.
+            scheduling_strategy (str, optional): `'tool_calling'` or `'reasoning'`. Defaults to 'tool_calling'.
+            preference_rejection_prob (float, optional): Initial probability the patient rejects a proposal. Defaults to 0.3.
+            preference_rejection_prob_decay (float, optional): Factor applied to that probability after each rejection. Defaults to 0.5.
+            fhir_integration (bool, optional): Whether to use the FHIR server. Defaults to False.
+            schedule_rejection_prompt_path (Optional[str], optional): Custom rejection system prompt file. Defaults to None.
+            sanity_checker (Optional[SanityChecker], optional): Checker grading predicted schedules; None skips grading. Defaults to None.
+            policies (Optional[PolicyStack], optional): The run's scheduling policies; None uses `default_policies()`. Defaults to None.
+            patient_records (Optional[dict], optional): ``{patient name: agent-data record}`` exposed to policies as `ctx.patient`. Defaults to None.
+        """
         super().__init__(patient_agent, admin_staff_mas)
 
         # Initialize simulation parameters
@@ -135,10 +152,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         """
         Phrase a follow-up test-scheduling preference for the schedule-rejection prompt.
 
-        Follow-up preferences name a scheduling objective (`throughput_max`, `visit_min`,
-        `stay_min`, `indifferent`) rather than a doctor or a date, so no field needs filling
-        in and the template asks for no preferred doctor. `occupation` / `distance` (the
-        negotiation-leeway fields) are read off `patient_condition`, which already carries them.
+        Follow-up preferences name an objective (no doctor/date to fill); `occupation` / `distance` come from `patient_condition`.
 
         Args:
             patient_condition (dict): Patient ground-truth condition including current preference,
@@ -162,11 +176,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
     @property
     def scheduling_agent(self) -> "SchedulingAdminStaffAgent":
         """
-        The scheduling worker (a leaf of the MAS tree).
-
-        Scheduling, cancellation, and rescheduling are all handled by the same
-        ``'first_visit_scheduling'`` worker and are independent of the intake flow,
-        so it is fetched from the MAS on demand rather than cached as instance state.
+        The ``'follow_up_visit_scheduling'`` worker, fetched from the MAS on each access.
         """
         return self.admin_staff_mas.get_agent('follow_up_visit_scheduling')
 
@@ -176,10 +186,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         """
         Plain-language summary of one candidate schedule for the persuasion prompt.
 
-        The persuasion agent is otherwise handed raw slot dicts in decimal hours and has to re-derive,
-        every round, how many visit days each schedule takes and which one finishes first — exactly the
-        step its pitches get wrong (claiming the patient's own schedule is the faster one). Pre-rendering
-        those facts keeps them out of the model's hands.
+        Pre-renders visit days and finish time so the persuasion agent need not derive them from raw slots.
 
         Args:
             schedule (dict): A `pred_schedule`-shaped schedule (`test_schedule` as a start-sorted list
@@ -192,7 +199,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         if not tests:
             return 'No test could be placed.'
 
-        def _clock(hour):
+        def _clock(hour: Union[str, float]) -> str:
             return hour_to_hhmmss(float(hour))[:5]
 
         by_date = defaultdict(list)
@@ -214,17 +221,15 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         """
         Standalone persuasion agent used to negotiate the patient toward ``throughput_max``.
 
-        Built lazily on first use. It mirrors the scheduling staff's model but keeps its OWN client — so
-        the persuasion sub-dialogue and its token usage stay separate from the tool-calling scheduling
-        agent — and is invoked directly (no MAS routing / no tools), using the prompt of the `review`
-        policy's ``'negotiate'`` decision.
+        Built lazily on first use with the staff's model but its own client (separate token usage), no MAS
+        routing or tools, and the prompt of the `review` policy's ``'negotiate'`` decision.
 
         Args:
             patient_preference (str): The patient's stated preference for scheduling (e.g., 'visit_min', 'stay_min').
             negotiation_metrics (dict): Metrics computed by `_calculate_negotiation_metrics`, including `gpc`, `tcl`, `ti`, and other relevant values.
 
         Returns:
-            Optional["SchedulingAdminStaffAgent"]: The negotiation agent, or None if no negotiation was decided.
+            Optional[SchedulingAdminStaffAgent]: The negotiation agent, or None if no negotiation was decided.
         """
         if self._last_decision is None or not self._last_decision.do_negotiate:
             return None
@@ -260,7 +265,10 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         Initialize negotiation metrics with default values.
 
         Args:
-            preference (str, optional): The scheduling preference to initialize metrics for. Defaults to None.
+            preference (Optional[str], optional): The scheduling preference to initialize metrics for. Defaults to None.
+
+        Returns:
+            dict: Same keys as `_calculate_negotiation_metrics` (plus user metrics), all empty; outcome 'none'.
         """
         # Same shape as `_calculate_negotiation_metrics` (NegotiationMetrics.to_dict + policy/outcome fields),
         # so a patient with no computed metrics still exports a consistent record.
@@ -298,13 +306,15 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         Args:
             prediction (dict): The result of `scheduling`, either a clarification (``type == 'text'``) or a schedule proposal (``type == 'tool'``).
             reply_type (str): Reply types of the scheduling agent.
-            gt_patient_condition (dict): Ground-truth condition for this turn; supplies the GT required-test codes used to flag tests that could not be scheduled.
-            staff_known_data (dict): Patient information known to the staff agent; supplies the follow-up doctor.
+            gt_patient_condition (Optional[dict], optional): Ground-truth condition for this turn; its required tests
+                                                              flag unscheduled ones (needed for schedule proposals). Defaults to None.
+            staff_known_data (Optional[dict], optional): Patient information known to the staff; supplies the follow-up
+                                                          doctor (needed for schedule proposals). Defaults to None.
             natural_express (bool, optional): Whether to phrase a schedule proposal naturally instead of dumping the raw schedule dict. Defaults to True.
-            prev_suggested_schedule (dict, optional): The previous schedule suggestion made by the staff agent. Defaults to None.
+            prev_suggested_schedule (Optional[dict], optional): The previous (rejected) staff suggestion. Defaults to None.
 
         Returns:
-            str: The staff utterance to show the patient.
+            str: The staff utterance to show the patient (falls through to None for an unrecognized result).
         """
         # Clarification message
         if prediction['type'] == 'text':
@@ -447,7 +457,6 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
     def _schedule_signature(schedule: dict) -> tuple:
         """
         Build a comparable key from the patient-visible parts of a schedule (test slots and follow-up slot).
-        Scheduler outputs differ in bookkeeping keys (e.g., `preference_type`, `status`), so whole-dict equality is not usable.
 
         Args:
             schedule (dict): The scheduler output containing `test_schedule` and optionally `fu_schedule`.
@@ -472,9 +481,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         """
         Shallow-copy the scheduler output for NegotiationMetrics.
 
-        `postprocessing` already returns `test_schedule` as a start-sorted list of hour-float slots,
-        so no normalization is needed. The copy only isolates the metrics' stored `_P` from the later
-        in-place mutation of `pred_schedule` (which pops `start`/`end`) on the no-negotiation path.
+        Isolates the metrics' stored `_P` from the later in-place mutation of `pred_schedule`.
 
         Args:
             schedule (dict): The scheduler output (already list / float / sorted).
@@ -493,30 +500,25 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                        filtered_test_device_information: Optional[dict] = None,
                        utc_offset: Optional[str] = None,
                        rule: Optional[SchedulingRule] = None,
-                       attending_physician: Optional[str] = None) -> Union[str, dict]:
+                       attending_physician: Optional[str] = None) -> Optional[Union[str, dict]]:
         """
-        Attempts to parse the given text as JSON. If parsing succeeds, returns a dictionary;
-        otherwise, returns the original string.
+        Normalize a staff test-schedule output into the `pred_schedule` shape (start-sorted hour-float test slots).
+
+        The `reasoning` branch computes `fu_schedule` deterministically, not from the LLM output.
 
         Args:
-            strategy (str): Scheduling strategy. It must be either `reasoning` or `tool_calling`.
-            data (Union[str, dict]): The text output to post-process, potentially a JSON-formatted string.
-            filtered_doctor_information (Optional[dict], optional): Department-filtered doctor information
-                                                                    to postprocess the schedule by tool_calling strategy.
-            required_tests (Optional[list], optional): Required-test metadata used by the reasoning branch
-                                                       to enrich each test_schedule entry.
-            filtered_test_device_information (Optional[dict], optional): Test device information used by the
-                                                                         reasoning branch to map device codes
-                                                                         back to test codes.
-            utc_offset (Optional[str], optional): UTC offset used by the reasoning branch to build ISO timestamps.
-            rule (Optional[SchedulingRule], optional): `SchedulingRule` instance used by the reasoning branch to
-                                               deterministically compute the follow-up consultation slot
-                                               via `physician_filter` + `find_earliest_time`.
-            attending_physician (Optional[str], optional): Name of the patient's attending physician; used by
-                                                            the reasoning branch when computing `fu_schedule`.
+            strategy (str): `reasoning` (parse and enrich JSON text) or `tool_calling` (convert a tool result).
+            data (Union[str, dict]): The output to post-process, possibly JSON text.
+            filtered_doctor_information (Optional[dict], optional): Department-filtered doctor information. Defaults to None.
+            required_tests (Optional[list], optional): Required-test metadata (reasoning only). Defaults to None.
+            filtered_test_device_information (Optional[dict], optional): Maps device codes back to test codes (reasoning only). Defaults to None.
+            utc_offset (Optional[str], optional): UTC offset for ISO timestamps (reasoning only). Defaults to None.
+            rule (Optional[SchedulingRule], optional): Rule used to compute the follow-up slot (reasoning only). Defaults to None.
+            attending_physician (Optional[str], optional): Physician for the follow-up slot (reasoning only). Defaults to None.
 
         Returns:
-            Union[str, dict]: A dictionary if the text is valid JSON, otherwise the original string.
+            Optional[Union[str, dict]]: The schedule dict, the input as a string if `reasoning` parsing fails,
+                                        or None for an unknown strategy.
         """
         if strategy == 'reasoning':
             try:
@@ -647,10 +649,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         """
         Fill the reasoning fallback's "patient unavailability" section.
 
-        The tool-calling path gets this constraint as tool arguments the agent extracts from the dialogue;
-        the reasoning fallback has no such arguments, so it is given either the booking's stored constraint
-        (rescheduling / waiting-list re-runs, where no patient is present to restate it) or the conversation
-        itself, from which the staff must read what the patient said.
+        Uses the booking's stored constraint when present (rescheduling), else the dialogue to read it from.
 
         Args:
             known_condition (dict): Patient conditions known to the staff.
@@ -671,12 +670,9 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
 
     def _format_test_devices_markdown(self, filtered_test_device_information: dict) -> str:
         """
-        Render device availability as compact per-device markdown tables of FREE (bookable) windows
-        (via the shared `render_availability_tables`), instead of a verbose JSON dump of occupied
-        intervals. One table per (test, device). This is only the reasoning-fallback prompt's
-        rendering — the underlying `filtered_test_device_information` (used by post-processing /
-        sanity) is unchanged. Dates of a test blocked by the run's `restrict` policy are shown fully
-        booked, so the fallback never proposes a slot the sanity checker would reject.
+        Render per-(test, device) markdown tables of free windows for the reasoning prompt.
+
+        Dates blocked by the `restrict` policy are shown fully booked.
 
         Args:
             filtered_test_device_information (dict): `{'test': {code: {'duration_hour', 'devices': {device: {'schedule': {date: [...]}}}}}}`.
@@ -703,8 +699,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                             patient_name: str,
                             exclude: Optional[dict] = None) -> frozenset:
         """
-        Ask the `restrict` policies which (test, date) pairs the patient may not book, and hold them on the rule so
-        every scheduler call for this patient sees them (no-op without a `restrict` policy).
+        Hold the `restrict` policies' blocked (test, date) pairs for this patient on the rule (cleared without one).
 
         Args:
             patient_name (str): The patient's name, for `ctx.patient`.
@@ -735,8 +730,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
 
     def _restriction_record(self, test_codes: list) -> Optional[dict]:
         """
-        Per-booking record of what each `restrict` policy blocked for this booking's tests, stored on the prediction
-        under `restrictions` for evaluation (the union is what the scheduler avoided).
+        Per-booking record of what each `restrict` policy blocked for this booking's tests (stored as `restrictions`).
 
         Args:
             test_codes (list): The booking's test codes.
@@ -754,21 +748,18 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
     def _capacity_protection_record(self,
                                     preference_type: str,
                                     test_codes: list,
-                                    test_device_information: Optional[dict],
-                                    unavailable: Optional[dict]) -> Optional[dict]:
+                                    test_device_information: Optional[dict] = None,
+                                    unavailable: Optional[dict] = None) -> Optional[dict]:
         """
-        Per-booking record of the `restrict` policy (e.g. urgent capacity protection), stored on the prediction
-        for evaluation under the `capacity_protection` key.
+        Per-booking `capacity_protection` record of the `restrict` policy.
 
-        `blocked` lists the (test, date) pairs of this patient's tests that were blocked for them. When any
-        were, `unprotected` is the schedule the same objective would have produced with nothing blocked, so the
-        restriction's cost to this patient can be measured booking by booking.
+        When pairs were blocked, `unprotected` is the schedule the same objective gives with nothing blocked.
 
         Args:
             preference_type (str): Objective the booked schedule was built with (`throughput_max` after a negotiation).
             test_codes (list): The patient's required test codes.
-            test_device_information (Optional[dict]): Test device schedules (None under FHIR).
-            unavailable (Optional[dict]): The patient's test-time unavailability.
+            test_device_information (Optional[dict], optional): Test device schedules (None under FHIR). Defaults to None.
+            unavailable (Optional[dict], optional): The patient's test-time unavailability. Defaults to None.
 
         Returns:
             Optional[dict]: `{'blocked': [[code, date], ...], 'objective': preference_type, 'unprotected': {...} | None}`,
@@ -804,13 +795,13 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                                      test_device_information: Optional[dict] = None,
                                      **kwargs) -> dict:
         """
-        Re-run the whole-test-set scheduling (`throughput_max`/`visit_min`/`stay_min` by the booking's preference,
-        with `indifferent` treated as `throughput_max`) to find an improved schedule.
+        Re-run whole-test-set scheduling for a booking to find an improved schedule.
 
         Args:
             known_condition (dict): The original follow-up booking being rescheduled.
-            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s).
-            test_device_information (Optional[dict], optional): Test device information containing device schedules.
+            doctor_information (Optional[dict], optional): Doctor information (required without FHIR). Defaults to None.
+            test_device_information (Optional[dict], optional): Test device schedules. Defaults to None.
+            **kwargs: Additional keyword arguments forwarded to `test_scheduling`.
 
         Returns:
             dict: Rescheduled test-set schedule (test-scheduling shape).
@@ -893,7 +884,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         new_dates = set(new_schedule.get('test_visit_dates') or [])
 
         # `new_t` is strictly earlier than `old_t`
-        def _strictly_earlier(new_t, old_t):
+        def _strictly_earlier(new_t: Optional[str] = None, old_t: Optional[str] = None) -> bool:
             return new_t is not None and old_t is not None and compare_iso_time(old_t, new_t) and new_t != old_t
 
         # Preference-based improvement
@@ -952,20 +943,18 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
     def _make_test_reschedule_pipeline(self,
                                        doctor_information: Optional[dict] = None,
                                        test_device_information: Optional[dict] = None,
-                                       **kwargs):
+                                       **kwargs) -> Callable[[int, dict], dict]:
         """
-        Build a callable that runs the post-retrieval rescheduling pipeline:
-        _get_rescheduled_test_result -> test_schedule_check -> _check_test_reschedule_validity -> waiting list.
+        Build the post-retrieval test rescheduling pipeline (reschedule -> sanity check -> validity -> waiting list).
 
         Args:
-            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s).
-            test_device_information (Optional[dict], optional): Test device information containing device schedules.
+            doctor_information (Optional[dict], optional): Doctor information. Defaults to None.
+            test_device_information (Optional[dict], optional): Test device schedules. Defaults to None.
             **kwargs: Additional keyword arguments forwarded to the inner scheduling agent.
 
         Returns:
-            Callable[[int, dict], dict]: A pipeline function returning a dict with keys
-                'action' ('reschedule' | 'waiting_list' | 'schedule_fail'),
-                'new_schedule' (dict | None), and optional 'status_code'.
+            Callable[[int, dict], dict]: ``(idx, original_schedule) -> {'action', 'new_schedule', 'status_code'}``,
+                                         action one of 'reschedule' / 'waiting_list' / 'schedule_fail'.
         """
         def pipeline(idx: int, original_schedule: dict) -> dict:
             try:
@@ -1019,16 +1008,17 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
     def automatic_waiting_list_update(self,
                                       doctor_information: dict,
                                       test_device_information: dict,
-                                      **kwargs):
+                                      **kwargs) -> Iterator[dict]:
         """
-        Update waiting list availability automatically.
+        Try to improve each follow-up waiting-list booking; a failure leaves the entry on the list.
 
         Args:
-            doctor_information (dict): A dictionary containing information about the doctor(s).
-            test_device_information (dict): Test device information containing device schedules.
+            doctor_information (dict): Doctor information.
+            test_device_information (dict): Test device schedules.
+            **kwargs: Additional keyword arguments forwarded to `test_scheduling`.
 
         Yields:
-            dict: Updated (or not updated) doctor information, test device information, and a result dictionary.
+            dict: ``{'doctor_information', 'test_device_information', 'result_dict', 'original'}`` per attempted entry.
         """
         # Snapshot the list: a successful reschedule pops the entry from `waiting_list` mid-iteration
         for turn, (idx, original) in enumerate(list(self.environment.waiting_list)):
@@ -1121,25 +1111,17 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                                        preference: Optional[str] = None,
                                        unavailable: Optional[dict] = None) -> dict:
         """
-        Compute the negotiation trigger metrics for the patient's (hospital-conflicting) preference
-        schedule and let the `review` policy decide whether to negotiate.
-
-        Metrics are computed on `patient_preferred_schedule` versus the throughput_max counterfactual;
-        the policy's decision sets `negotiation_action` / `do_negotiate` / `decided_by` and may add its own
-        fields (e.g. the trigger index `ti`). The caller decides whether to run the persuasion turn from it.
+        Compute the negotiation metrics of the preferred schedule vs. the throughput_max counterfactual and record
+        the `review` policy's decision (`negotiation_action` / `do_negotiate` / `decided_by`, plus its own fields).
 
         Args:
-            patient_preferred_schedule (dict): The preference-based test schedule the staff proposed
-                (carries `preference_type`, `test_schedule`, ...).
+            patient_preferred_schedule (dict): The preference-based test schedule the staff proposed.
             filtered_test_device_information (dict): Device schedules for the required tests.
             patient_name (str): The patient's name, to attach their record as `ctx.patient`.
-            preference (Optional[str], optional): Preference to score against. Defaults to the schedule's
-                                                  own `preference_type`; pass the GT preference explicitly
-                                                  when computing for a non-negotiated schedule whose
-                                                  `preference_type` may be missing (e.g. reasoning fallback).
-            unavailable (Optional[dict], optional): The patient's test-time unavailability, so the throughput_max
-                                                    counterfactual the staff argues for (and books on a won
-                                                    negotiation) stays attendable. Defaults to None.
+            preference (Optional[str], optional): Preference to score against; None uses the schedule's
+                                                  `preference_type`. Defaults to None.
+            unavailable (Optional[dict], optional): The patient's test-time unavailability, applied to the
+                                                    throughput_max counterfactual. Defaults to None.
 
         Returns:
             dict: The negotiation metrics (`preference`, `gpc`, `tcl`, `ti`, `do_negotiate`, ...).
@@ -1188,8 +1170,15 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         """
         Fill a per-round negotiation wrapper (`STAFF_NEGOTIATION_TURN` / `PATIENT_NEGOTIATION_TURN`).
 
-        Uses `str.replace` rather than `str.format`, so an `utterance` that happens to contain `{` or `}`
-        cannot raise. `{round}` is substituted before `{utterance}`.
+        Uses `str.replace`, so braces in `utterance` are safe; `{round}` is substituted first.
+
+        Args:
+            template (str): Wrapper with `{round}` and `{utterance}` placeholders.
+            negotiation_round (int): 1-based negotiation round.
+            utterance (str): The utterance to wrap.
+
+        Returns:
+            str: The filled wrapper.
         """
         return template.replace('{round}', str(negotiation_round)).replace('{utterance}', utterance)
 
@@ -1197,19 +1186,16 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
     def _negotiating(self,
                      patient_preference: str,
                      negotiation_metrics: dict,
-                     negotiation_round: int):
+                     negotiation_round: int) -> Information:
         """
         Run one negotiation round: the staff persuasion agent responds to the patient's latest utterance.
 
-        The agent keeps persuading while the patient resists, and — once it judges the patient has
-        agreed (or the forced-close round is reached) — ends its message with an `#ACCEPT` control tag
-        (see the hospital negotiation prompt). The caller inspects the response for that tag to close.
+        The agent ends its message with `#ACCEPT` once the patient agrees (or at the forced-close round).
 
         Args:
             patient_preference (str): The patient's stated preference for scheduling (e.g., 'throughput_max', 'visit_min', 'stay_min').
             negotiation_metrics (dict): Metrics computed by `_calculate_negotiation_metrics`, including `gpc`, `tcl`, `ti`, and other relevant values.
-            negotiation_round (int): 1-based index of the persuasion round about to be produced; passed to the
-                                     staff so it can honor its policy's closing rule after enough rounds of refusal.
+            negotiation_round (int): 1-based index of the persuasion round about to be produced.
 
         Returns:
             Information: The staff utterance for this negotiation round.
@@ -1247,10 +1233,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         """
         Build a bookable throughput_max schedule from the already-computed counterfactual `_T`.
 
-        Reuses `negotiation_metrics['_T']` (what the metrics were derived from, and what the staff argued
-        for), so a negotiated / free-win booking needs no extra scheduling-tool call. Test slots are copied
-        (so the stored `_T` is not mutated later) and the follow-up consultation slot is added the same way
-        `postprocessing` does.
+        Test slots are copied (the stored `_T` is not mutated) and the follow-up slot is added as in `postprocessing`.
 
         Args:
             negotiation_metrics (dict): Metrics carrying `_T`, the throughput_max counterfactual schedule.
@@ -1307,18 +1290,20 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         Args:
             client (AgentExecutor): The agent executor to handle tool calls or conversation.
             known_condition (dict): Patient conditions known to the staff.
-            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s) involved, 
-                                                           including availability and other relevant details. Defaults to None.
-            test_device_information (Optional[dict], optional): A dictionary containing information about the test devices available. Defaults to None.
+            doctor_information (Optional[dict], optional): Doctor information (required without FHIR). Defaults to None.
+            test_device_information (Optional[dict], optional): Test device schedules (required without FHIR). Defaults to None.
             reschedule_flag (bool, optional): Whether this process is rescheduling or not. Defaults to False.
             chat_history (list, optional): Chat history. Defaults to [].
+            reasoning_max_tries (int, optional): Extra reasoning-fallback attempts after an unparsable output. Defaults to 0.
+            **kwargs: Forwarded to the reasoning-fallback agent; ``callback`` is popped for tool calling.
+
+        Returns:
+            dict: Scheduling result (``type`` 'tool' with a schedule/retrieval result, or 'text' clarification).
 
         Raises:
-            ToolCallingError: If the agent fails to select or execute a valid scheduling tool.
-            TypeError: If the prediction or inputs are of an unsupported type.
-
-        Return
-            dict: Scheduling processed result.
+            ToolCallingError: If no appropriate tool was chosen, or the reasoning fallback has no retrieved tests.
+            TypeError: On an unexpected tool-calling result type (caught here; falls back to reasoning).
+            SchedulingError: If the reasoning fallback produces no valid schedule JSON.
         """
         # Sanity Check
         if not self.fhir_integration:
@@ -1498,7 +1483,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
 
 
     def test_scheduling_simulate(self,
-                                 gt_data: dict,
+                                 gt_data: list[dict],
                                  staff_known_data: dict,
                                  doctor_information: Optional[dict] = None,
                                  test_device_information: Optional[dict] = None,
@@ -1508,30 +1493,31 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                                  reasoning_max_tries: int = 0,
                                  patient_kwargs: dict = {},
                                  staff_kwargs: dict = {},
-                                 **kwargs) -> tuple[dict, dict, dict]:
+                                 **kwargs) -> tuple[Optional[dict], Optional[dict], dict, dict]:
         """
-        Simulate a multi-turn outpatient scheduling dialogue between a patient agent and an administrative staff agent.
+        Simulate a multi-turn follow-up test-scheduling dialogue (with optional negotiation) between the patient and staff.
 
         Args:
-            gt_data (dict): Ground-truth patient condition(s) for each dialogue turn.
+            gt_data (list[dict]): Ground-truth patient conditions, one per preference (later ones follow rejections).
             staff_known_data (dict): Patient information known to the staff agent.
-            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s) involved, 
-                                                           including availability and other relevant details. Defaults to None.
-            test_device_information (Optional[dict], optional): A dictionary containing information about the test devices available. Defaults to None.
+            doctor_information (Optional[dict], optional): Doctor information (required without FHIR). Defaults to None.
+            test_device_information (Optional[dict], optional): Test device schedules (required without FHIR). Defaults to None.
             verbose (bool, optional): Whether to log detailed simulation outputs. Defaults to False.
-            max_inferences (int, optional): Maximum number of dialogue turns.
-            natural_express: (bool, optional): Whether express new schedule as natural or not. Defaults to True.
+            max_inferences (int, optional): Maximum number of dialogue turns. Defaults to 15.
+            natural_express (bool, optional): Whether to express the new schedule naturally. Defaults to True.
             reasoning_max_tries (int, optional): Reasoning fallback maximum number of retries. Defaults to 0.
-            patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent.
-            staff_kwargs (dict, optional): Additional keyword arguments passed to the staff scheduling function.
+            patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent. Defaults to {}.
+            staff_kwargs (dict, optional): Additional keyword arguments passed to the staff scheduling function. Defaults to {}.
             **kwargs: Shared keyword arguments passed to both agents.
 
         Returns:
-            tuple[dict, dict, dict, dict]: 
-                - Doctor information.
-                - Test information
-                - Result dictionary after scheduling a new appointment.
-                - Token statistics.
+            tuple[Optional[dict], Optional[dict], dict, dict]: Doctor information, test device information,
+                                                               the result dictionary, and token statistics.
+
+        Raises:
+            TurnLimitReached: When the dialogue runs out of turns (caught here and recorded in the result).
+            DataNotFoundError: When patient information is not found (caught here and recorded in the result).
+            ToolSelectionError: When the staff picks a tool that ignores the preference (caught here and recorded).
         """
         # Sanity Check
         if not self.fhir_integration:
@@ -1929,26 +1915,23 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                                 max_inferences: int = 5,
                                 patient_kwargs: dict = {},
                                 staff_kwargs: dict = {},
-                                **kwargs) -> tuple[dict, dict, dict]:
+                                **kwargs) -> tuple[Optional[dict], Optional[dict], dict]:
         """
         Simulate a multi-turn conversation for cancelling all of a patient's scheduled tests.
 
         Args:
             gt_idx (Optional[int], optional): Ground-truth index of the follow-up booking to be cancelled. Defaults to None.
-            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s).
-            test_device_information (Optional[dict], optional): Test device information containing device schedules. Defaults to None.
+            doctor_information (Optional[dict], optional): Doctor information (required without FHIR). Defaults to None.
+            test_device_information (Optional[dict], optional): Test device schedules. Defaults to None.
             patient_schedules (Optional[list[dict]], optional): List of patient appointment schedules. Defaults to None.
             verbose (bool, optional): Whether to print conversation logs. Defaults to True.
-            max_inferences (int, optional): Maximum number of dialogue turns.
-            patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent.
-            staff_kwargs (dict, optional): Additional keyword arguments passed to the staff agent.
-            **kwargs: Additional keyword arguments passed to the patient and staff agent.
-
-        Raises:
-            DataNotFoundError: Schedule not found error.
+            max_inferences (int, optional): Maximum number of dialogue turns. Defaults to 5.
+            patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent. Defaults to {}.
+            staff_kwargs (dict, optional): Unused (cancellation needs no staff kwargs). Defaults to {}.
+            **kwargs: Additional keyword arguments passed to the patient agent.
 
         Returns:
-            tuple[dict, dict, dict]: Updated doctor information, test device information, and a result dictionary after cancellation.
+            tuple[Optional[dict], Optional[dict], dict]: Updated doctor information, test device information, and the result dictionary.
         """
         doctor_information, result_dict = self._cancel_simulate(
             'test_cancel',
@@ -1973,28 +1956,23 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                                    max_inferences: int = 5,
                                    patient_kwargs: dict = {},
                                    staff_kwargs: dict = {},
-                                   **kwargs) -> tuple[dict, dict, dict]:
+                                   **kwargs) -> tuple[Optional[dict], Optional[dict], dict]:
         """
         Simulate a multi-turn conversation for moving a patient's whole test set earlier.
 
         Args:
             gt_idx (Optional[int], optional): Ground-truth index of the follow-up booking to be rescheduled. Defaults to None.
-            doctor_information (Optional[dict], optional): A dictionary containing information about the doctor(s).
-            test_device_information (Optional[dict], optional): Test device information containing device schedules. Defaults to None.
+            doctor_information (Optional[dict], optional): Doctor information (required without FHIR). Defaults to None.
+            test_device_information (Optional[dict], optional): Test device schedules. Defaults to None.
             patient_schedules (Optional[list[dict]], optional): List of patient appointment schedules. Defaults to None.
             verbose (bool, optional): Whether to print conversation logs. Defaults to True.
-            max_inferences (int, optional): Maximum number of dialogue turns.
-            patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent.
-            staff_kwargs (dict, optional): Additional keyword arguments passed to the staff agent.
+            max_inferences (int, optional): Maximum number of dialogue turns. Defaults to 5.
+            patient_kwargs (dict, optional): Additional keyword arguments passed to the patient agent. Defaults to {}.
+            staff_kwargs (dict, optional): Additional keyword arguments passed to the staff agent. Defaults to {}.
             **kwargs: Additional keyword arguments passed to the patient and staff agents.
 
-        Raises:
-            TypeError: If the return type from the rescheduling method is unexpected.
-            DataNotFoundError: Schedule not found error.
-            SchedulingError: Scheduling error.
-
         Returns:
-            tuple[dict, dict, dict]: Updated doctor information, test device information, and a result dictionary after rescheduling.
+            tuple[Optional[dict], Optional[dict], dict]: Updated doctor information, test device information, and the result dictionary.
         """
         doctor_information, result_dict = self._reschedule_simulate(
             'test_reschedule',

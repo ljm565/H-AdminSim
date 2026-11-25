@@ -3,7 +3,7 @@ import sys
 import random
 import numpy as np
 from sconf import Config
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
 from h_adminsim.task.fhir_manager import FHIRManager
@@ -12,17 +12,41 @@ from h_adminsim.utils.random_utils import random_uuid
 from h_adminsim.utils.filesys_utils import json_load, get_files
 
 
-def env_setup(config):
+def env_setup(config: Config) -> None:
+    """
+    Seed ``random`` and NumPy from ``config.seed``.
+
+    Args:
+        config (Config): CRUD config.
+    """
     random.seed(config.seed)
     np.random.seed(config.seed)
 
 
-def load_config(config_path):
+def load_config(config_path: str) -> Config:
+    """
+    Load a YAML config.
+
+    Args:
+        config_path (str): Path to the config file.
+
+    Returns:
+        Config: The loaded config.
+    """
     config = Config(config_path)
     return config
 
 
-def main(args):
+def main(args: Namespace) -> None:
+    """
+    Run one FHIR CRUD operation (``args.mode``) against ``config.fhir_url``.
+
+    Args:
+        args (Namespace): Parsed CLI arguments.
+
+    Raises:
+        ValueError: If the ID or resource type the mode needs is missing.
+    """
     # Init config
     config = load_config(args.config)
     config.yaml_file = args.config

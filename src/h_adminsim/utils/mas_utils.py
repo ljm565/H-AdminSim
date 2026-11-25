@@ -9,16 +9,16 @@ from h_adminsim.utils import colorstr
 
 
 def init_task_models(model: str, 
-                     vllm_endpoint: Optional[str] = None) -> tuple[str, str, bool]:
+                     vllm_endpoint: Optional[str] = None) -> tuple[str, Optional[str], bool]:
     """
-    Initialize the model for the task.
+    Resolve a task model's vLLM settings: Gemini/GPT models use their API, any other model needs ``vllm_endpoint``.
 
     Args:
         model (str): The model name.
-        vllm_endpoint (Optional[str], optional): The VLLM endpoint URL. Defaults to None.
+        vllm_endpoint (Optional[str], optional): The vLLM endpoint URL. Defaults to None.
     
     Returns:
-        tuple[str, str, bool]: The model name, VLLM endpoint URL, vllm usage flag.
+        tuple[str, Optional[str], bool]: ``(model, vLLM endpoint or None for API models, use_vllm)``.
     """
     if any(keyword in model.lower() for keyword in ['gemini', 'gpt']):
         return model, None, False
@@ -29,7 +29,7 @@ def init_task_models(model: str,
 
 
 def init_mas_system(orchestrator_model: str,
-                    orchestrator_vllm_endpoint: Optional[str],
+                    orchestrator_vllm_endpoint: Optional[str] = None,
                     first_visit_intake_model: Optional[str] = None,
                     first_visit_intake_vllm_endpoint: Optional[str] = None,
                     first_visit_scheduling_model: Optional[str] = None,
@@ -38,21 +38,21 @@ def init_mas_system(orchestrator_model: str,
                     follow_up_visit_scheduling_vllm_endpoint: Optional[str] = None,
                     intake_max_inference: int = 5,) -> dict:
     """
-    Initialize the multi-agent system (MAS) structure with the specified models for the orchestrator and sub-agents.
+    Build the multi-agent system: an orchestrator plus one sub-agent per task whose model is given.
 
     Args:
-        orchestrator_model (str): The model name for the orchestrator agent.
-        orchestrator_vllm_endpoint (Optional[str]): The vLLM endpoint URL for the orchestrator agent (if applicable).
-        first_visit_intake_model (Optional[str], optional): The model name for the first visit intake agent. Defaults to None.
-        first_visit_intake_vllm_endpoint (Optional[str], optional): The vLLM endpoint URL for the first visit intake agent (if applicable). Defaults to None.
-        first_visit_scheduling_model (Optional[str], optional): The model name for the first visit scheduling agent. Defaults to None.
-        first_visit_scheduling_vllm_endpoint (Optional[str], optional): The vLLM endpoint URL for the first visit scheduling agent (if applicable). Defaults to None.
-        follow_up_visit_scheduling_model (Optional[str], optional): The model name for the follow-up visit scheduling agent. Defaults to None.
-        follow_up_visit_scheduling_vllm_endpoint (Optional[str], optional): The vLLM endpoint URL for the follow-up visit scheduling agent (if applicable). Defaults to None.
-        intake_max_inference (int, optional): The maximum number of inferences allowed for the intake agent. Defaults to 5.
+        orchestrator_model (str): Orchestrator model name.
+        orchestrator_vllm_endpoint (Optional[str], optional): Orchestrator vLLM endpoint (non-API models). Defaults to None.
+        first_visit_intake_model (Optional[str], optional): First-visit intake model; None omits the agent. Defaults to None.
+        first_visit_intake_vllm_endpoint (Optional[str], optional): Its vLLM endpoint. Defaults to None.
+        first_visit_scheduling_model (Optional[str], optional): First-visit scheduling model; None omits the agent. Defaults to None.
+        first_visit_scheduling_vllm_endpoint (Optional[str], optional): Its vLLM endpoint. Defaults to None.
+        follow_up_visit_scheduling_model (Optional[str], optional): Follow-up scheduling model; None omits the agent. Defaults to None.
+        follow_up_visit_scheduling_vllm_endpoint (Optional[str], optional): Its vLLM endpoint. Defaults to None.
+        intake_max_inference (int, optional): Maximum inferences for the intake agent. Defaults to 5.
 
     Returns:
-        dict: A dictionary representing the initialized multi-agent system structure.
+        dict: ``{'orchestrator': {'agent', 'description', 'next_step', 'subagent': {task: {...}}}}``.
     """
     # Initialize orchestrator agent
     task_model, task_vllm_endpoint, task_use_vllm = init_task_models(

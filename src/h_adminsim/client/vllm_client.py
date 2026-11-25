@@ -1,7 +1,7 @@
 import os
 import requests
 from openai import OpenAI
-from typing import Optional
+from typing import Any, Optional
 
 from h_adminsim.utils import colorstr, log
 from h_adminsim.utils.image_preprocess_utils import (
@@ -14,6 +14,13 @@ from h_adminsim.utils.image_preprocess_utils import (
 
 class VLLMClient:
     def __init__(self, model: str, vllm_endpoint: str):
+        """
+        Client for an OpenAI-compatible vLLM server; checks that the server serves ``model``.
+
+        Args:
+            model (str): Model name served by vLLM.
+            vllm_endpoint (str): Server base URL (without ``/v1``).
+        """
         # Initialize
         self.model = model
         self.vllm_endpoint = vllm_endpoint
@@ -24,9 +31,9 @@ class VLLMClient:
         self.__sanity_check()
 
 
-    def _init_environment(self):
+    def _init_environment(self) -> None:
         """
-        Initialize vLLM OpenAI-formatted client.
+        Create the OpenAI-compatible client for the vLLM endpoint.
         """
         self.client = OpenAI(
             base_url=f'{self.vllm_endpoint}/v1',
@@ -34,7 +41,13 @@ class VLLMClient:
         )
 
 
-    def __sanity_check(self):
+    def __sanity_check(self) -> None:
+        """
+        Check that the vLLM server lists ``self.model``.
+
+        Raises:
+            ValueError: If the model list cannot be retrieved, is empty, or lacks the model.
+        """
         response = requests.get(f'{self.vllm_endpoint}/v1/models')
         if response.status_code != 200:
             raise ValueError(colorstr("red", f"Failed to retrieve models: {response.text}"))
@@ -47,12 +60,12 @@ class VLLMClient:
             raise ValueError(colorstr("red", f"Model '{self.model}' not found in available models: {', '.join(available_model_ids)}"))
 
     
-    def reset_history(self, verbose: bool = True):
+    def reset_history(self, verbose: bool = True) -> None:
         """
-        Reset the conversation history.
+        Clear the conversation history and token usage.
 
         Args:
-            verbose (bool): Whether to print verbose output. Defaults to True.
+            verbose (bool, optional): Whether to log the reset. Defaults to True.
         """
         self.__first_turn = True
         self.histories = list()
@@ -66,15 +79,15 @@ class VLLMClient:
                        image_path: Optional[str] = None,
                        image_size: Optional[tuple[int, int]] = None) -> list[dict]:
         """
-        Create a payload for API calls to the model.
+        Build the user message for the chat completions API.
 
         Args:
             user_prompt (str): User prompt.
-            image_path (Optional[str], optional): Image path if you need to send image. Defaults to None.
-            image_size (Optional[tuple[int, int]], optional): Image size to be resized. Defaults to None.
+            image_path (Optional[str], optional): Image to attach (base64 data URL). Defaults to None.
+            image_size (Optional[tuple[int, int]], optional): Max ``(width, height)`` to resize the image to. Defaults to None.
 
         Returns:
-            list[dict]: Payload including prompts and image data.
+            list[dict]: The user message (text and optional image).
         """
         payloads = list()
         user_contents = {"role": "user", "content": []}
@@ -108,25 +121,26 @@ class VLLMClient:
                  using_multi_turn: bool = False,
                  verbose: bool = True,
                  greeting: Optional[str] = None,
-                 **kwargs) -> str:
+                 **kwargs: Any) -> str:
         """
-        Sends a chat completion request to the model with optional image input and system prompt.
+        Send the prompt (with optional image and system prompt) and return the model's reply.
+        An empty reply is replaced by 'Could you tell me again?'.
 
         Args:
-            user_prompt (str): The main user prompt or query to send to the model.
-            system_prompt (Optional[str], optional): An optional system-level prompt to set context or behavior. Defaults to None.
-            image_path (Optional[str], optional): Path to an image file to be included in the prompt. Defaults to None.
-            image_size (Optional[tuple[int, int]], optional): The target image size in (width, height) format, if resizing is needed. Defaults to None.
-            using_multi_turn (bool): Whether to structure it as multi-turn. Defaults to False.
-            greeting (Optional[str]): An optional greeting message to include in the conversation. Defaults to None.
-            verbose (bool): Whether to print verbose output. Defaults to True.
+            user_prompt (str): User prompt.
+            system_prompt (Optional[str], optional): System prompt, added on the first turn. Defaults to None.
+            image_path (Optional[str], optional): Image to attach. Defaults to None.
+            image_size (Optional[tuple[int, int]], optional): Max ``(width, height)`` to resize the image to. Defaults to None.
+            using_multi_turn (bool, optional): Keep the previous history instead of resetting it. Defaults to False.
+            verbose (bool, optional): Whether to log history resets. Defaults to True.
+            greeting (Optional[str], optional): Assistant greeting added on the first turn. Defaults to None.
+            **kwargs (Any): Extra ``chat.completions.create`` options.
+
+        Returns:
+            str: The model's response message (stripped).
 
         Raises:
             FileNotFoundError: If `image_path` is provided but the file does not exist.
-            e: Any exception raised during the API call is re-raised.
-
-        Returns:
-            str: The model's response message.
         """
         if image_path and not os.path.exists(image_path):
             raise FileNotFoundError

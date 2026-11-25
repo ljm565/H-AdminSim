@@ -1,5 +1,5 @@
-from typing import ClassVar, TYPE_CHECKING
 from dataclasses import fields, is_dataclass
+from typing import ClassVar, Union, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from h_adminsim.policy.context import ReviewContext
@@ -28,7 +28,7 @@ class Metric:
     source_sha256 = None
 
 
-    def compute(self, ctx: "ReviewContext"):
+    def compute(self, ctx: "ReviewContext") -> Union[bool, int, float, str, None]:
         """
         The metric's value for one negotiation.
 
@@ -36,8 +36,11 @@ class Metric:
             ctx (ReviewContext): The negotiation (``ctx.metrics`` holds the built-in metrics and the user metrics listed
                                  before this one; only the declared ones are readable).
 
+        Raises:
+            NotImplementedError: If the subclass does not implement it.
+
         Returns:
-            bool | int | float | str | None: The value.
+            Union[bool, int, float, str, None]: The value.
         """
         raise NotImplementedError
 

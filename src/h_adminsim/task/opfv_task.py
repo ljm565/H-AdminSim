@@ -40,6 +40,20 @@ class OutpatientFirstIntake(OutpatientTask):
                  max_retries: int = 8,
                  admin_staff_last_task_user_prompt_path: Optional[str] = None,
                  patient_vllm_endpoint: Optional[str] = None):
+        """
+        Set up the first-visit intake task.
+
+        Args:
+            patient_model (str): The patient agent's model.
+            admin_staff_mas (HospitalMAS): The staff MAS (must have a ``first_visit_intake`` agent).
+            supervisor_agent (Optional[SupervisorAgent], optional): Extracts the patient information after the dialogue;
+                                                                   None -> the staff agent does it. Defaults to None.
+            intake_max_inference (int, optional): Maximum number of intake dialogue turns. Defaults to 5.
+            max_retries (int, optional): Retries of a failed LLM simulation. Defaults to 8.
+            admin_staff_last_task_user_prompt_path (Optional[str], optional): Custom prompt for the staff's extraction
+                                                                              task (without supervisor). Defaults to None.
+            patient_vllm_endpoint (Optional[str], optional): vLLM endpoint of the patient model. Defaults to None.
+        """
         super().__init__()
         
         # Initialize variables
@@ -59,9 +73,9 @@ class OutpatientFirstIntake(OutpatientTask):
         log(f'Patient intake tasks are conducted by {colorstr(task_mechanism)}')
     
 
-    def _init_last_task_prompt(self, admin_staff_last_task_user_prompt_path: Optional[str] = None) -> str:
+    def _init_last_task_prompt(self, admin_staff_last_task_user_prompt_path: Optional[str] = None) -> None:
         """
-        Initialize the user prompt for the admnistration staff agent's last task.
+        Load the staff's extraction-task user prompt into `last_task_user_prompt` (only without a supervisor).
 
         Args:
             admin_staff_last_task_user_prompt_path (Optional[str], optional): Path to a custom user prompt file. 
@@ -69,9 +83,6 @@ class OutpatientFirstIntake(OutpatientTask):
 
         Raises:
             FileNotFoundError: If the specified user prompt file does not exist.
-            
-        Returns:
-            str: The user prompt.
         """
         if not self.use_supervisor:
             if not admin_staff_last_task_user_prompt_path:
@@ -141,8 +152,7 @@ class OutpatientFirstIntake(OutpatientTask):
     
     def _department_decision(self, prediction_department: str, prediction_supervison: Union[str, dict], gt_department: str) -> tuple[str, list[str]]:
         """
-        Determine the final department decision by considering both 
-        the interaction agent result and the supervisor agent result.
+        Determine the final department from the dialogue and supervisor results (the supervisor's wins when present).
 
         Args:
             prediction_department (str): The department predicted by the interaction agent.
@@ -151,7 +161,8 @@ class OutpatientFirstIntake(OutpatientTask):
             gt_department (str): The ground truth department for the patient.
 
         Returns:
-            str: The final department decision.
+            tuple[str, list[str]]: The final department and a one-element trial note (``'match'``, ``'mismatch - ...'``
+                                   or ``'supervisor error'``).
         """
         try:
             sup_department = prediction_supervison.pop('department')
@@ -186,7 +197,8 @@ class OutpatientFirstIntake(OutpatientTask):
                     - 'department': Dictionary of available departments.
             agent_results (dict): Placeholder for compatibility; not used in this method.
             environment (HospitalEnvironment): Hospital environment instance to manage patient schedules.
-            verbose (bool): Whether logging the each result or not.
+            verbose (bool, optional): Whether logging the each result or not. Defaults to False.
+            **kwargs (Any): Unused.
 
         Returns:
             dict: A dictionary with:
@@ -350,6 +362,22 @@ class OutpatientFirstScheduling(OutpatientTask):
                  scheduling_strategy: str = 'tool_calling',
                  max_retries: int = 8,
                  patient_vllm_endpoint: Optional[str] = None):
+        """
+        Set up the first-visit scheduling task.
+
+        Args:
+            patient_model (str): The patient agent's model.
+            admin_staff_mas (HospitalMAS): The staff MAS (must have a ``first_visit_scheduling`` agent).
+            schedule_cancellation_prob (float, optional): Per-patient probability of a cancellation event. Defaults to 0.05.
+            request_early_schedule_prob (float, optional): Per-patient probability of a rescheduling request. Defaults to 0.1.
+            preference_rejection_prob (float, optional): Initial probability the patient rejects a proposal. Defaults to 0.3.
+            preference_rejection_prob_decay (float, optional): Factor applied to that probability after each rejection. Defaults to 0.5.
+            fhir_integration (bool, optional): Whether to sync with a FHIR server. Defaults to False.
+            scheduling_max_inference (int, optional): Maximum number of scheduling dialogue turns. Defaults to 5.
+            scheduling_strategy (str, optional): ``'reasoning'`` or ``'tool_calling'``. Defaults to 'tool_calling'.
+            max_retries (int, optional): Retries of a failed LLM simulation. Defaults to 8.
+            patient_vllm_endpoint (Optional[str], optional): vLLM endpoint of the patient model. Defaults to None.
+        """
         super().__init__()
 
         # Initialize variables
@@ -392,9 +420,10 @@ class OutpatientFirstScheduling(OutpatientTask):
             system_prompt_path (str): Path to the system prompt used to initialize the patient agent.
             environment (HospitalEnvironment): Hospital environment configuration for the simulation.
             additional_patient_conditions (dict, optional): Additional patient-specific conditions for simulation control.
+                                                            Defaults to {}.
 
         Returns:
-            OPFVIntakeSimulation: Configured outpatient intake and scheduling simulation instance.
+            OPFVSchedulingSimulation: Configured scheduling simulation instance.
         """
         patient_agent = PatientAgent(
             self.patient_model,
@@ -469,7 +498,7 @@ class OutpatientFirstScheduling(OutpatientTask):
                        prediction: dict,
                        doctor_information: dict,
                        environment: "HospitalEnvironment",
-                       patient_information: Optional[dict] = None):
+                       patient_information: Optional[dict] = None) -> None:
         """
         Book a first-visit prediction: append first-visit consultation slot, then sync the env.
 
@@ -504,11 +533,12 @@ class OutpatientFirstScheduling(OutpatientTask):
             doctor_information (dict): A dictionary containing information about the doctor(s) involved,
                                        including availability and other relevant details.
             environment (HospitalEnvironment): Hospital environment.
-            idx (int, optional): Specific patient schedule index.
+            idx (Optional[int], optional): Specific patient schedule index (None -> a random scheduled first visit).
+                                           Defaults to None.
             verbose (bool, optional): Whether logging the each result or not. Defaults to False.
 
         Returns:
-            tuple[dict, Optional[dict]]: Updated doctor information and a result dictionary after cancellation.
+            tuple[dict, Optional[dict]]: Updated doctor information and the result dictionary (None if nothing to cancel).
         """
         if idx is None:
             candidate_idx = [i for i, schedule in enumerate(environment.patient_schedules)
@@ -571,17 +601,19 @@ class OutpatientFirstScheduling(OutpatientTask):
                              idx: Optional[int] = None, 
                              verbose: bool = False) -> tuple[dict, Optional[dict]]:
         """
-        Add a patient schedule to the waiting list in the given environment.
+        Simulate a patient asking to move their appointment earlier (added to the waiting list or rebooked).
 
         Args:
             doctor_information (dict): A dictionary containing information about the doctor(s) involved,
                                        including availability and other relevant details.
             environment (HospitalEnvironment): Hospital environment.
-            idx (int, optional): Specific patient schedule index.
+            idx (Optional[int], optional): Specific patient schedule index (None -> a random scheduled first visit).
+                                           Defaults to None.
             verbose (bool, optional): Whether logging the each result or not. Defaults to False.
         
         Returns:
-            tuple[dict, Optional[dict]]: Updated doctor information and a result dictionary after cancellation.
+            tuple[dict, Optional[dict]]: Updated doctor information and the result dictionary (None if no request was
+                                         made).
         """
         result_dict = init_result_dict()
         if idx is None:
@@ -635,7 +667,7 @@ class OutpatientFirstScheduling(OutpatientTask):
     def automatic_waiting_list_update(self, 
                                       sim_environment: OPFVSchedulingSimulation,
                                       environment: "HospitalEnvironment",
-                                      doctor_information: Optional[dict] = None) -> tuple[dict, dict]:
+                                      doctor_information: Optional[dict] = None) -> tuple[Optional[dict], dict]:
         """
         Automatically update the waiting list by attempting to reschedule patients.
 
@@ -646,7 +678,7 @@ class OutpatientFirstScheduling(OutpatientTask):
                                                            including availability and other relevant details. Defaults to None.
 
         Returns:
-            tuple[dict, dict]: Updated doctor information and a result dictionary.
+            tuple[Optional[dict], dict]: Updated doctor information and the merged result dictionary.
         """
         all_result_dict = init_result_dict()
         for result in sim_environment.automatic_waiting_list_update(
@@ -673,7 +705,7 @@ class OutpatientFirstScheduling(OutpatientTask):
                    status: bool, 
                    prediction: Union[dict, str], 
                    environment: "HospitalEnvironment", 
-                   patient_information: Optional[dict] = None):
+                   patient_information: Optional[dict] = None) -> None:
         """
         Update the simulation environment with scheduling results and optionally synchronize FHIR resources.
 
@@ -682,7 +714,6 @@ class OutpatientFirstScheduling(OutpatientTask):
             prediction (Union[dict, str]): The predicted scheduling result (e.g., patient schedule information).
             environment (HospitalEnvironment): The environment instance to be updated (must implement `update_env`).
             patient_information (Optional[dict], optional): Patient-related predicted (or GT) information to generate FHIR Patient resources. Defaults to None.
-
         """
         # POST/PUT to FHIR
         fhir_patient, fhir_appointment = None, None
@@ -715,27 +746,19 @@ class OutpatientFirstScheduling(OutpatientTask):
                  verbose: bool = False,
                  **kwargs) -> dict:
         """
-        This method uses agent test data to prompt an LLM for scheduling decisions, post-processes
-        the output, runs sanity checks on predicted schedules, and collects the results for evaluation.
+        Simulate one first-visit scheduling dialogue (plus random cancellation / rescheduling events) and collect results.
 
         Args:
             data_pair (tuple[dict, dict]): A pair of ground truth and patient data for agent simulation.
-            agent_test_data (dict): Dictionary containing test data and metadata for a single hospital.
-                Expected keys include:
-                    - 'metadata': A dict containing start_hour, end_hour, and interval_hour under 'time'.
-                    - 'agent_data': A list of (ground_truth, test_data) pairs.
-                    - 'doctor': A dictionary of doctor profiles with department and schedule info.
-            agent_results (dict): Optional dictionary containing prior department predictions.
-                Used to extract department-level guidance per patient. Can be empty.
+            agent_test_data (dict): Test data of one hospital (``metadata``, ``department``, ``doctor``); its ``doctor``
+                                    schedules are updated in place.
+            agent_results (dict): Results so far; the intake predictions, if any, give the patient's department.
             environment (HospitalEnvironment): Hospital environment instance to manage patient schedules.
-            verbose (bool, option): Whether logging the each result or not.
+            verbose (bool, optional): Whether logging the each result or not. Defaults to False.
+            **kwargs (Any): Unused.
 
         Returns:
-            dict: A dictionary with three keys:
-                - 'gt': List of ground truth results, each including patient info, attending physician, department, and schedule.
-                - 'pred': List of predicted results (either valid dict or fallback string).
-                - 'status': List of booleans indicating whether each prediction passed sanity checks.
-                - 'status_code': List of status codes explaining each status.
+            dict: Result columns (``gt``, ``pred``, ``status``, ``status_code``, ``dialog``, ``token``, ...).
         """
         gt, test_data = data_pair
         self._metadata = agent_test_data.get('metadata')

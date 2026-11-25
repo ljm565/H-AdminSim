@@ -1,7 +1,7 @@
 import os
 import math
 from dataclasses import replace
-from typing import Optional, Sequence, Iterable
+from typing import Any, Optional, Sequence, Iterable
 
 from h_adminsim.utils import colorstr
 from h_adminsim.policy.base import Policy, Decision
@@ -237,7 +237,7 @@ class PolicyStack:
         return merged
 
 
-    def check_patient_fields(self, available: Iterable[str], where: str = 'agent data'):
+    def check_patient_fields(self, available: Iterable[str], where: str = 'agent data') -> None:
         """
         Check that the data provides every patient field the policies require, before any patient is simulated.
 
@@ -309,15 +309,15 @@ class PolicyStack:
 
 
     @staticmethod
-    def _validate(decision: Decision, policy_id: str, metric_ids: frozenset = frozenset()):
+    def _validate(decision: Decision, policy_id: str, metric_ids: Iterable[str] = frozenset()) -> None:
         """
         Check that a `review` decision is something the simulation can carry out.
 
         Args:
             decision (Decision): The decision a `review` policy returned (not None; None means abstain).
             policy_id (str): Id of the policy that returned it, for error messages.
-            metric_ids (frozenset, optional): Ids of the user-defined metrics, which the record may not overwrite
-                                              either. Defaults to an empty set.
+            metric_ids (Iterable[str], optional): Ids of the user-defined metrics, which the record may not overwrite
+                                                  either. Defaults to frozenset().
 
         Raises:
             PolicyError: If `decision` is not a `Decision`, has an unknown action, asks for an objective the engine
@@ -340,12 +340,12 @@ class PolicyStack:
 
 
     @staticmethod
-    def _validate_metric_value(value, metric_id: str):
+    def _validate_metric_value(value: Any, metric_id: str) -> None:
         """
         Check that a user-defined metric produced a value the result files can store.
 
         Args:
-            value: The computed value.
+            value (Any): The computed value.
             metric_id (str): Id of the metric, for the error message.
 
         Raises:

@@ -1,13 +1,19 @@
 import os
 import sys
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
 from h_adminsim.pipeline import Evaluator
 
 
 
-def main(args):
+def main(args: Namespace) -> None:
+    """
+    Run the requested evaluations on the given result folders.
+
+    Args:
+        args (Namespace): Parsed CLI arguments.
+    """
     evaluator = Evaluator(
         fv_path=args.fv_path,
         fu_hospital_side_path=args.fu_hospital_path,
