@@ -2,11 +2,32 @@ from __future__ import annotations
 
 from h_adminsim.utils import colorstr
 from h_adminsim.registry.errors import PolicyError
-from h_adminsim.registry.policy import POLICY_REQUIRES_PREFIX
+from h_adminsim.registry.policy import POLICY_REQUIRES_PATIENT_PREFIX, POLICY_REQUIRES_METRIC_PREFIX
 from h_adminsim.policy.base import Policy
 from h_adminsim.policy.metric import Metric
 from h_adminsim.policy.evaluation import Evaluation
 from h_adminsim.policy.builtin import ResultGainPolicy, CapacityProtectionPolicy
+
+
+
+def _validate_requires(cls, kind: str):
+    """
+    Check the format of a policy / metric class's `requires`.
+
+    Args:
+        cls: The policy or metric class.
+        kind (str): ``'Policy'`` or ``'Metric'``, for the error message.
+
+    Raises:
+        PolicyError: If `requires` is not a tuple of ``patient.<field>`` / ``metric.<id>`` strings.
+    """
+    prefixes = (POLICY_REQUIRES_PATIENT_PREFIX, POLICY_REQUIRES_METRIC_PREFIX)
+    requires = cls.requires
+    if not isinstance(requires, (tuple, list)) or not all(
+            isinstance(r, str) and any(r.startswith(p) and len(r) > len(p) for p in prefixes) for r in requires):
+        raise PolicyError(colorstr("red", f"{kind} `{cls.name}`.requires must be a tuple of "
+                                          f"'{POLICY_REQUIRES_PATIENT_PREFIX}<field>' / '{POLICY_REQUIRES_METRIC_PREFIX}<id>' "
+                                          f"strings, got {requires!r}."))
 
 
 
@@ -25,8 +46,8 @@ def validate_policy_class(cls) -> type:
         cls: The candidate class.
 
     Raises:
-        PolicyError: If `cls` is not a `Policy` subclass, has no `name`, implements no hook, or its `requires` is not a
-                     tuple of ``patient.<field>`` strings.
+        PolicyError: If `cls` is not a `Policy` subclass, has no `name`, implements no hook, or declares metrics in
+                     `requires` without implementing `review` (only `review` sees the metrics).
 
     Returns:
         type: `cls`.
@@ -40,11 +61,10 @@ def validate_policy_class(cls) -> type:
     if not cls.hooks():
         raise PolicyError(colorstr("red", f"Policy `{cls.name}` implements no hook (`restrict` / `review`)."))
     
-    requires = cls.requires
-    if not isinstance(requires, (tuple, list)) or not all(
-            isinstance(r, str) and r.startswith(POLICY_REQUIRES_PREFIX) and len(r) > len(POLICY_REQUIRES_PREFIX) for r in requires):
-        raise PolicyError(colorstr("red", f"Policy `{cls.name}`.requires must be a tuple of '{POLICY_REQUIRES_PREFIX}<field>' "
-                                          f"strings, got {requires!r}."))
+    _validate_requires(cls, 'Policy')
+    if not cls.implements('review') and any(r.startswith(POLICY_REQUIRES_METRIC_PREFIX) for r in cls.requires):
+        raise PolicyError(colorstr("red", f"Policy `{cls.name}` declares metrics in `requires` but does not implement "
+                                          f"`review`, the only hook that sees them."))
     return cls
 
 
@@ -115,8 +135,7 @@ def validate_metric_class(cls) -> type:
         cls: The candidate class.
 
     Raises:
-        PolicyError: If `cls` is not a `Metric` subclass, has no `name`, does not implement `compute`, or its `requires`
-                     is not a tuple of ``patient.<field>`` strings.
+        PolicyError: If `cls` is not a `Metric` subclass, has no `name`, or does not implement `compute`.
 
     Returns:
         type: `cls`.
@@ -130,11 +149,7 @@ def validate_metric_class(cls) -> type:
     if cls.compute is Metric.compute:
         raise PolicyError(colorstr("red", f"Metric `{cls.name}` does not implement `compute`."))
     
-    requires = cls.requires
-    if not isinstance(requires, (tuple, list)) or not all(
-            isinstance(r, str) and r.startswith(POLICY_REQUIRES_PREFIX) and len(r) > len(POLICY_REQUIRES_PREFIX) for r in requires):
-        raise PolicyError(colorstr("red", f"Metric `{cls.name}`.requires must be a tuple of '{POLICY_REQUIRES_PREFIX}<field>' "
-                                          f"strings, got {requires!r}."))
+    _validate_requires(cls, 'Metric')
     return cls
 
 

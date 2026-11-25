@@ -7,6 +7,7 @@ from dataclasses import dataclass, field, replace
 from h_adminsim.utils.common_utils import get_iso_time, str_to_datetime
 from h_adminsim.utils.policy_utils import deep_freeze, thaw
 from h_adminsim.registry.errors import PolicyRequirementError
+from h_adminsim.registry.policy import POLICY_REQUIRES_PATIENT_PREFIX, POLICY_REQUIRES_METRIC_PREFIX
 
 
 
@@ -16,48 +17,64 @@ def _freeze(mapping: Optional[Mapping]) -> Mapping:
 
 
 
-class PatientView(MappingABC):
-    """
-    Read-only view of one patient's agent-data record, as `ctx.patient`.
+def _declared(obj, prefix: str) -> set:
+    """Keys a policy / metric declared in `requires` under `prefix` (``patient.<field>`` -> ``<field>``)."""
+    return {r[len(prefix):] for r in getattr(obj, 'requires', ()) or () if r.startswith(prefix)}
 
-    A view handed to a policy only lets it read the fields it declared in `requires`: reading (or testing membership
-    of) any other field raises `PolicyRequirementError`, and iteration yields the declared fields only. A declared
-    field missing from this patient's record also raises, since the data must provide it. The unrestricted view (the
-    one contexts hold before `for_policy`) reads every field.
+
+
+class _DeclaredView(MappingABC):
+    """
+    Read-only view whose reader may only read the keys it declared in `requires` (as ``<prefix><key>``).
+
+    Reading (or testing membership of) any other key raises `PolicyRequirementError`, and iteration yields the declared
+    keys only. A declared key missing from the data also raises. The unrestricted view (the one contexts hold before
+    `for_policy`) reads every key.
     """
     __slots__ = ('_data', '_allowed', '_owner')
+    PREFIX = ''
 
     def __init__(self, data: Optional[Mapping] = None, allowed: Optional[Iterable[str]] = None, owner: Optional[str] = None):
         """
         Args:
-            data (Optional[Mapping], optional): The patient's record (a `PatientView` shares its data). Defaults to None.
-            allowed (Optional[Iterable[str]], optional): Fields the reader may access; None allows every field.
+            data (Optional[Mapping], optional): The data (a view of the same class shares its data). Defaults to None.
+            allowed (Optional[Iterable[str]], optional): Keys the reader may access; None allows every key.
                                                          Defaults to None.
-            owner (Optional[str], optional): Id of the policy reading the view, for error messages. Defaults to None.
+            owner (Optional[str], optional): Id of the policy / metric reading the view, for error messages.
+                                             Defaults to None.
         """
-        self._data = data._data if isinstance(data, PatientView) else deep_freeze(dict(data or {}))
+        self._data = data._data if isinstance(data, type(self)) else self._freeze_data(data)
         self._allowed = frozenset(allowed) if allowed is not None else None
         self._owner = owner
 
 
+    @staticmethod
+    def _freeze_data(data: Optional[Mapping]) -> Mapping:
+        """The read-only form of the data."""
+        return deep_freeze(dict(data or {}))
+
+
+    def _missing_message(self, who: str, key: str) -> str:
+        """Error message for a declared key the data does not have."""
+        return f"{who} needs `{self.PREFIX}{key}`, which is not available."
+
+
     def _check(self, key: str):
         """
-        Check that the reader may read `key` and that this patient's record has it.
+        Check that the reader may read `key` and that the data has it.
 
         Args:
-            key (str): The patient field being read.
+            key (str): The key being read.
 
         Raises:
-            PolicyRequirementError: If the reader did not declare `key` in `requires`, or the record lacks it.
+            PolicyRequirementError: If the reader did not declare `key` in `requires`, or the data lacks it.
         """
-        who = f"Policy `{self._owner}`" if self._owner else 'A policy'
+        who = f"`{self._owner}`" if self._owner else 'A policy'
         if self._allowed is not None and key not in self._allowed:
             raise PolicyRequirementError(
-                f"{who} reads `patient.{key}` without declaring it; add 'patient.{key}' to its `requires`.")
+                f"{who} reads `{self.PREFIX}{key}` without declaring it; add '{self.PREFIX}{key}' to its `requires`.")
         if key not in self._data:
-            raise PolicyRequirementError(
-                f"{who} needs `patient.{key}`, which this patient's agent data does not have. "
-                f"Add the field to the data (or regenerate it) before using this policy.")
+            raise PolicyRequirementError(self._missing_message(who, key))
 
 
     def __getitem__(self, key: str):
@@ -80,32 +97,60 @@ class PatientView(MappingABC):
 
 
     def __repr__(self) -> str:
-        return f"PatientView({dict(thaw(dict(self.items())))!r})"
+        return f"{type(self).__name__}({dict(thaw(dict(self.items())))!r})"
 
 
-    def restricted_to(self, fields: Iterable[str], owner: Optional[str]) -> "PatientView":
+    def restricted_to(self, keys: Iterable[str], owner: Optional[str]):
         """
-        A view over the same record that only reads `fields`.
+        A view over the same data that only reads `keys`.
 
         Args:
-            fields (Iterable[str]): Patient fields the reader declared.
-            owner (Optional[str]): Id of the reading policy, for error messages.
+            keys (Iterable[str]): Keys the reader declared.
+            owner (Optional[str]): Id of the reading policy / metric, for error messages.
 
         Returns:
-            PatientView: The restricted view.
+            The restricted view (same class as this one).
         """
-        return PatientView(self, allowed=fields, owner=owner)
+        return type(self)(self, allowed=keys, owner=owner)
 
 
     def to_dict(self) -> dict:
-        """The full record in plain (JSON-serializable) form, whatever the view allows."""
+        """The full data in plain (JSON-serializable) form, whatever the view allows."""
         return thaw(self._data)
 
 
 
-def _patient_fields(policy) -> set:
-    """Patient fields a policy declared in `requires` (``patient.<field>`` -> ``<field>``)."""
-    return {r.split('.', 1)[1] for r in getattr(policy, 'requires', ()) or ()}
+class PatientView(_DeclaredView):
+    """
+    Read-only view of one patient's agent-data record, as `ctx.patient`. A policy reads only the fields it declared
+    in `requires` (``patient.<field>``); a declared field missing from this patient's record raises, since the data
+    must provide it.
+    """
+    __slots__ = ()
+    PREFIX = POLICY_REQUIRES_PATIENT_PREFIX
+
+    def _missing_message(self, who: str, key: str) -> str:
+        return (f"{who} needs `patient.{key}`, which this patient's agent data does not have. "
+                f"Add the field to the data (or regenerate it) before using this policy.")
+
+
+
+class MetricView(_DeclaredView):
+    """
+    Read-only view of one negotiation's metrics, as `ctx.metrics`: the built-in metrics (``gpc``, ``tcl``, ...), the
+    user-defined metrics computed so far and ``preference``. A policy or metric reads only the metrics it declared in
+    `requires` (``metric.<id>``) plus ``preference``, which is always readable.
+    """
+    __slots__ = ()
+    PREFIX = POLICY_REQUIRES_METRIC_PREFIX
+
+    @staticmethod
+    def _freeze_data(data: Optional[Mapping]) -> Mapping:
+        return _freeze(data)    # scalar values: a shallow read-only copy is enough
+
+    def _missing_message(self, who: str, key: str) -> str:
+        return (f"{who} needs `metric.{key}`, which this negotiation does not have; list the metric under `metrics:` "
+                f"in the policy config (before any metric that reads it).")
 
 
 
@@ -165,7 +210,7 @@ class RestrictContext:
         Returns:
             RestrictContext: The restricted copy.
         """
-        return replace(self, patient=self.patient.restricted_to(_patient_fields(policy), policy.id))
+        return replace(self, patient=self.patient.restricted_to(_declared(policy, PatientView.PREFIX), policy.id))
 
 
     def to_dict(self) -> dict:
@@ -220,9 +265,10 @@ class ReviewContext:
 
     Fields:
         preference: The objective the proposed schedule was built with (``'visit_min'``, ``'stay_min'``, ...).
-        metrics: Negotiation metrics of the proposal against the ``throughput_max`` counterfactual
-            (``gpc``, ``tcl``, ``G``, ``R``, ``U``, ``U_pref``, ``U_thr``; see `NegotiationMetrics`).
-            ``gpc`` is ``inf`` for a free win (the patient concedes nothing yet gets results sooner).
+        metrics: Negotiation metrics of the proposal against the ``throughput_max`` counterfactual (`MetricView`):
+            the built-in ones (``gpc``, ``tcl``, ``G``, ``R``, ``U``, ``U_pref``, ``U_thr``; see `NegotiationMetrics`),
+            the user-defined ones, and ``preference``. ``gpc`` is ``inf`` for a free win (the patient concedes nothing
+            yet gets results sooner). A policy reads only the metrics it declared in `requires` (and ``preference``).
         patient: The patient's agent-data record (`PatientView`), including ``urgency``; a policy reads only the fields
             it declared in `requires` (see `patient_record` for the fields).
         schedules: ``{'preferred': ..., 'hospital': ...}`` — the proposed schedule built with the patient's preference
@@ -236,9 +282,10 @@ class ReviewContext:
 
 
     def __post_init__(self):
-        public = {k: v for k, v in dict(self.metrics or {}).items() if not k.startswith('_')}
-        public.setdefault('preference', self.preference)
-        object.__setattr__(self, 'metrics', _freeze(public))
+        if not isinstance(self.metrics, MetricView):
+            public = {k: v for k, v in dict(self.metrics or {}).items() if not k.startswith('_')}
+            public.setdefault('preference', self.preference)
+            object.__setattr__(self, 'metrics', MetricView(public))
         if not isinstance(self.patient, PatientView):
             object.__setattr__(self, 'patient', PatientView(self.patient))
         object.__setattr__(self, 'schedules', deep_freeze(dict(self.schedules or {})))
@@ -246,15 +293,18 @@ class ReviewContext:
 
     def for_policy(self, policy) -> "ReviewContext":
         """
-        The context as `policy` sees it: `patient` restricted to the fields the policy declared in `requires`.
+        The context as `policy` sees it: `patient` and `metrics` restricted to what the policy declared in `requires`
+        (``preference`` stays readable).
 
         Args:
-            policy (Policy): The policy about to read the context.
+            policy (Policy | Metric): The policy or metric about to read the context.
 
         Returns:
             ReviewContext: The restricted copy.
         """
-        return replace(self, patient=self.patient.restricted_to(_patient_fields(policy), policy.id))
+        return replace(self,
+                       patient=self.patient.restricted_to(_declared(policy, PatientView.PREFIX), policy.id),
+                       metrics=self.metrics.restricted_to(_declared(policy, MetricView.PREFIX) | {'preference'}, policy.id))
 
 
     def to_dict(self) -> dict:
@@ -264,7 +314,7 @@ class ReviewContext:
         Returns:
             dict: The context's fields.
         """
-        return {'preference': self.preference, 'metrics': dict(self.metrics),
+        return {'preference': self.preference, 'metrics': self.metrics.to_dict(),
                 'patient': self.patient.to_dict(), 'schedules': thaw(self.schedules)}
 
 

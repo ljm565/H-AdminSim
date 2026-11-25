@@ -6,7 +6,7 @@ from h_adminsim.registry.policy import (
     POLICY_SUPPORTED_OBJECTIVES,
     POLICY_CONFIG_API_VERSION,
 )
-from .context import RestrictContext, ReviewContext, PatientView
+from .context import RestrictContext, ReviewContext, PatientView, MetricView
 from .stack import PolicyStack
 from .metric import Metric
 from .evaluation import Evaluation, RunData, run_evaluations

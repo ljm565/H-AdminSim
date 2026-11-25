@@ -43,6 +43,7 @@ class ResultGainPolicy(Policy):
             The extremes always use their own (``'hospital-side'``: the hospital prompt, ``'patient-side'``: none).
     """
     name: ClassVar[str] = 'result_gain'
+    requires: ClassVar[tuple] = ('metric.gpc', 'metric.tcl', 'metric.G', 'metric.R')   # G, R, tcl also fill the negotiation prompt
     MODES: ClassVar[tuple] = ('threshold', 'hospital-side', 'patient-side')
     TRIGGER_KNOBS: ClassVar[tuple] = ('trigger_temperature_visit', 'trigger_temperature_stay', 'negotiation_trigger_threshold')
     COMMON_PROMPT: ClassVar[str] = 'staff_negotiation_policy_common_system.txt'

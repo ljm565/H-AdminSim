@@ -112,8 +112,9 @@ class PolicyCompositionError(PolicyError):
 
 class PolicyRequirementError(PolicyError):
     """
-    Raised when a policy needs patient information the data does not provide (a `requires` field missing from the agent
-    data), or reads a patient field it did not declare in `requires`.
+    Raised when a policy or metric needs something the run does not provide (a `requires` patient field missing from the
+    agent data, or a `requires` metric no metric computes), or reads a patient field / metric it did not declare in
+    `requires`.
     """
     error_code = "POLICY_REQUIREMENT_ERROR"
 

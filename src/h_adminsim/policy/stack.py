@@ -10,12 +10,15 @@ from h_adminsim.registry.errors import PolicyError, PolicyCompositionError, Poli
 from h_adminsim.registry.policy import (
     POLICY_HOOKS,
     POLICY_ACTIONS,
+    POLICY_BUILTIN_METRIC_IDS,
+    POLICY_METRIC_VALUE_TYPES,
+    POLICY_METRIC_RESERVED_IDS,
     POLICY_SUPPORTED_OBJECTIVES,
     POLICY_RESERVED_RECORD_KEYS,
-    POLICY_METRIC_RESERVED_IDS,
-    POLICY_METRIC_VALUE_TYPES,
+    POLICY_REQUIRES_METRIC_PREFIX,   
+    POLICY_REQUIRES_PATIENT_PREFIX,
 )
-from h_adminsim.policy.context import RestrictContext, ReviewContext
+from h_adminsim.policy.context import RestrictContext, ReviewContext, _declared
 from h_adminsim.policy.metric import Metric
 from h_adminsim.policy.evaluation import Evaluation
 
@@ -53,6 +56,8 @@ class PolicyStack:
         Raises:
             PolicyCompositionError: If two policies, metrics or evaluations share an id, or a metric id is a reserved name
                                     (a built-in metric or a record field the simulation owns).
+            PolicyRequirementError: If a policy or metric requires a metric that is neither built-in nor listed (for a
+                                    metric: listed before it).
         """
         self.policies = list(policies)
         self.metrics = list(metrics)
@@ -72,6 +77,20 @@ class PolicyStack:
         if reserved:
             raise PolicyCompositionError(colorstr("red", f"Metric ids {reserved} are reserved names (built-in metrics or record "
                                                          f"fields); choose other ids."))
+
+        # Check that every required metric is computed: built-in, or a user metric (for a metric: one listed before it)
+        builtin = POLICY_BUILTIN_METRIC_IDS | {'preference'}
+        user = [m.id for m in self.metrics]
+        readers = [(p, set(user)) for p in self.policies] + [(m, set(user[:i])) for i, m in enumerate(self.metrics)]
+        missing = []
+        for obj, visible in readers:
+            for m in sorted(_declared(obj, POLICY_REQUIRES_METRIC_PREFIX) - builtin - visible):
+                why = 'must be listed before it under `metrics:`' if m in user else 'is neither built-in nor listed under `metrics:`'
+                missing.append(f"  - `{obj.id}` requires `metric.{m}`, which {why}")
+        if missing:
+            lines = '\n'.join(missing)
+            raise PolicyRequirementError(colorstr("red", f"Required metrics are not computed:\n{lines}\n"
+                                                         f"Built-in metrics: {sorted(POLICY_BUILTIN_METRIC_IDS)}."))
 
         self._by_hook = {hook: [p for p in self.policies if p.implements(hook)] for hook in POLICY_HOOKS}
 
@@ -98,8 +117,8 @@ class PolicyStack:
         """
         required = {}
         for obj in self.policies + self.metrics:
-            for r in obj.requires:
-                required.setdefault(r.split('.', 1)[1], []).append(obj.id)
+            for f in sorted(_declared(obj, POLICY_REQUIRES_PATIENT_PREFIX)):
+                required.setdefault(f, []).append(obj.id)
         return required
 
 
@@ -176,6 +195,8 @@ class PolicyStack:
         """
         Values of the user-defined metrics for one negotiation, in order.
 
+        Each metric sees the built-in metrics and the user metrics computed before it.
+
         Args:
             ctx (ReviewContext): The negotiation, with the built-in metrics in ``ctx.metrics``.
 
@@ -184,7 +205,8 @@ class PolicyStack:
         """
         values = {}
         for metric in self.metrics:
-            value = metric.compute(ctx.for_policy(metric))
+            current = replace(ctx, metrics={**ctx.metrics.to_dict(), **values}) if values else ctx
+            value = metric.compute(current.for_policy(metric))
             self._validate_metric_value(value, metric.id)
             values[metric.id] = value
         return values

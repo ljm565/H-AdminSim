@@ -6,7 +6,9 @@ __all__ = [
     'POLICY_CONFIG_API_VERSION',
     'POLICY_CONFIG_KEYS',
     'POLICY_ENTRY_KEYS',
-    'POLICY_REQUIRES_PREFIX',
+    'POLICY_REQUIRES_PATIENT_PREFIX',
+    'POLICY_REQUIRES_METRIC_PREFIX',
+    'POLICY_BUILTIN_METRIC_IDS',
     'POLICY_PATIENT_SYMPTOM_FIELDS',
     'POLICY_METRIC_VALUE_TYPES',
     'POLICY_METRIC_RESERVED_IDS',
@@ -31,14 +33,17 @@ POLICY_RESERVED_RECORD_KEYS = frozenset({
 
 POLICY_METRIC_RESERVED_IDS = frozenset({'ti'})
 
-# Policy config YAML format: the format version this code reads, the keys allowed at the top level (`metrics` and
-# `evaluations` optional), and the keys allowed per policy / metric / evaluation entry
+# Policy config YAML format: version, top-level keys, per-entry keys
 POLICY_CONFIG_API_VERSION = 1
 POLICY_CONFIG_KEYS = frozenset({'api_version', 'policies', 'metrics', 'evaluations'})
 POLICY_ENTRY_KEYS = frozenset({'id', 'source', 'params'})
 
-# `requires` entries name patient fields as `patient.<field>`; the fields come from the agent data (see `patient_record`)
-POLICY_REQUIRES_PREFIX = 'patient.'
+# `requires` entry prefixes: `patient.<field>` / `metric.<id>`
+POLICY_REQUIRES_PATIENT_PREFIX = 'patient.'
+POLICY_REQUIRES_METRIC_PREFIX = 'metric.'
+
+# Metrics `NegotiationMetrics` computes for every negotiation (`preference` is always readable without declaring it)
+POLICY_BUILTIN_METRIC_IDS = frozenset({'gpc', 'tcl', 'G', 'R', 'U', 'U_pref', 'U_thr'})
 
 # Fields of a follow-up test_data's `constraint.symptom` exposed on `ctx.patient` (agent-data key -> patient field)
 POLICY_PATIENT_SYMPTOM_FIELDS = {'urgency': 'urgency', 'disease': 'disease', 'symptom': 'symptoms'}

@@ -16,12 +16,12 @@ class Metric:
     metrics and before the `review` policies are asked, so every `review` policy sees them in ``ctx.metrics[<id>]``,
     and their values are stored in the booking's ``negotiation_metrics`` record for evaluation.
 
-    Like a policy, a metric is a dataclass whose fields are its configuration, declares the patient fields it reads in
-    `requires`, and must be a pure function of the context (no state, no randomness).
+    Like a policy, a metric is a dataclass whose fields are its configuration, declares the patient fields and metrics it
+    reads in `requires`, and must be a pure function of the context (no state, no randomness).
     """
     api_version: ClassVar[int] = 1
     name: ClassVar[str] = ''
-    requires: ClassVar[tuple] = ()      # patient fields `compute` reads, as `patient.<field>`
+    requires: ClassVar[tuple] = ()      # what `compute` reads, as `patient.<field>` / `metric.<id>`
 
     # Set by the builder (see `Policy`)
     id = ''
@@ -34,7 +34,8 @@ class Metric:
         The metric's value for one negotiation.
 
         Args:
-            ctx (ReviewContext): The negotiation (``ctx.metrics`` holds the built-in metrics only).
+            ctx (ReviewContext): The negotiation (``ctx.metrics`` holds the built-in metrics and the user metrics listed
+                                 before this one; only the declared ones are readable).
 
         Returns:
             bool | int | float | str | None: The value.

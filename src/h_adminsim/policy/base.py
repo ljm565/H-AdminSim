@@ -69,12 +69,14 @@ class Policy:
     Configuration lives in the policy's dataclass fields, which `params()` reports for the run metadata.
 
     Patient information comes from the agent data through `ctx.patient`, and a policy must declare every patient field
-    it reads in `requires` (``('patient.department', ...)``). A run whose agent data lacks a declared field fails before
-    it starts, and reading an undeclared field raises `PolicyRequirementError`.
+    it reads in `requires` (``('patient.department', ...)``). Likewise, a `review` policy declares the negotiation
+    metrics it reads from `ctx.metrics` (``('metric.gpc', ...)``; ``preference`` needs no declaration). A run whose
+    agent data lacks a declared field, or that computes no declared metric, fails before it starts, and reading an
+    undeclared field or metric raises `PolicyRequirementError`.
     """
     api_version: ClassVar[int] = 1
     name: ClassVar[str] = ''
-    requires: ClassVar[tuple] = ()      # patient fields the hooks read, as `patient.<field>`
+    requires: ClassVar[tuple] = ()      # what the hooks read, as `patient.<field>` / `metric.<id>`
 
     # Set by the builder; plain class attributes, not dataclass fields, so `params()` reports configuration only.
     id = ''                 # instance id within a run (defaults to `name`)
