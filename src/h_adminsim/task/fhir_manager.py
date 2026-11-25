@@ -220,7 +220,7 @@ class FHIRManager:
             id = resource.get('resource').get('id')
             response = self.delete(resource_type, id, verbose)
 
-            if not 200 <= response.status_code < 300:
+            if response is None or not 200 <= response.status_code < 300:    # None: non-JSON response, result unknown
                 error_ids.append(id)
 
         if error_ids:

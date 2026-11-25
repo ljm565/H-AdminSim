@@ -244,7 +244,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
             prev_end_iso (str): ISO end time of the previous appointment; tests start after it.
             code_to_test (dict): ``{test code: test name}``.
             vacant_test_schedules (dict): ``{(priority, code, department, device): vacancy entry}``; booked slots are removed in place.
-            cross_dept_prob (float, optional): Ignored; overridden by ``cross_department_test_prob`` in the config. Defaults to 0.2.
+            cross_dept_prob (float, optional): Probability that a test after the first may come from another department. Defaults to 0.2.
             max_failures (int, optional): Consecutive too-short combinations allowed before giving up. Defaults to 3.
 
         Returns:
@@ -305,7 +305,6 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         fu_config = config.hospital_data.follow_up_visit
         min_test_num = max(1, fu_config.test_per_patient.min)
         max_test_num = min(fu_config.test_per_department.max, fu_config.test_per_patient.max)
-        cross_dept_prob = fu_config.cross_department_test_prob
 
         # Make all possible test combinations based on the vacant_test_schedule
         consecutive_failures = 0

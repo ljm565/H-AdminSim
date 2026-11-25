@@ -67,21 +67,20 @@ def encode_resize_image(image_path: str, max_size: tuple[int, int], encode_base6
     
 
 
-def get_image_extension(path: str) -> Union[str, tuple[str, str]]:
+def get_image_extension(path: str) -> str:
     """
-    Normalized image format of a path: "png", or "jpeg" for jpg/jpeg.
-    Caveat: it compares the whole ``os.path.splitext`` tuple, so as written it always raises.
+    Normalized image format of a path: "png", or "jpeg" for jpg/jpeg (case-insensitive).
 
     Args:
         path (str): Path to the image file.
 
     Returns:
-        Union[str, tuple[str, str]]: The image format.
+        str: The image format.
 
     Raises:
         ValueError: If the file extension is not a supported image format.
     """
-    ext = os.path.splitext(path)
+    ext = os.path.splitext(path)[1].lower().lstrip('.')
     if ext == "png":
         return ext
     elif ext in ["jpeg", "jpg"]:
