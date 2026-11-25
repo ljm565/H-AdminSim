@@ -9,7 +9,7 @@ from collections import Counter, defaultdict
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.common_utils import *
 from h_adminsim.tools.negotiation_metrics import frontload_pairs
-from h_adminsim.policy.metadata import run_policies, run_policy_summary
+from h_adminsim.utils.policy_utils import run_policies, run_policy_summary
 from h_adminsim.utils.image_preprocess_utils import draw_fail_donut_subplots
 from h_adminsim.utils.filesys_utils import get_files, json_load, json_save_fast
 
@@ -820,8 +820,8 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
     @staticmethod
     def _sanity_check(*args):
         """
-        Check that the runs are compatible: every `_metadata` key except `policies` — operating window, time_unit,
-        ... — must have the same value across all runs.
+        Check that the runs are compatible: every `_metadata` key except `policies`, `metrics` and `evaluations` — operating window,
+        time_unit, ... — must have the same value across all runs.
 
         Args:
             *args (dict): `_metadata` dicts of the runs to compare.
@@ -832,7 +832,7 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
         if len(args) < 2:
             return
 
-        keys = sorted(set().union(*args) - {'policies'})
+        keys = sorted(set().union(*args) - {'policies', 'metrics', 'evaluations'})
         mismatches = {k: [md.get(k) for md in args] for k in keys}
         mismatches = {k: v for k, v in mismatches.items() if any(x != v[0] for x in v[1:])}
 

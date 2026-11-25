@@ -1,6 +1,7 @@
 from typing import Optional
 
 from h_adminsim.tools import FirstVisitEvaluator, FollowUpVisitEvaluator
+from h_adminsim.policy import run_evaluations
 from h_adminsim.utils import colorstr, log
 
 
@@ -12,7 +13,7 @@ class Evaluator:
     (prefixed `fu_`) compare several runs of the same data under different negotiation settings.
     """
     FV_TASKS = ('fv_task', 'fv_department', 'fv_rounds', 'fv_token', 'fv_human')
-    FU_TASKS = ('fu_tau', 'fu_dashboard', 'fu_protection')
+    FU_TASKS = ('fu_tau', 'fu_dashboard', 'fu_protection', 'fu_custom')
 
 
     def __init__(self,
@@ -22,6 +23,8 @@ class Evaluator:
                  fu_interpolated_paths: Optional[list[str]] = None,
                  fu_protection_paths: Optional[list[str]] = None,
                  fu_agent_data_path: Optional[str] = None,
+                 fu_custom_paths: Optional[list[str]] = None,
+                 fu_custom_configs: Optional[list[str]] = None,
                  model_name: Optional[str] = None):
         """
         Args:
@@ -37,6 +40,10 @@ class Evaluator:
                                                                  including runs without protection as baselines. Defaults to None.
             fu_agent_data_path (Optional[str], optional): Agent simulation data directory the follow-up runs used, read by `fu_protection`.
                                                           If None, `<results dir>/../agent_data` is used. Defaults to None.
+            fu_custom_paths (Optional[list[str]], optional): Follow-up results directories evaluated by `fu_custom` with the
+                                                             user-defined evaluations of each run's policy snapshot. Defaults to None.
+            fu_custom_configs (Optional[list[str]], optional): Policy config files whose `evaluations` `fu_custom` runs on every
+                                                               `fu_custom_paths` run instead of each run's snapshot. Defaults to None.
             model_name (Optional[str], optional): Model name. Required for `fv_token`, and shown in the `fu_dashboard`. Defaults to None.
         """
         self.fv_path = fv_path
@@ -45,6 +52,8 @@ class Evaluator:
         self.fu_interpolated_paths = fu_interpolated_paths
         self.fu_protection_paths = fu_protection_paths
         self.fu_agent_data_path = fu_agent_data_path
+        self.fu_custom_paths = fu_custom_paths
+        self.fu_custom_configs = fu_custom_configs
         self.model_name = model_name
 
 
@@ -70,6 +79,8 @@ class Evaluator:
             raise ValueError(colorstr("red", "`fu_hospital_side_path` is required for `fu_tau` and `fu_dashboard`."))
         if 'fu_protection' in tasks and not self.fu_protection_paths:
             raise ValueError(colorstr("red", "`fu_protection_paths` is required for `fu_protection`."))
+        if 'fu_custom' in tasks and not self.fu_custom_paths:
+            raise ValueError(colorstr("red", "`fu_custom_paths` is required for `fu_custom`."))
 
 
     def evaluate(self, tasks: list[str], save: bool = False, tau_n: int = 4) -> dict:
@@ -86,11 +97,12 @@ class Evaluator:
                 - `fu_tau`: Interior τ seeds for the `threshold` runs, computed from the hospital-side run.
                 - `fu_dashboard`: Negotiation dashboard over the hospital-side, interpolated, and patient-side runs.
                 - `fu_protection`: Comparison of urgent capacity protection across `fu_protection_paths`.
-            save (bool, optional): Whether to save the `fu_dashboard` and `fu_protection` results next to the results. Defaults to False.
+                - `fu_custom`: User-defined evaluations (policy config `evaluations`) on `fu_custom_paths`.
+            save (bool, optional): Whether to save the `fu_dashboard`, `fu_protection` and `fu_custom` results next to the results. Defaults to False.
             tau_n (int, optional): Number of interior τ seeds per preference for `fu_tau`. Defaults to 4.
 
         Returns:
-            dict: Results of the evaluations that return values (`fu_tau`, `fu_dashboard`, `fu_protection`), keyed by evaluation name.
+            dict: Results of the evaluations that return values (`fu_tau`, `fu_dashboard`, `fu_protection`, `fu_custom`), keyed by evaluation name.
         """
         if isinstance(tasks, str):
             tasks = [tasks]
@@ -123,7 +135,7 @@ class Evaluator:
                 log('')
 
         # Follow-up evaluations
-        if any(t in self.FU_TASKS for t in tasks):
+        if any(t in ('fu_tau', 'fu_dashboard', 'fu_protection') for t in tasks):
             log('################### Follow-up evaluation ###################')
             evaluator = FollowUpVisitEvaluator(
                 hospital_side_path=self.fu_hospital_side_path,
@@ -145,5 +157,11 @@ class Evaluator:
             if 'fu_protection' in tasks:
                 outputs['fu_protection'] = evaluator.protection_report(save)
                 log('')
+
+        # Follow-up: user-defined evaluations
+        if 'fu_custom' in tasks:
+            log('################### Custom follow-up evaluation ###################')
+            outputs['fu_custom'] = run_evaluations(self.fu_custom_paths, configs=self.fu_custom_configs, save=save)
+            log('')
 
         return outputs

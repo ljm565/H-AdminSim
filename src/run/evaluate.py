@@ -3,59 +3,23 @@ import sys
 from argparse import ArgumentParser
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
-from h_adminsim.tools import FirstVisitEvaluator, FollowUpVisitEvaluator
-from h_adminsim.utils import log
+from h_adminsim.pipeline import Evaluator
 
 
 
 def main(args):
-    # First-visit (intake + first-visit scheduling) evaluations
-    if any(t in args.type for t in ('fv_task', 'fv_human', 'fv_department', 'fv_rounds', 'fv_token')):
-        log('################### First-visit evaluation ###################')
-        evaluator = FirstVisitEvaluator(args.fv_path, human_eval='fv_human' in args.type)
-        
-        if 'fv_task' in args.type:
-            evaluator.task_evaluation()
-            log('')
-        
-        if 'fv_token' in args.type:
-            evaluator.token_cost(args.model.lower())
-        
-        if 'fv_human' in args.type:
-            evaluator.human_evaluation()
-            log('')
-        
-        if 'fv_department' in args.type:
-            evaluator.department_evaluation()
-            log('')
-        
-        if 'fv_rounds' in args.type:
-            evaluator.calculate_avg_rounds()
-            log('')
-
-    # Follow-up (negotiation): dashboard values and/or interpolation tau seeds
-    if any(t in args.type for t in ('fu_dashboard', 'fu_protection', 'fu_tau')):
-        log('################### Follow-up evaluation ###################')
-        evaluator = FollowUpVisitEvaluator(
-            hospital_side_path=args.fu_hospital_path,
-            model_name=args.model,
-            patient_side_path=args.fu_patient_path,
-            interpolated_paths=args.fu_interpolated_paths,
-            protection_paths=args.fu_protection_paths,
-            agent_data_path=args.fu_agent_data_path,
-        )
-
-        if 'fu_tau' in args.type:
-            taus = evaluator.interpolation_taus(args.fu_tau_n)
-            log('')
-
-        if 'fu_dashboard' in args.type:
-            evaluator.dashboard_data(args.save)
-            log('')
-
-        if 'fu_protection' in args.type:
-            evaluator.protection_report(args.save)
-            log('')
+    evaluator = Evaluator(
+        fv_path=args.fv_path,
+        fu_hospital_side_path=args.fu_hospital_path,
+        fu_patient_side_path=args.fu_patient_path,
+        fu_interpolated_paths=args.fu_interpolated_paths,
+        fu_protection_paths=args.fu_protection_paths,
+        fu_agent_data_path=args.fu_agent_data_path,
+        fu_custom_paths=args.fu_custom_paths,
+        fu_custom_configs=args.fu_custom_configs,
+        model_name=args.model,
+    )
+    evaluator.evaluate(args.type, save=args.save, tau_n=args.fu_tau_n)
 
 
 
@@ -84,21 +48,25 @@ if __name__ == '__main__':
                         help='Results folders compared by the urgent capacity protection, in any order — each run\'s '
                              'mode and protection ratio are read from its _metadata. Include the runs without protection '
                              'as the baselines.')
+    parser.add_argument('--fu_custom_paths', type=str, required=False, nargs='+',
+                        help='Results folders evaluated by "fu_custom", with the evaluations listed in each run\'s policy '
+                             'config snapshot (<run>/policy/).')
+    parser.add_argument('--fu_custom_configs', type=str, required=False, nargs='+', default=None,
+                        help='Policy config files whose `evaluations` "fu_custom" runs on every --fu_custom_paths run '
+                             'instead of each run\'s own snapshot (e.g. evaluations written after the runs).')
     parser.add_argument('--fu_agent_data_path', type=str, required=False, default=None,
                         help='Agent simulation data folder the follow-up runs used (read by "fu_protection"). '
                              'Defaults to <results folder>/../agent_data.')
 
     # Evaluation types
     parser.add_argument('-t', '--type', type=str, required=True, nargs='+',
-        choices=[
-            'fv_task', 'fv_department', 'fv_rounds', 'fv_token', 'fv_human',
-            'fu_tau', 'fu_dashboard', 'fu_protection'
-        ],
+        choices=Evaluator.FV_TASKS + Evaluator.FU_TASKS,
         help='Evaluations to run (you can specify multiple). First-visit (--fv_path): "fv_task" task accuracy, '
              '"fv_department" department accuracy, "fv_rounds" average intake rounds, "fv_token" API cost (--model), '
              '"fv_human" human evaluation. Follow-up: "fu_tau" interpolation tau seeds from the hospital-side run, '
              '"fu_dashboard" the negotiation dashboard over the hospital-side, interpolated and patient-side runs '
-             '(--model), "fu_protection" the urgent capacity protection across --fu_protection_paths.'
+             '(--model), "fu_protection" the urgent capacity protection across --fu_protection_paths, '
+             '"fu_custom" the user-defined evaluations on --fu_custom_paths.'
     )
     parser.add_argument('--save', action='store_true', required=False, help='Whether to save the evaluation results to a file (default: False)')
     args = parser.parse_args()
@@ -120,5 +88,8 @@ if __name__ == '__main__':
     
     if 'fu_protection' in args.type and not args.fu_protection_paths:
         parser.error('--fu_protection_paths is required for "fu_protection" evaluation')
+
+    if 'fu_custom' in args.type and not args.fu_custom_paths:
+        parser.error('--fu_custom_paths is required for "fu_custom" evaluation')
 
     main(args)
