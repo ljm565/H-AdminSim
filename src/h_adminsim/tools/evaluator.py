@@ -2,8 +2,8 @@ import os
 import math
 import numpy as np
 from bisect import bisect_right
+from typing import Optional, Union
 from decimal import Decimal, getcontext
-from typing import Optional, Tuple, Union
 from collections import Counter, defaultdict
 
 from h_adminsim.utils import log, colorstr
@@ -779,7 +779,7 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
 
 
     @staticmethod
-    def _read_data(path: str) -> Tuple[str, dict]:
+    def _read_data(path: str) -> tuple[str, dict]:
         """
         Read the `_metadata` block the simulator stored in the result file — the operating window
         (start/end hour, time_unit) and the follow-up scheduling policies (`policies`). Results in the
@@ -789,7 +789,7 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
             path (str): Path to a run's results directory.
 
         Returns:
-            Tuple[str, dict]: The result file path and the `_metadata` dict.
+            tuple[str, dict]: The result file path and the `_metadata` dict.
         
         Raises:
             FileNotFoundError: If no `*_result.json` file is found under `path`.

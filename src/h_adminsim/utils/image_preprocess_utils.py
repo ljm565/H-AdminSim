@@ -3,8 +3,8 @@ import os
 import math
 import base64
 from PIL import Image
+from typing import Union
 from collections import Counter
-from typing import Tuple, Union
 import matplotlib.pyplot as plt
 
 
@@ -29,7 +29,7 @@ def encode_image(image_path: str, encode_base64: bool = True) -> Union[str, byte
 
 
 
-def encode_resize_image(image_path: str, max_size: Tuple[int], encode_base64: bool = True) -> Union[str, bytes]:
+def encode_resize_image(image_path: str, max_size: tuple[int, int], encode_base64: bool = True) -> Union[str, bytes]:
     """
     Resize an image to fit within the specified maximum dimensions and return its content,
     optionally encoded in base64.
@@ -38,7 +38,7 @@ def encode_resize_image(image_path: str, max_size: Tuple[int], encode_base64: bo
 
     Args:
         image_path (str): Path to the input image file.
-        max_size (Tuple[int]): Maximum allowed size as (width, height). The image will be resized
+        max_size (tuple[int, int]): Maximum allowed size as (width, height). The image will be resized
                                proportionally to fit within this box while preserving aspect ratio.
         encode_base64 (bool, optional): If True, the image content is returned as a base64-encoded string.
                                         If False, raw binary data is returned. Defaults to True.

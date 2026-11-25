@@ -348,7 +348,7 @@ class Simulator:
 
 
     @staticmethod
-    def resume_results(agent_simulation_data: dict, results_path: str) -> Tuple[dict, dict, dict, list]:
+    def resume_results(agent_simulation_data: dict, results_path: str) -> tuple[dict, dict, dict, list]:
         """
         Resume a previously saved simulation by aligning agent results.
 
@@ -357,7 +357,7 @@ class Simulator:
             results_path (str): Path to the JSON file containing the saved simulation results.
 
         Returns:
-            Tuple[dict, dict, dict, list]:
+            tuple[dict, dict, dict, list]:
                 - dict: Schedule updated static agent test data.
                 - dict: Previously saved agent results.
                 - dict: A dictionary containing patients that have already been processed for each task.

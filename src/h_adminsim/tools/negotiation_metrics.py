@@ -3,7 +3,7 @@ from bisect import bisect_right
 from collections import defaultdict
 from functools import cached_property
 from decimal import Decimal, getcontext
-from typing import Optional, Tuple, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 
 from h_adminsim.utils.common_utils import (
     iso_to_date,
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 
 
-def frontload_pairs(booked: set, free: set) -> Tuple[int, int]:
+def frontload_pairs(booked: set, free: set) -> tuple[int, int]:
     """
     Mann-Whitney pair counts behind the front-loading score: for each booked slot, the free slots that come
     after it on a single flattened slot axis. `good / total` is the score (1.0 = every booking precedes every
@@ -30,7 +30,7 @@ def frontload_pairs(booked: set, free: set) -> Tuple[int, int]:
         free (set): Free slot indices on the same axis (disjoint from `booked`).
 
     Returns:
-        Tuple[int, int]: `(good, total)` — (booked, later-free) pairs and all `len(booked) * len(free)` pairs.
+        tuple[int, int]: `(good, total)` — (booked, later-free) pairs and all `len(booked) * len(free)` pairs.
     """
     free_sorted = sorted(free)
     good = sum(len(free_sorted) - bisect_right(free_sorted, b) for b in booked)

@@ -1,13 +1,17 @@
-from typing import Optional, Tuple
+from typing import Optional
 
-from h_adminsim.agent import *
+from h_adminsim.agent import (
+    OrchestratorAgent,
+    IntakeAdminStaffAgent,
+    SchedulingAdminStaffAgent,
+)
 from h_adminsim.registry import AGENT_DESCRIPTION
 from h_adminsim.utils import colorstr
 
 
 
 def init_task_models(model: str, 
-                     vllm_endpoint: Optional[str] = None) -> Tuple[str, str, bool]:
+                     vllm_endpoint: Optional[str] = None) -> tuple[str, str, bool]:
     """
     Initialize the model for the task.
 
@@ -16,7 +20,7 @@ def init_task_models(model: str,
         vllm_endpoint (Optional[str], optional): The VLLM endpoint URL. Defaults to None.
     
     Returns:
-        Tuple[str, str, bool]: The model name, VLLM endpoint URL, vllm usage flag.
+        tuple[str, str, bool]: The model name, VLLM endpoint URL, vllm usage flag.
     """
     if any(keyword in model.lower() for keyword in ['gemini', 'gpt']):
         return model, None, False

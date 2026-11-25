@@ -10,8 +10,8 @@ from collections.abc import (
     MutableSequence,
 )
 from decimal import Decimal, getcontext
+from typing import Optional, Union, Any
 from datetime import datetime, timedelta
-from typing import Optional, Union, Tuple, Any
 from google.genai.errors import ServerError, ClientError
 from openai import (
     RateLimitError,
@@ -223,7 +223,7 @@ def generate_date_range(start_date: Union[str, datetime],
         days (int): Number of days to include (including start_date).
 
     Returns:
-        List[str]: List of date strings in ISO format.
+        list[str]: List of date strings in ISO format.
     """
     if days <= 0:
         raise ValueError(colorstr("red", f"`days` must be larger than 0, but got {days}"))
@@ -523,7 +523,7 @@ def convert_time_to_segment(start: float,
 def convert_segment_to_time(start: float, 
                             end: float, 
                             interval: float, 
-                            segments: list[int]) -> Tuple[float, float]:
+                            segments: list[int]) -> tuple[float, float]:
     """
     Convert segment indices back to actual time values based on the given start time and interval.
 
@@ -632,7 +632,7 @@ def split_into_contiguous_chunks(segments: list[int], chunk_size: int) -> list[l
 def convert_time_list_to_merged_time(start: float,
                                      end: float,
                                      interval: float,
-                                     time_list: list[Tuple[float, float]]) -> list[Tuple[float, float]]:
+                                     time_list: list[tuple[float, float]]) -> list[tuple[float, float]]:
     """
     Convert a list of time intervals into merged intervals based on a fixed segment grid.
 
@@ -644,11 +644,11 @@ def convert_time_list_to_merged_time(start: float,
         start (float): The start time of the overall time range (e.g., 9.0 for 9:00 AM).
         end (float): The end time of the overall time range (e.g., 17.0 for 5:00 PM).
         interval (float): The length of each time segment (e.g., 0.5 for 30 minutes).
-        time_list (list[Tuple[float, float]]): A list of time intervals to convert and merge.
+        time_list (list[tuple[float, float]]): A list of time intervals to convert and merge.
                                                Each interval is a tuple (start_time, end_time).
 
     Returns:
-        list[Tuple[float, float]]: A list of merged time intervals as tuples (start_time, end_time).
+        list[tuple[float, float]]: A list of merged time intervals as tuples (start_time, end_time).
                                    Intervals are merged if they cover consecutive segments.
 
     Example:

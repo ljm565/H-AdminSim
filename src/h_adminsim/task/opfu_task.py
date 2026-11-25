@@ -2,7 +2,7 @@ import random
 from decimal import getcontext
 from importlib import resources
 from dotenv import load_dotenv, find_dotenv
-from typing import Tuple, Union, Optional, TYPE_CHECKING
+from typing import Union, Optional, TYPE_CHECKING
 
 from patientsim import PatientAgent
 
@@ -142,7 +142,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
 
     def get_first_visit_patient_information(self, 
                                             gt: dict, 
-                                            environment: "HospitalEnvironment") -> Tuple[int, Optional[dict]]:
+                                            environment: "HospitalEnvironment") -> tuple[int, Optional[dict]]:
         """
         Extracts the patient name and predicted department from agent results.
         If predictions are not available, falls back to using ground truth labels.
@@ -153,7 +153,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
             agent_test_data (dict): Dictionary containing test data and metadata for a single hospital.
 
         Returns:
-            Tuple[int, Optional[dict]]: Patient information that assumed already saved in HIS and its index.
+            tuple[int, Optional[dict]]: Patient information that assumed already saved in HIS and its index.
         """
         name = gt['patient']
         for idx, fv_schedule in enumerate(environment.patient_schedules):
@@ -204,7 +204,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                              test_information: dict,
                              environment: "HospitalEnvironment",
                              idx: Optional[int] = None,
-                             verbose: bool = False) -> Tuple[dict, dict, Optional[dict]]:
+                             verbose: bool = False) -> tuple[dict, dict, Optional[dict]]:
         """
         Cancel all of a patient's scheduled tests.
 
@@ -217,7 +217,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
             verbose (bool, optional): Whether logging the each result or not. Defaults to False.
 
         Returns:
-            Tuple[dict, dict, Optional[dict]]: Updated doctor information, test information, and a result dictionary after cancellation.
+            tuple[dict, dict, Optional[dict]]: Updated doctor information, test information, and a result dictionary after cancellation.
         """
         # Candidates are follow-up bookings that carry prescribed tests ('not_yet' covers bookings whose follow-up slot was out of range)
         if idx is None:
@@ -282,7 +282,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                              test_information: dict,
                              environment: "HospitalEnvironment",
                              idx: Optional[int] = None,
-                             verbose: bool = False) -> Tuple[dict, dict, Optional[dict]]:
+                             verbose: bool = False) -> tuple[dict, dict, Optional[dict]]:
         """
         Move all of a patient's scheduled tests (and the follow-up consultation) to an earlier time.
 
@@ -295,7 +295,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
             verbose (bool, optional): Whether logging the each result or not. Defaults to False.
 
         Returns:
-            Tuple[dict, dict, Optional[dict]]: Updated doctor information, test information, and a result dictionary after rescheduling.
+            tuple[dict, dict, Optional[dict]]: Updated doctor information, test information, and a result dictionary after rescheduling.
         """
         result_dict = init_result_dict()
         # Candidates: follow-up bookings whose every test is still scheduled (none performed), not already waiting
@@ -353,7 +353,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
                                       sim_environment: OPFUSchedulingSimulation,
                                       environment: "HospitalEnvironment",
                                       doctor_information: dict,
-                                      test_information: dict) -> Tuple[dict, dict, dict]:
+                                      test_information: dict) -> tuple[dict, dict, dict]:
         """
         Automatically update the waiting list by attempting to move waiting test sets earlier.
 
@@ -364,7 +364,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
             test_information (dict): A dictionary containing test device schedules.
 
         Returns:
-            Tuple[dict, dict, dict]: Updated doctor information, test information, and a result dictionary.
+            tuple[dict, dict, dict]: Updated doctor information, test information, and a result dictionary.
         """
         all_result_dict = init_result_dict()
         for result in sim_environment.automatic_waiting_list_update(
@@ -493,7 +493,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
             
 
     def __call__(self, 
-                 data_pair: Tuple[dict, dict], 
+                 data_pair: tuple[dict, dict], 
                  agent_test_data: dict, 
                  agent_results: dict, 
                  environment: "HospitalEnvironment", 
@@ -504,7 +504,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
         the output, runs sanity checks on predicted schedules, and collects the results for evaluation.
 
         Args:
-            data_pair (Tuple[dict, dict]): A pair of ground truth and patient data for agent simulation.
+            data_pair (tuple[dict, dict]): A pair of ground truth and patient data for agent simulation.
             agent_test_data (dict): Dictionary containing test data and metadata for a single hospital.
                 Expected keys include:
                     - 'metadata': A dict containing start_hour, end_hour, and interval_hour under 'time'.

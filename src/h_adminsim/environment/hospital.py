@@ -2,9 +2,9 @@ import time
 import random
 from copy import deepcopy
 from datetime import timedelta
+from typing import Union, Optional
 from collections import defaultdict
 from decimal import Decimal, getcontext
-from typing import Union, Tuple, Optional
 
 from h_adminsim.registry import SCHEDULE_STATUS
 from h_adminsim.task.fhir_manager import FHIRManager
@@ -96,7 +96,7 @@ class HospitalEnvironment:
         return avg_gap
 
 
-    def __calculate_test_capacity(self, test_information: dict) -> Tuple[dict, dict, dict]:
+    def __calculate_test_capacity(self, test_information: dict) -> tuple[dict, dict, dict]:
         """
         Total working hours and fixed (pre-booked) hours of every test per date, pooled over its devices.
         Fixed device schedules are bookings of patients outside the simulation, except a device-date covered
@@ -106,7 +106,7 @@ class HospitalEnvironment:
             test_information (dict): Static test data `{department: [test_dict, ...]}` holding fixed device schedules.
 
         Returns:
-            Tuple[dict, dict, dict]: `{(test_code, date): capacity_hours}`, `{(test_code, date): fixed_booked_hours}`
+            tuple[dict, dict, dict]: `{(test_code, date): capacity_hours}`, `{(test_code, date): fixed_booked_hours}`
                                      (as `Decimal`) and `{test_code: duration_hour}`.
         """
         capacity, fixed, duration = defaultdict(Decimal), defaultdict(Decimal), {}
@@ -325,7 +325,7 @@ class HospitalEnvironment:
         Returns:
             dict: Filtered doctor scheduling information.
         """
-        def __build_single_doctor_schedule(practitioner_role: dict) -> Tuple[str, dict]:
+        def __build_single_doctor_schedule(practitioner_role: dict) -> tuple[str, dict]:
             """
             Build scheduling information for a single doctor.
 
@@ -333,7 +333,7 @@ class HospitalEnvironment:
                 practitioner_role (dict): A FHIR PractitionerRole resource for a doctor, already filtered by department.
 
             Returns:
-                Tuple[str, dict]: Doctor name and his (or her) information dictionary containing the constructed scheduling information.
+                tuple[str, dict]: Doctor name and his (or her) information dictionary containing the constructed scheduling information.
             """
             schedule, appointments = dict(), list()
             practitioner_id = practitioner_role['practitioner']['reference']

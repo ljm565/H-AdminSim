@@ -7,7 +7,7 @@ from collections import defaultdict
 from patientsim import PatientAgent
 from decimal import Decimal, getcontext
 from langchain.agents import AgentExecutor
-from typing import Tuple, Union, Optional, TYPE_CHECKING
+from typing import Union, Optional, TYPE_CHECKING
 
 from h_adminsim.registry.errors import (
     SchedulingError,
@@ -1493,7 +1493,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                                  reasoning_max_tries: int = 0,
                                  patient_kwargs: dict = {},
                                  staff_kwargs: dict = {},
-                                 **kwargs) -> Tuple[dict, dict, dict]:
+                                 **kwargs) -> tuple[dict, dict, dict]:
         """
         Simulate a multi-turn outpatient scheduling dialogue between a patient agent and an administrative staff agent.
 
@@ -1512,7 +1512,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             **kwargs: Shared keyword arguments passed to both agents.
 
         Returns:
-            Tuple[dict, dict, dict, dict]: 
+            tuple[dict, dict, dict, dict]: 
                 - Doctor information.
                 - Test information
                 - Result dictionary after scheduling a new appointment.
@@ -1547,7 +1547,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         self._apply_restrictions(gt_data[0]['patient_fv']['patient'])
 
         # Staff turn closure: captures all of `scheduling`'s simulation-side arguments
-        def staff_turn(user_prompt: str) -> Tuple[str, dict]:
+        def staff_turn(user_prompt: str) -> tuple[str, dict]:
             staff_known_data.update({'patient_intention': user_prompt})
             prediction = self.test_scheduling(
                 tool_calling_agent,
@@ -1914,7 +1914,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                                 max_inferences: int = 5,
                                 patient_kwargs: dict = {},
                                 staff_kwargs: dict = {},
-                                **kwargs) -> Tuple[dict, dict, dict]:
+                                **kwargs) -> tuple[dict, dict, dict]:
         """
         Simulate a multi-turn conversation for cancelling all of a patient's scheduled tests.
 
@@ -1933,7 +1933,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             DataNotFoundError: Schedule not found error.
 
         Returns:
-            Tuple[dict, dict, dict]: Updated doctor information, test device information, and a result dictionary after cancellation.
+            tuple[dict, dict, dict]: Updated doctor information, test device information, and a result dictionary after cancellation.
         """
         doctor_information, result_dict = self._cancel_simulate(
             'test_cancel',
@@ -1958,7 +1958,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                                    max_inferences: int = 5,
                                    patient_kwargs: dict = {},
                                    staff_kwargs: dict = {},
-                                   **kwargs) -> Tuple[dict, dict, dict]:
+                                   **kwargs) -> tuple[dict, dict, dict]:
         """
         Simulate a multi-turn conversation for moving a patient's whole test set earlier.
 
@@ -1979,7 +1979,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             SchedulingError: Scheduling error.
 
         Returns:
-            Tuple[dict, dict, dict]: Updated doctor information, test device information, and a result dictionary after rescheduling.
+            tuple[dict, dict, dict]: Updated doctor information, test device information, and a result dictionary after rescheduling.
         """
         doctor_information, result_dict = self._reschedule_simulate(
             'test_reschedule',

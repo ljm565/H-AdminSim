@@ -1,7 +1,7 @@
 import os
 from copy import deepcopy
 from abc import ABC, abstractmethod
-from typing import Callable, Optional, Tuple, TYPE_CHECKING
+from typing import Callable, Optional, TYPE_CHECKING
 from langchain.agents import AgentExecutor
 from langchain_core.messages import HumanMessage, AIMessage
 
@@ -238,7 +238,7 @@ class OPSchedulingSimulation(OPSimulation, ABC):
                          max_inferences: int = 5,
                          patient_kwargs: dict = {},
                          tool_data: Optional[dict] = None,
-                         **kwargs) -> Tuple[dict, dict]:
+                         **kwargs) -> tuple[dict, dict]:
         """
         Drive a multi-turn cancellation dialogue and record its outcome.
 
@@ -255,7 +255,7 @@ class OPSchedulingSimulation(OPSimulation, ABC):
             **kwargs: Additional keyword arguments passed to the patient agent.
 
         Returns:
-            Tuple[dict, dict]: Resolved doctor information and the result dictionary.
+            tuple[dict, dict]: Resolved doctor information and the result dictionary.
         """
         # Sanity Check
         if not self.fhir_integration:
@@ -277,7 +277,7 @@ class OPSchedulingSimulation(OPSimulation, ABC):
         merged_patient_kwargs = {**patient_kwargs, **kwargs}
 
         # Staff turn closure: the tool-calling agent is built once, so binding it here is safe
-        def staff_turn(user_prompt: str) -> Tuple[str, dict]:
+        def staff_turn(user_prompt: str) -> tuple[str, dict]:
             prediction = self.canceling(
                 client=tool_calling_agent,
                 patient_intention=user_prompt,
@@ -346,7 +346,7 @@ class OPSchedulingSimulation(OPSimulation, ABC):
                              patient_kwargs: dict = {},
                              staff_kwargs: dict = {},
                              tool_data: Optional[dict] = None,
-                             **kwargs) -> Tuple[dict, dict]:
+                             **kwargs) -> tuple[dict, dict]:
         """
         Drive a multi-turn rescheduling dialogue and record its outcome.
 
@@ -369,7 +369,7 @@ class OPSchedulingSimulation(OPSimulation, ABC):
             **kwargs: Additional keyword arguments passed to both agents.
 
         Returns:
-            Tuple[dict, dict]: Resolved doctor information and the result dictionary.
+            tuple[dict, dict]: Resolved doctor information and the result dictionary.
         """
         # Sanity Check
         if not self.fhir_integration:
@@ -395,7 +395,7 @@ class OPSchedulingSimulation(OPSimulation, ABC):
         )
 
         # Staff turn closure: the tool-calling agent is built once, so binding it here is safe
-        def staff_turn(user_prompt: str) -> Tuple[str, dict]:
+        def staff_turn(user_prompt: str) -> tuple[str, dict]:
             prediction = self.rescheduling(
                 client=tool_calling_agent,
                 patient_intention=user_prompt,
@@ -692,8 +692,8 @@ class OPSchedulingSimulation(OPSimulation, ABC):
 
     def _staff_turn(self,
                     user_prompt: str,
-                    respond: Callable[[str], Tuple[str, dict]],
-                    force_on_misroute: bool = False) -> Tuple[object, dict]:
+                    respond: Callable[[str], tuple[str, dict]],
+                    force_on_misroute: bool = False) -> tuple[object, dict]:
         """
         Route one staff turn through the MAS and recover both of its results.
 
@@ -707,7 +707,7 @@ class OPSchedulingSimulation(OPSimulation, ABC):
 
         Args:
             user_prompt (str): The patient utterance that opens this turn.
-            respond (Callable[[str], Tuple[str, dict]]): Produces ``(staff_response,
+            respond (Callable[[str], tuple[str, dict]]): Produces ``(staff_response,
                                                           prediction)`` for a prompt.
             force_on_misroute (bool, optional): Whether to deterministically re-run the turn on
                                                  the chief agent when the orchestrator picks the
@@ -721,11 +721,11 @@ class OPSchedulingSimulation(OPSimulation, ABC):
                                  `force_on_misroute` is False.
 
         Returns:
-            Tuple[object, dict]: The MAS output and the structured prediction.
+            tuple[object, dict]: The MAS output and the structured prediction.
         """
         holder = {}
 
-        def callback(prompt: str) -> Tuple[str, bool]:
+        def callback(prompt: str) -> tuple[str, bool]:
             reply, prediction = respond(prompt)
             holder['prediction'] = prediction
             return reply, False

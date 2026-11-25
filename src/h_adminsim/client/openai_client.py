@@ -1,7 +1,7 @@
 import os
 from openai import OpenAI
+from typing import Optional
 from dotenv import load_dotenv, find_dotenv
-from typing import List, Tuple, Optional
 
 from h_adminsim.utils import log
 from h_adminsim.utils.image_preprocess_utils import *
@@ -50,17 +50,17 @@ class GPTClient:
     def __make_payload(self,
                        user_prompt: str,
                        image_path: Optional[str] = None,
-                       image_size: Optional[Tuple[int]] = None) -> List[dict]:
+                       image_size: Optional[tuple[int, int]] = None) -> list[dict]:
         """
         Create a payload for API calls to the GPT model.
 
         Args:
             user_prompt (str): User prompt.
             image_path (Optional[str], optional): Image path if you need to send image. Defaults to None.
-            image_size (Optional[Tuple[int]], optional): Image size to be resized. Defaults to None.
+            image_size (Optional[tuple[int, int]], optional): Image size to be resized. Defaults to None.
 
         Returns:
-            List[dict]: Payload including prompts and image data.
+            list[dict]: Payload including prompts and image data.
         """
         payloads = list()
         user_contents = {"role": "user", "content": []}
@@ -90,7 +90,7 @@ class GPTClient:
                  user_prompt: str,
                  system_prompt: Optional[str] = None,
                  image_path: Optional[str] = None,
-                 image_size: Optional[Tuple[int]] = None,
+                 image_size: Optional[tuple[int, int]] = None,
                  using_multi_turn: bool = False,
                  verbose: bool = True,
                  greeting: Optional[str] = None,
@@ -102,7 +102,7 @@ class GPTClient:
             user_prompt (str): The main user prompt or query to send to the model.
             system_prompt (Optional[str], optional): An optional system-level prompt to set context or behavior. Defaults to None.
             image_path (Optional[str], optional): Path to an image file to be included in the prompt. Defaults to None.
-            image_size (Optional[Tuple[int]], optional): The target image size in (width, height) format, if resizing is needed. Defaults to None.
+            image_size (Optional[tuple[int, int]], optional): The target image size in (width, height) format, if resizing is needed. Defaults to None.
             using_multi_turn (bool): Whether to structure it as multi-turn. Defaults to False.
             verbose (bool): Whether to print verbose output. Defaults to True.
             greeting (Optional[str]): An optional greeting message to include in the conversation. Defaults to None.

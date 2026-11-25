@@ -169,7 +169,7 @@ class OPFVIntakeSimulation(OPSimulation):
             **kwargs: Additional keyword arguments passed to both agents.
 
         Yields:
-            Tuple[str, str]: A 2-tuple of (role, content) where role is 'Staff' or 'Patient'
+            tuple[str, str]: A 2-tuple of (role, content) where role is 'Staff' or 'Patient'
                              and content is the whitespace-normalized utterance text.
         """
         # Initialize agents

@@ -1,7 +1,7 @@
 import os
 import random
+from typing import Optional
 from importlib import resources
-from typing import Optional, Tuple
 from decimal import Decimal, getcontext
 
 from h_adminsim.task.schedule_assign import ScheduleAssigner
@@ -212,7 +212,7 @@ class DataSynthesizer:
     
     @staticmethod
     def department_list_generator(department_n: int,
-                                  file_path: Optional[str] = None) -> list[Tuple[str, str]]:
+                                  file_path: Optional[str] = None) -> list[tuple[str, str]]:
         """
         Generate a list of department names based on the number of departments.
         
@@ -221,7 +221,7 @@ class DataSynthesizer:
             file_path (Optional[str], optional): Path to a file containing department names. If provided, it will be used to load names. Defaults to None.
         
         Returns:
-            list[Tuple[str, str]]: List of department names and their codes.
+            list[tuple[str, str]]: List of department names and their codes.
         """
         if file_path == None:
             file_path = str(resources.files("h_adminsim.assets.departments").joinpath("department.json"))

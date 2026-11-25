@@ -1,8 +1,8 @@
 import uuid
 import random
 from importlib import resources
+from typing import Any, Union, Optional
 from datetime import datetime, timedelta
-from typing import Tuple, Any, Union, Optional
 
 from h_adminsim import registry
 from h_adminsim.utils import log, colorstr
@@ -310,7 +310,7 @@ def generate_random_code(category: str) -> str:
 
 
 def generate_random_code_with_prob(codes: list[Any],
-                                   probs: list[float]) -> Tuple[int, str]:
+                                   probs: list[float]) -> tuple[int, str]:
     """
     Select a random code from the given list of codes based on the provided probabilities.
 
@@ -320,7 +320,7 @@ def generate_random_code_with_prob(codes: list[Any],
                              The probabilities must sum to 1.
 
     Returns:
-        Tuple[int, str]: The randomly chosen code. The exact type depends on the elements of `codes`.
+        tuple[int, str]: The randomly chosen code. The exact type depends on the elements of `codes`.
                          (Adjust this description if the return type is known specifically.)
     """
     assert round(sum(probs), 4) == 1, colorstr("red", f"The sum of the probabilities would be a 1, but got {probs}")
@@ -334,7 +334,7 @@ def generate_random_code_with_prob(codes: list[Any],
 
 def generate_random_specialty(department: str,
                               specialty_path: Optional[str] = None, 
-                              verbose: bool = True) -> Tuple[str, str]:
+                              verbose: bool = True) -> tuple[str, str]:
     """
     Generate a random specialty and its corresponding code for a given department.
 
@@ -345,7 +345,7 @@ def generate_random_specialty(department: str,
                                   Defaults to True.
 
     Returns:
-        Tuple[str, str]: A tuple containing a randomly selected specialty (str) and its code (int).
+        tuple[str, str]: A tuple containing a randomly selected specialty (str) and its code (int).
                          If the department is not found, returns ('{PLACEHOLDER}', '{PLACEHOLDER}').
     """
     if specialty_path == None:

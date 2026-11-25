@@ -1,5 +1,5 @@
 from decimal import Decimal
-from typing import Tuple, Union, Optional, TYPE_CHECKING
+from typing import Union, Optional, TYPE_CHECKING
 
 from h_adminsim.registry import STATUS_CODES
 from h_adminsim.utils import colorstr
@@ -26,7 +26,7 @@ class SanityChecker:
     def intake_check(self,
                      prediction: dict, 
                      gt: dict,
-                     conversations: str) -> Tuple[dict[bool], dict[str]]:
+                     conversations: str) -> tuple[dict[bool], dict[str]]:
         """
         Performs a sanity check on the predicted patient information and department against the ground truth.
 
@@ -40,7 +40,7 @@ class SanityChecker:
             conversations (str): The full conversation text between the patient and administration staff.
 
         Returns:
-            Tuple[dict[bool], dict[str]]:
+            tuple[dict[bool], dict[str]]:
                 - bool: True if the prediction passes all sanity checks, False otherwise
                 - str: Status code indicating the type of check passed or failed
         """
@@ -171,7 +171,7 @@ class SanityChecker:
                       prediction: Union[str, dict], 
                       gt_patient_condition: dict,
                       doctor_information: dict,
-                      environment: "HospitalEnvironment") -> Tuple[bool, str]:
+                      environment: "HospitalEnvironment") -> tuple[bool, str]:
         """
         Validates a predicted schedule for a doctor by checking its structure, time validity, 
         duplication with existing schedules, and updates the doctor's schedule if valid.
@@ -185,7 +185,7 @@ class SanityChecker:
             environment (HospitalEnvironment): Hospital environment instance to manage patient schedules.
 
         Returns:
-            Tuple[bool, str]: 
+            tuple[bool, str]: 
                 - A boolean indicating whether the prediction passed all sanity checks.
                 - A string explaining its status.
         """
@@ -258,7 +258,7 @@ class SanityChecker:
                             test_device_information: dict,
                             environment: "HospitalEnvironment",
                             doctor_information: Optional[dict] = None,
-                            rule: Optional[object] = None) -> Tuple[bool, str]:
+                            rule: Optional[object] = None) -> tuple[bool, str]:
         """
         Validates a predicted multi-test schedule for OPFU follow-up tests.
 
@@ -281,7 +281,7 @@ class SanityChecker:
                                                Skips preference, follow-up and restriction checks if not provided.
 
         Returns:
-            Tuple[bool, str]: (passed, status_code).
+            tuple[bool, str]: (passed, status_code).
         """
         ts_codes = STATUS_CODES['test_schedule']
         test_information = test_device_information['test']

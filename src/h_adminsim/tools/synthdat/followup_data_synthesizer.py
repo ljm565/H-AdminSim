@@ -2,9 +2,9 @@ import math
 import random
 from tqdm import tqdm
 from copy import deepcopy
+from typing import Optional
 from datetime import timedelta
 from importlib import resources
-from typing import Tuple, Optional
 from collections import defaultdict
 from decimal import Decimal, getcontext
 
@@ -229,7 +229,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         Returns:
             list[dict]: A list of dictionaries representing the generated follow-up test combinations.
         """
-        def _get_available_tests(vacant_test_schedule: dict, func: callable) -> list[Tuple]:
+        def _get_available_tests(vacant_test_schedule: dict, func: callable) -> list[tuple]:
             """
             Get available test keys that satisfy the condition defined by func, sorted by priority and shuffled within the same priority level.
 
@@ -239,7 +239,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                                  and returns True if the test is considered available based on custom conditions.
 
             Returns:
-                list[Tuple]: A list of test keys (priority, test_code, department, device_name) that satisfy the condition defined by func,
+                list[tuple]: A list of test keys (priority, test_code, department, device_name) that satisfy the condition defined by func,
                              sorted by priority and shuffled within the same priority level.
             """
             available_keys = sorted(

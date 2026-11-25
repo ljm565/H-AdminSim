@@ -1,6 +1,6 @@
 import os
+from typing import Optional
 from importlib import resources
-from typing import Optional, Tuple
 
 from h_adminsim.agent import BaseAgent
 from h_adminsim.utils import colorstr, log
@@ -44,7 +44,7 @@ class SupervisorAgent(BaseAgent):
 
     def _init_prompt(self, 
                      system_prompt_path: Optional[str] = None, 
-                     user_prompt_path: Optional[str] = None) -> Tuple[str, str]:
+                     user_prompt_path: Optional[str] = None) -> tuple[str, str]:
         """
         Initialize the system prompt for the administration staff agent.
 
@@ -57,7 +57,7 @@ class SupervisorAgent(BaseAgent):
             FileNotFoundError: If the specified system prompt file does not exist.
 
         Returns:
-            Tuple[str, str]: The system prompt and user prompt templates.
+            tuple[str, str]: The system prompt and user prompt templates.
         """
         # Initialilze with the default system prompt
         if not system_prompt_path:

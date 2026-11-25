@@ -1,6 +1,6 @@
 import os
+from typing import Optional
 from importlib import resources
-from typing import Optional, Tuple
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -121,7 +121,7 @@ class SchedulingAdminStaffAgent(BaseAgent):
                      scheduling_user_prompt_path: Optional[str] = None,
                      tool_calling_prompt_path: Optional[str] = None,
                      sc_tool_calling_prompt_path: Optional[str] = None,
-                     **kwargs) -> Tuple[str, str, str, str]:
+                     **kwargs) -> tuple[str, str, str, str]:
         """
         Initialize the system prompt for the administration staff agent.
 

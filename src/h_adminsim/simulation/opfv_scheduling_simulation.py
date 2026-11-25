@@ -5,7 +5,7 @@ from copy import deepcopy
 from patientsim import PatientAgent
 from decimal import Decimal, getcontext
 from langchain.agents import AgentExecutor
-from typing import Tuple, Union, Optional, TYPE_CHECKING
+from typing import Union, Optional, TYPE_CHECKING
 
 from h_adminsim.registry.errors import (
     SchedulingError,
@@ -629,7 +629,7 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
                             reasoning_max_tries: int = 0,
                             patient_kwargs: dict = {},
                             staff_kwargs: dict = {},
-                            **kwargs) -> Tuple[dict, dict, dict]:
+                            **kwargs) -> tuple[dict, dict, dict]:
         """
         Simulate a multi-turn outpatient scheduling dialogue between a patient agent and an administrative staff agent.
 
@@ -648,7 +648,7 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
             **kwargs: Shared keyword arguments passed to both agents.
 
         Returns:
-            Tuple[dict, dict, dict]: 
+            tuple[dict, dict, dict]: 
                 - Doctor information.
                 - Result dictionary after scheduling a new appointment.
                 - Token statistics.
@@ -682,7 +682,7 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
         merged_staff_kwargs = {**staff_kwargs, **kwargs}
 
         # Staff turn closure: captures all of `scheduling`'s simulation-side arguments
-        def staff_turn(user_prompt: str) -> Tuple[str, dict]:
+        def staff_turn(user_prompt: str) -> tuple[str, dict]:
             staff_known_data.update({'patient_intention': user_prompt})
             prediction = self.scheduling(
                 tool_calling_agent,
@@ -835,7 +835,7 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
                            max_inferences: int = 5,
                            patient_kwargs: dict = {},
                            staff_kwargs: dict = {},
-                           **kwargs) -> Tuple[dict, dict]:
+                           **kwargs) -> tuple[dict, dict]:
         """
         Simulate a multi-turn conversation for appointment cancellation.
 
@@ -853,7 +853,7 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
             DataNotFoundError: Schedule not found error.
 
         Returns:
-            Tuple[dict, dict]: Updated doctor information and a result dictionary after cancellation.
+            tuple[dict, dict]: Updated doctor information and a result dictionary after cancellation.
         """
         doctor_information, result_dict = self._cancel_simulate(
             'cancel',
@@ -876,7 +876,7 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
                               max_inferences: int = 5,
                               patient_kwargs: dict = {},
                               staff_kwargs: dict = {},
-                              **kwargs) -> Tuple[dict, dict]:
+                              **kwargs) -> tuple[dict, dict]:
         """
         Simulate a multi-turn conversation for appointment rescheduling.
 
@@ -896,7 +896,7 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
             SchedulingError: Scheduling error.
 
         Returns:
-            Tuple[dict, dict]: Updated doctor information and a result dictionary after rescheduling.
+            tuple[dict, dict]: Updated doctor information and a result dictionary after rescheduling.
         """
         doctor_information, result_dict = self._reschedule_simulate(
             'reschedule',
@@ -972,7 +972,7 @@ class OPFVSchedulingSimulation(OPSchedulingSimulation):
         self._open_staff_turn('scheduling', self.scheduling_agent.appn_greet)
 
         # Staff turn closure: routes the structured staff scheduling turn through the MAS.
-        def staff_turn(user_prompt: str) -> Tuple[str, dict]:
+        def staff_turn(user_prompt: str) -> tuple[str, dict]:
             staff_known_data.update({'patient_intention': user_prompt})
             prediction = run_with_retry(
                 self.scheduling,

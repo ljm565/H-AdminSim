@@ -6,7 +6,7 @@ from decimal import getcontext
 from importlib import resources
 from patientsim import PatientAgent
 from dotenv import load_dotenv, find_dotenv
-from typing import Tuple, Union, Optional, TYPE_CHECKING
+from typing import Union, Optional, TYPE_CHECKING
 
 from h_adminsim.task import OutpatientTask
 from h_adminsim.agent import SupervisorAgent
@@ -140,7 +140,7 @@ class OutpatientFirstIntake(OutpatientTask):
             return str(text)
         
     
-    def _department_decision(self, prediction_department: str, prediction_supervison: Union[str, dict], gt_department: str) -> Tuple[str, list[str]]:
+    def _department_decision(self, prediction_department: str, prediction_supervison: Union[str, dict], gt_department: str) -> tuple[str, list[str]]:
         """
         Determine the final department decision by considering both 
         the interaction agent result and the supervisor agent result.
@@ -171,7 +171,7 @@ class OutpatientFirstIntake(OutpatientTask):
         
 
     def __call__(self, 
-                 data_pair: Tuple[dict, dict], 
+                 data_pair: tuple[dict, dict], 
                  agent_test_data: dict, 
                  agent_results: dict, 
                  environment: "HospitalEnvironment", 
@@ -181,7 +181,7 @@ class OutpatientFirstIntake(OutpatientTask):
         Estimates the most appropriate medical department for each patient using an LLM agent.
 
         Args:
-            data_pair (Tuple[dict, dict]): A pair of ground truth and patient data for agent simulation.
+            data_pair (tuple[dict, dict]): A pair of ground truth and patient data for agent simulation.
             agent_test_data (dict): A dictionary containing test data for a single hospital.
                 Expected to include:
                     - 'department': Dictionary of available departments.
@@ -422,7 +422,7 @@ class OutpatientFirstScheduling(OutpatientTask):
         return sim_environment
 
 
-    def get_intake_information(self, gt: dict, agent_results: dict, doctor_information: dict) -> Tuple[dict, str, bool]:
+    def get_intake_information(self, gt: dict, agent_results: dict, doctor_information: dict) -> tuple[dict, str, bool]:
         """
         Extracts the patient name and predicted department from agent results.
         If predictions are not available, falls back to using ground truth labels.
@@ -434,7 +434,7 @@ class OutpatientFirstScheduling(OutpatientTask):
                                        Each key is a doctor's name, and each value includes a 'schedule' field.
 
         Returns:
-            Tuple[dict, str, bool]: Patient information, determined department, either predicted or ground truth and its sanity status.
+            tuple[dict, str, bool]: Patient information, determined department, either predicted or ground truth and its sanity status.
         """
         # Prediction results are existing case
         try:
@@ -497,7 +497,7 @@ class OutpatientFirstScheduling(OutpatientTask):
                         doctor_information: dict, 
                         environment: "HospitalEnvironment", 
                         idx: Optional[int] = None, 
-                        verbose: bool = False) -> Tuple[dict, Optional[dict]]:
+                        verbose: bool = False) -> tuple[dict, Optional[dict]]:
         """
         Cancel a doctor's scheduled appointment.
 
@@ -509,7 +509,7 @@ class OutpatientFirstScheduling(OutpatientTask):
             verbose (bool, optional): Whether logging the each result or not. Defaults to False.
 
         Returns:
-            Tuple[dict, Optional[dict]]: Updated doctor information and a result dictionary after cancellation.
+            tuple[dict, Optional[dict]]: Updated doctor information and a result dictionary after cancellation.
         """
         if idx is None:
             candidate_idx = [i for i, schedule in enumerate(environment.patient_schedules)
@@ -570,7 +570,7 @@ class OutpatientFirstScheduling(OutpatientTask):
                              doctor_information: dict,
                              environment: "HospitalEnvironment", 
                              idx: Optional[int] = None, 
-                             verbose: bool = False) -> Tuple[dict, Optional[dict]]:
+                             verbose: bool = False) -> tuple[dict, Optional[dict]]:
         """
         Add a patient schedule to the waiting list in the given environment.
 
@@ -582,7 +582,7 @@ class OutpatientFirstScheduling(OutpatientTask):
             verbose (bool, optional): Whether logging the each result or not. Defaults to False.
         
         Returns:
-            Tuple[dict, Optional[dict]]: Updated doctor information and a result dictionary after cancellation.
+            tuple[dict, Optional[dict]]: Updated doctor information and a result dictionary after cancellation.
         """
         result_dict = init_result_dict()
         if idx is None:
@@ -636,7 +636,7 @@ class OutpatientFirstScheduling(OutpatientTask):
     def automatic_waiting_list_update(self, 
                                       sim_environment: OPFVSchedulingSimulation,
                                       environment: "HospitalEnvironment",
-                                      doctor_information: Optional[dict] = None) -> Tuple[dict, dict]:
+                                      doctor_information: Optional[dict] = None) -> tuple[dict, dict]:
         """
         Automatically update the waiting list by attempting to reschedule patients.
 
@@ -647,7 +647,7 @@ class OutpatientFirstScheduling(OutpatientTask):
                                                            including availability and other relevant details. Defaults to None.
 
         Returns:
-            Tuple[dict, dict]: Updated doctor information and a result dictionary.
+            tuple[dict, dict]: Updated doctor information and a result dictionary.
         """
         all_result_dict = init_result_dict()
         for result in sim_environment.automatic_waiting_list_update(
@@ -709,7 +709,7 @@ class OutpatientFirstScheduling(OutpatientTask):
             
 
     def __call__(self, 
-                 data_pair: Tuple[dict, dict], 
+                 data_pair: tuple[dict, dict], 
                  agent_test_data: dict, 
                  agent_results: dict, 
                  environment: "HospitalEnvironment", 
@@ -720,7 +720,7 @@ class OutpatientFirstScheduling(OutpatientTask):
         the output, runs sanity checks on predicted schedules, and collects the results for evaluation.
 
         Args:
-            data_pair (Tuple[dict, dict]): A pair of ground truth and patient data for agent simulation.
+            data_pair (tuple[dict, dict]): A pair of ground truth and patient data for agent simulation.
             agent_test_data (dict): Dictionary containing test data and metadata for a single hospital.
                 Expected keys include:
                     - 'metadata': A dict containing start_hour, end_hour, and interval_hour under 'time'.

@@ -1,21 +1,3 @@
-__all__ = [
-    'POLICY_HOOKS',
-    'POLICY_ACTIONS',
-    'POLICY_SUPPORTED_OBJECTIVES',
-    'POLICY_RESERVED_RECORD_KEYS',
-    'POLICY_CONFIG_API_VERSION',
-    'POLICY_CONFIG_KEYS',
-    'POLICY_ENTRY_KEYS',
-    'POLICY_REQUIRES_PATIENT_PREFIX',
-    'POLICY_REQUIRES_METRIC_PREFIX',
-    'POLICY_BUILTIN_METRIC_IDS',
-    'POLICY_PATIENT_SYMPTOM_FIELDS',
-    'POLICY_METRIC_VALUE_TYPES',
-    'POLICY_METRIC_RESERVED_IDS',
-]
-
-
-
 # Hook names a policy may implement. A policy implements a hook by overriding the method of that name.
 POLICY_HOOKS = ('restrict', 'review')
 

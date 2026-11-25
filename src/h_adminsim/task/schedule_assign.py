@@ -1,5 +1,5 @@
 import random
-from typing import Tuple, Optional
+from typing import Optional
 
 from h_adminsim.utils.common_utils import (
     convert_segment_to_time,
@@ -165,7 +165,7 @@ class ScheduleAssigner:
                  is_appointment: bool = False,
                  segments: Optional[list[list[int]]] = None,
                  block_size: Optional[int] = None,
-                 **kwargs) -> Tuple[list[list[int]], list[list[float]]]:
+                 **kwargs) -> tuple[list[list[int]], list[list[float]]]:
         """
         Generate grouped time ranges by randomly selecting and grouping a proportion of time segments.
 
