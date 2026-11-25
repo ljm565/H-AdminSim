@@ -8,11 +8,11 @@ from langchain.agents import AgentExecutor
 from typing import Union, Optional, TYPE_CHECKING
 
 from h_adminsim.registry.errors import (
+    STATUS_CODES,
     SchedulingError,
     ToolCallingError,
     AgentSelectionError,
 )
-from h_adminsim.registry.errors import STATUS_CODES
 from h_adminsim.registry.variables import SCHEDULE_STATUS
 from h_adminsim.registry.phrases import OPFV_PREFERENCE_PHRASE_STAFF, OPFV_PREFERENCE_PHRASE_PATIENT
 from h_adminsim.tools.callback import TokenUsageCallback
