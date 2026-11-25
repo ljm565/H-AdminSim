@@ -12,7 +12,19 @@ from h_adminsim.registry.errors import SchedulingError
 from h_adminsim.tools.data_converter import DataConverter
 from h_adminsim.registry.variables import SCHEDULE_STATUS
 from h_adminsim.utils import log, colorstr
-from h_adminsim.utils.common_utils import *
+from h_adminsim.utils.common_utils import (
+    iso_to_date,
+    iso_to_hour,
+    get_iso_time,
+    compare_iso_time,
+    add_hours_to_iso,
+    calculate_idle_wait,
+    normalize_unavailable,
+    convert_time_to_segment,
+    convert_segment_to_time,
+    group_consecutive_segments,
+    unavailable_blocked_interval,
+)
 
 if TYPE_CHECKING:
     from h_adminsim.environment.hospital import HospitalEnvironment

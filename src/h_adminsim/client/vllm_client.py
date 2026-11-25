@@ -4,7 +4,11 @@ from openai import OpenAI
 from typing import Optional
 
 from h_adminsim.utils import colorstr, log
-from h_adminsim.utils.image_preprocess_utils import *
+from h_adminsim.utils.image_preprocess_utils import (
+    encode_image,
+    encode_resize_image,
+    get_image_extension,
+)
 
 
 

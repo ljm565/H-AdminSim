@@ -6,8 +6,9 @@ from datetime import timedelta
 from decimal import Decimal, getcontext
 
 from h_adminsim.task.op_task import OutpatientTask
-from h_adminsim.task.opfv_task import *
-from h_adminsim.task.opfu_task import *
+from h_adminsim.task.opfv_task import OutpatientFirstIntake, OutpatientFirstScheduling
+from h_adminsim.task.opfu_task import OutpatientFollowUpScheduling
+from h_adminsim.utils import colorstr, log
 from h_adminsim.registry.variables import SCHEDULE_STATUS
 from h_adminsim.task.fhir_manager import FHIRManager
 from h_adminsim.tools.data_converter import DataConverter
@@ -16,6 +17,7 @@ from h_adminsim.utils.filesys_utils import json_load, json_save_fast, get_files
 from h_adminsim.utils.common_utils import (
     get_iso_time,
     str_to_datetime,
+    init_result_dict,
     compare_iso_time,
     to_builtin_scalar,
     encode_non_finite,

@@ -18,8 +18,13 @@ from h_adminsim.registry.errors import STATUS_CODES
 from h_adminsim.registry.phrases import OPFV_PREFERENCE_PHRASE_PATIENT
 from h_adminsim.registry.variables import SCHEDULE_STATUS, DEPARTMENT_NORMALIZATION
 from h_adminsim.utils import colorstr, log
-from h_adminsim.utils.mas_utils import *
-from h_adminsim.utils.common_utils import *
+from h_adminsim.utils.common_utils import (
+    run_with_retry,
+    hour_to_hhmmss,
+    init_result_dict,
+    preprocess_dialog,
+)
+from h_adminsim.utils.mas_utils import init_task_models
 
 if TYPE_CHECKING:
     from h_adminsim.pipeline.h_mas import HospitalMAS

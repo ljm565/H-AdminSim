@@ -3,7 +3,16 @@ from typing import Union, Optional, TYPE_CHECKING
 
 from h_adminsim.registry.errors import STATUS_CODES
 from h_adminsim.utils import colorstr
-from h_adminsim.utils.common_utils import *
+from h_adminsim.utils.common_utils import (
+    iso_to_hour,
+    get_iso_time,
+    compare_iso_time,
+    normalize_unavailable,
+    convert_segment_to_time,
+    convert_time_to_segment,
+    group_consecutive_segments,
+    unavailable_blocked_interval,
+)
 
 if TYPE_CHECKING:
     from h_adminsim.environment.hospital import HospitalEnvironment

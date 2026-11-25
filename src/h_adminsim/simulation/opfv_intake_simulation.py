@@ -4,7 +4,7 @@ from patientsim import PatientAgent, CheckerAgent
 from h_adminsim.registry.errors import AgentSelectionError
 from h_adminsim.simulation.op_simulation import OPSimulation
 from h_adminsim.utils import log, colorstr
-from h_adminsim.utils.common_utils import *
+from h_adminsim.utils.common_utils import preprocess_utterance, run_with_retry, staff_role
 
 if TYPE_CHECKING:
     from h_adminsim.pipeline.h_mas import HospitalMAS

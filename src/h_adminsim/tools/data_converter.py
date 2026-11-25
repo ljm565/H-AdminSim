@@ -3,7 +3,15 @@ from tqdm import tqdm
 from typing import Optional
 
 from h_adminsim.utils import Information, colorstr, log
-from h_adminsim.utils.fhir_utils import *
+from h_adminsim.utils.fhir_utils import (
+    get_slot_id,
+    get_device_id,
+    get_schedule_id,
+    get_individual_id,
+    get_appointment_id,
+    get_practitionerrole_id,
+    get_healthcareservice_id,
+)
 from h_adminsim.registry.variables import PRIORITY_MAP
 from h_adminsim.utils.filesys_utils import json_load, json_save_fast, get_files
 from h_adminsim.utils.common_utils import (

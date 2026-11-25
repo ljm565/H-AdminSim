@@ -14,9 +14,18 @@ from h_adminsim.policy.builder import load_policy_config
 from h_adminsim.registry.variables import SCHEDULE_STATUS
 from h_adminsim.registry.phrases import OPFU_PREFERENCE_PHRASE_PATIENT
 from h_adminsim.utils import colorstr, log
-from h_adminsim.utils.mas_utils import *
-from h_adminsim.utils.fhir_utils import *
-from h_adminsim.utils.common_utils import *
+from h_adminsim.utils.common_utils import (
+    run_with_retry,
+    init_result_dict,
+    describe_unavailable,
+    convert_time_to_segment,   
+)
+from h_adminsim.utils.fhir_utils import (
+    get_individual_id,
+    get_appointment_id, 
+    get_healthcareservice_id, 
+)
+from h_adminsim.utils.mas_utils import init_task_models
 from h_adminsim.utils.policy_utils import followup_patient_records, available_patient_fields
 
 if TYPE_CHECKING:
