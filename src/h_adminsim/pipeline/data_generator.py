@@ -7,8 +7,10 @@ from importlib import resources
 from typing import Optional, Union
 
 from h_adminsim.task.fhir_manager import FHIRManager
-from h_adminsim.tools import DataConverter, AgentDataBuilder
-from h_adminsim.tools.synthdat import FirstVisitDataSynthesizer, FollowUpDataSynthesizer
+from h_adminsim.tools.data_converter import DataConverter
+from h_adminsim.tools.agent_data_builder import AgentDataBuilder
+from h_adminsim.tools.synthdat.first_visit_synthesizer import FirstVisitDataSynthesizer
+from h_adminsim.tools.synthdat.followup_data_synthesizer import FollowUpDataSynthesizer
 from h_adminsim.utils import Information, colorstr, log
 from h_adminsim.utils.random_utils import random_uuid
 from h_adminsim.utils.filesys_utils import get_files, json_load

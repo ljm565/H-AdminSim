@@ -8,9 +8,9 @@ from langchain.tools import tool
 from langchain.agents import AgentExecutor
 from typing import Union, Optional, TYPE_CHECKING
 
-from .data_converter import DataConverter
-from h_adminsim.registry import SCHEDULE_STATUS
 from h_adminsim.registry.errors import SchedulingError
+from h_adminsim.tools.data_converter import DataConverter
+from h_adminsim.registry.variables import SCHEDULE_STATUS
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.common_utils import *
 

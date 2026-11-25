@@ -12,22 +12,19 @@ from h_adminsim.registry.errors import (
     ToolCallingError,
     AgentSelectionError,
 )
-from h_adminsim.registry import (
-    STATUS_CODES,
-    SCHEDULE_STATUS,
-    OPFV_PREFERENCE_PHRASE_STAFF,
-    OPFV_PREFERENCE_PHRASE_PATIENT, 
-)
+from h_adminsim.registry.errors import STATUS_CODES
+from h_adminsim.registry.variables import SCHEDULE_STATUS
+from h_adminsim.registry.phrases import OPFV_PREFERENCE_PHRASE_STAFF, OPFV_PREFERENCE_PHRASE_PATIENT
 from h_adminsim.tools.callback import TokenUsageCallback
 from h_adminsim.tools.sanity_checker import SanityChecker
-from h_adminsim.tools import SchedulingRule, scheduling_tool_calling
+from h_adminsim.tools.scheduling_rule import SchedulingRule, scheduling_tool_calling
 from h_adminsim.simulation.op_scheduling_simulation import OPSchedulingSimulation, TurnLimitReached
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.common_utils import *
 
 if TYPE_CHECKING:
-    from h_adminsim.pipeline import HospitalMAS
-    from h_adminsim.agent import SchedulingAdminStaffAgent
+    from h_adminsim.pipeline.h_mas import HospitalMAS
+    from h_adminsim.agent.scheduling_admin_staff import SchedulingAdminStaffAgent
     from h_adminsim.environment.hospital import HospitalEnvironment
 
 

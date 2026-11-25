@@ -1,12 +1,11 @@
-from __future__ import annotations
-
 from h_adminsim.utils import colorstr
 from h_adminsim.registry.errors import PolicyError
 from h_adminsim.registry.policy import POLICY_REQUIRES_PATIENT_PREFIX, POLICY_REQUIRES_METRIC_PREFIX
 from h_adminsim.policy.base import Policy
 from h_adminsim.policy.metric import Metric
 from h_adminsim.policy.evaluation import Evaluation
-from h_adminsim.policy.builtin import ResultGainPolicy, CapacityProtectionPolicy
+from h_adminsim.policy.builtin.result_gain import ResultGainPolicy
+from h_adminsim.policy.builtin.capacity_protection import CapacityProtectionPolicy
 
 
 

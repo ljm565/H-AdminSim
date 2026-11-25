@@ -4,6 +4,7 @@ from typing import Optional
 from importlib import resources
 from decimal import Decimal, getcontext
 
+from h_adminsim.registry import variables
 from h_adminsim.task.schedule_assign import ScheduleAssigner
 from h_adminsim.utils import Information, colorstr
 from h_adminsim.utils.common_utils import *
@@ -202,9 +203,9 @@ class DataSynthesizer:
             list[str]: List of hospital names in the format "Hospital 001", "Hospital 002", etc.
         """
         if file_path:
-            if registry.HOSPITALS is None:
-                registry.HOSPITALS = [word.capitalize() for word in txt_load(file_path).split('\n') if word.strip()]
-            return [f"{random.choice(registry.HOSPITALS)}" for _ in range(hospital_n)]
+            if variables.HOSPITALS is None:
+                variables.HOSPITALS = [word.capitalize() for word in txt_load(file_path).split('\n') if word.strip()]
+            return [f"{random.choice(variables.HOSPITALS)}" for _ in range(hospital_n)]
         
         zfill_l = len(str(hospital_n))
         return [f"hospital_{padded_int(i, zfill_l)}" for i in range(hospital_n)]
@@ -227,14 +228,14 @@ class DataSynthesizer:
             file_path = str(resources.files("h_adminsim.assets.departments").joinpath("department.json"))
 
         if file_path:
-            if registry.DEPARTMENTS is None:
+            if variables.DEPARTMENTS is None:
                 specialty = json_load(file_path)['specialty']
-                registry.DEPARTMENTS = [(k2, v2['code']) for v1 in specialty.values() for k2, v2 in v1['subspecialty'].items()]
+                variables.DEPARTMENTS = [(k2, v2['code']) for v1 in specialty.values() for k2, v2 in v1['subspecialty'].items()]
             
-            if department_n > len(registry.DEPARTMENTS):
-                raise ValueError(f"Requested {department_n} departments, but only {len(registry.DEPARTMENTS)} available in {file_path}.")
+            if department_n > len(variables.DEPARTMENTS):
+                raise ValueError(f"Requested {department_n} departments, but only {len(variables.DEPARTMENTS)} available in {file_path}.")
         
-            return random.sample(registry.DEPARTMENTS, department_n)
+            return random.sample(variables.DEPARTMENTS, department_n)
             
         zfill_l = len(str(department_n))
         return [(f"department_{padded_int(i, zfill_l)}", None) for i in range(department_n)]

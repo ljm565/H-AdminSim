@@ -1,7 +1,7 @@
 from typing import Optional
 
-from h_adminsim.agent import BaseAgent
-from h_adminsim.registry import ConversationState, MASNode
+from h_adminsim.agent.base import BaseAgent
+from h_adminsim.registry.d_class import ConversationState, MASNode
 from h_adminsim.utils import Information, colorstr, log
 
 

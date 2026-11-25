@@ -1,8 +1,8 @@
 from tqdm import tqdm
 from decimal import Decimal, getcontext
 
-from .data_synthesizer import DataSynthesizer
 from h_adminsim.task.schedule_assign import ScheduleAssigner
+from h_adminsim.tools.synthdat.data_synthesizer import DataSynthesizer
 from h_adminsim.utils import Information, log
 from h_adminsim.utils.common_utils import *
 from h_adminsim.utils.filesys_utils import *

@@ -1,7 +1,7 @@
 from typing import Optional
 
-from h_adminsim.tools import FirstVisitEvaluator, FollowUpVisitEvaluator
-from h_adminsim.policy import run_evaluations
+from h_adminsim.policy.evaluation import run_evaluations
+from h_adminsim.tools.evaluator import FirstVisitEvaluator, FollowUpVisitEvaluator
 from h_adminsim.utils import colorstr, log
 
 

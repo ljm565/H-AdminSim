@@ -22,8 +22,11 @@ from openai import (
     PermissionDeniedError,
 )
 
-from h_adminsim import registry
-from h_adminsim.registry import Hospital, ConversationState
+from h_adminsim.registry import variables
+from h_adminsim.registry.models import Hospital
+from h_adminsim.registry.d_class import ConversationState
+from h_adminsim.registry.variables import HALF_DAY_BOUNDARY_HOUR, HALF_DAY_ALIASES, HALF_DAY_WORD, HALF_DAY_RANGE
+from h_adminsim.registry.phrases import OPFU_UNAVAILABLE_PHRASE_PATIENT, OPFU_UNAVAILABLE_PHRASE_STAFF
 from h_adminsim.utils import Information, log, colorstr
 
 
@@ -249,11 +252,11 @@ def get_utc_offset(country_code: Optional[str] = None,
     """
     assert not (country_code == None and time_zone == None), colorstr("red", "Either `country_code` or `time_zone` must be provided.")
     
-    if registry.COUNTRY_TIMEZONE_MAP is None:
-        registry.COUNTRY_TIMEZONE_MAP = dict(pytz.country_timezones)
+    if variables.COUNTRY_TIMEZONE_MAP is None:
+        variables.COUNTRY_TIMEZONE_MAP = dict(pytz.country_timezones)
     
     if country_code:
-        time_zones = registry.COUNTRY_TIMEZONE_MAP.get(country_code.upper())
+        time_zones = variables.COUNTRY_TIMEZONE_MAP.get(country_code.upper())
         time_zone = time_zone if len(time_zones) > 1 else time_zones[0]   # If the country has mulitple time zone, you should use `time_zone` argument
     
     time_zone = pytz.timezone(time_zone)
@@ -963,7 +966,7 @@ def normalize_unavailable(unavailable: dict) -> Optional[dict]:
         return None
 
     half_day = unavailable.get('half_day')
-    half_day = registry.HALF_DAY_ALIASES.get(str(half_day).strip().lower()) if half_day else None
+    half_day = HALF_DAY_ALIASES.get(str(half_day).strip().lower()) if half_day else None
 
     # `type` is authoritative when present (data shape); otherwise infer it from the half-day value (tool shape).
     unavailable_type = unavailable.get('type') or ('half_day' if half_day else 'day')
@@ -987,7 +990,7 @@ def unavailable_blocked_interval(half_day: str,
     """
     Operating-hours interval blocked by a half-day constraint.
 
-    The morning / afternoon split is taken at `registry.HALF_DAY_BOUNDARY_HOUR`, clipped to the hospital's
+    The morning / afternoon split is taken at `HALF_DAY_BOUNDARY_HOUR`, clipped to the hospital's
     operating hours so an unusual opening time cannot produce an out-of-range interval.
 
     Args:
@@ -1000,9 +1003,9 @@ def unavailable_blocked_interval(half_day: str,
                                 constraint blocks nothing inside operating hours.
     """
     if half_day == 'am':
-        blocked = [start_hour, min(registry.HALF_DAY_BOUNDARY_HOUR, end_hour)]
+        blocked = [start_hour, min(HALF_DAY_BOUNDARY_HOUR, end_hour)]
     elif half_day == 'pm':
-        blocked = [max(registry.HALF_DAY_BOUNDARY_HOUR, start_hour), end_hour]
+        blocked = [max(HALF_DAY_BOUNDARY_HOUR, start_hour), end_hour]
     else:
         return None
     return blocked if blocked[0] < blocked[1] else None
@@ -1020,8 +1023,8 @@ def describe_unavailable(unavailable: dict, audience: str = 'patient') -> str:
     Returns:
         str: One sentence describing what the patient cannot attend (or that nothing is blocked).
     """
-    phrases = registry.OPFU_UNAVAILABLE_PHRASE_PATIENT if audience == 'patient' \
-        else registry.OPFU_UNAVAILABLE_PHRASE_STAFF
+    phrases = OPFU_UNAVAILABLE_PHRASE_PATIENT if audience == 'patient' \
+        else OPFU_UNAVAILABLE_PHRASE_STAFF
 
     normalized = normalize_unavailable(unavailable)
     if normalized is None:
@@ -1038,8 +1041,8 @@ def describe_unavailable(unavailable: dict, audience: str = 'patient') -> str:
 
     return phrases[normalized['type']].format(
         dates=', '.join(rendered_dates),
-        half_day_word=registry.HALF_DAY_WORD.get(normalized['half_day'], ''),
-        half_day_range=registry.HALF_DAY_RANGE.get(normalized['half_day'], ''),
+        half_day_word=HALF_DAY_WORD.get(normalized['half_day'], ''),
+        half_day_range=HALF_DAY_RANGE.get(normalized['half_day'], ''),
         explanation=normalized['explanation'],
     )
 

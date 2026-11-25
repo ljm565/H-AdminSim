@@ -1,11 +1,9 @@
 from typing import Optional
 
-from h_adminsim.agent import (
-    OrchestratorAgent,
-    IntakeAdminStaffAgent,
-    SchedulingAdminStaffAgent,
-)
-from h_adminsim.registry import AGENT_DESCRIPTION
+from h_adminsim.registry.phrases import AGENT_DESCRIPTION
+from h_adminsim.agent.orchestrator import OrchestratorAgent
+from h_adminsim.agent.intake_admin_staff import IntakeAdminStaffAgent
+from h_adminsim.agent.scheduling_admin_staff import SchedulingAdminStaffAgent
 from h_adminsim.utils import colorstr
 
 

@@ -16,9 +16,9 @@ from h_adminsim.registry.errors import (
     DataNotFoundError,
     AgentSelectionError,
 )
-from h_adminsim.registry import (
-    STATUS_CODES,
-    SCHEDULE_STATUS,
+from h_adminsim.registry.errors import STATUS_CODES
+from h_adminsim.registry.variables import SCHEDULE_STATUS
+from h_adminsim.registry.phrases import (
     OPFU_PREFERENCE_PHRASE_STAFF,
     OPFU_PREFERENCE_PHRASE_PATIENT,
     OPFU_PROPOSAL_PHRASE_STAFF,
@@ -26,15 +26,18 @@ from h_adminsim.registry import (
 )
 from h_adminsim.tools.callback import TokenUsageCallback
 from h_adminsim.tools.sanity_checker import SanityChecker
-from h_adminsim.tools import SchedulingRule, NegotiationMetrics, scheduling_tool_calling
-from h_adminsim.policy import PolicyStack, RestrictContext, ReviewContext, default_policies
+from h_adminsim.tools.scheduling_rule import SchedulingRule, scheduling_tool_calling
+from h_adminsim.tools.negotiation_metrics import NegotiationMetrics
+from h_adminsim.policy.stack import PolicyStack
+from h_adminsim.policy.context import RestrictContext, ReviewContext
+from h_adminsim.policy.builder import default_policies
 from h_adminsim.simulation.op_scheduling_simulation import OPSchedulingSimulation, TurnLimitReached
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.common_utils import *
 
 if TYPE_CHECKING:
-    from h_adminsim.pipeline import HospitalMAS
-    from h_adminsim.agent import SchedulingAdminStaffAgent
+    from h_adminsim.pipeline.h_mas import HospitalMAS
+    from h_adminsim.agent.scheduling_admin_staff import SchedulingAdminStaffAgent
     from h_adminsim.environment.hospital import HospitalEnvironment
 
 
@@ -214,7 +217,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         if self._last_decision is None or not self._last_decision.do_negotiate:
             return None
         if self._negotiation_agent is None:
-            from h_adminsim.agent import SchedulingAdminStaffAgent
+            from h_adminsim.agent.scheduling_admin_staff import SchedulingAdminStaffAgent
             staff = self.scheduling_agent
             is_managed = ('gpt' in staff.model.lower()) or ('gemini' in staff.model.lower())
             self._negotiation_agent = SchedulingAdminStaffAgent(

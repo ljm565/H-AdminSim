@@ -8,26 +8,21 @@ from patientsim import PatientAgent
 from dotenv import load_dotenv, find_dotenv
 from typing import Union, Optional, TYPE_CHECKING
 
-from h_adminsim.task import OutpatientTask
-from h_adminsim.agent import SupervisorAgent
-from h_adminsim.simulation import (
-    OPFVIntakeSimulation,
-    OPFVSchedulingSimulation
-)
+from h_adminsim.task.op_task import OutpatientTask
+from h_adminsim.agent.supervisor import SupervisorAgent
+from h_adminsim.simulation.opfv_intake_simulation import OPFVIntakeSimulation
+from h_adminsim.simulation.opfv_scheduling_simulation import OPFVSchedulingSimulation
 from h_adminsim.tools.sanity_checker import SanityChecker
-from h_adminsim.registry import (
-    STATUS_CODES,
-    SCHEDULE_STATUS,
-    DEPARTMENT_NORMALIZATION,
-    OPFV_PREFERENCE_PHRASE_PATIENT,
-)
 from h_adminsim.registry.errors import AgentSelectionError
+from h_adminsim.registry.errors import STATUS_CODES
+from h_adminsim.registry.phrases import OPFV_PREFERENCE_PHRASE_PATIENT
+from h_adminsim.registry.variables import SCHEDULE_STATUS, DEPARTMENT_NORMALIZATION
 from h_adminsim.utils import colorstr, log
 from h_adminsim.utils.mas_utils import *
 from h_adminsim.utils.common_utils import *
 
 if TYPE_CHECKING:
-    from h_adminsim.pipeline import HospitalMAS
+    from h_adminsim.pipeline.h_mas import HospitalMAS
     from h_adminsim.environment.hospital import HospitalEnvironment
 
 

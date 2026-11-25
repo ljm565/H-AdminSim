@@ -8,8 +8,9 @@ from importlib import resources
 from collections import defaultdict
 from decimal import Decimal, getcontext
 
-from .data_synthesizer import DataSynthesizer
+from h_adminsim.registry import variables
 from h_adminsim.task.schedule_assign import ScheduleAssigner
+from h_adminsim.tools.synthdat.data_synthesizer import DataSynthesizer
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.common_utils import *
 from h_adminsim.utils.filesys_utils import *
@@ -628,16 +629,16 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         if file_path == None:
             file_path = str(resources.files("h_adminsim.assets.departments").joinpath("department.json"))
         
-        if registry.DEPARTMENT_TESTS is None:
+        if variables.DEPARTMENT_TESTS is None:
             department_data = json_load(file_path)['specialty']
-            registry.DEPARTMENT_TESTS = {
+            variables.DEPARTMENT_TESTS = {
                 k2: v2['tests']
                 for v1 in department_data.values()
                 for k2, v2 in v1['subspecialty'].items()
                 if 'tests' in v2
             }
         
-        all_tests = deepcopy(registry.DEPARTMENT_TESTS[department])
+        all_tests = deepcopy(variables.DEPARTMENT_TESTS[department])
         code_to_test = {t['code']: t for t in all_tests}
         for test in all_tests:
             test['depends_on'] = [dep if isinstance(dep, str) else random.choice(dep) for dep in test['depends_on']]

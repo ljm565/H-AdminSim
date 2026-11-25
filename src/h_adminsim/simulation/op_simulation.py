@@ -2,7 +2,7 @@ from typing import TYPE_CHECKING
 from patientsim import PatientAgent
 
 if TYPE_CHECKING:
-    from h_adminsim.pipeline import HospitalMAS
+    from h_adminsim.pipeline.h_mas import HospitalMAS
 
 
 

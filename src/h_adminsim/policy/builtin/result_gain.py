@@ -1,4 +1,3 @@
-from __future__ import annotations
 from importlib import resources
 from dataclasses import dataclass
 from typing import ClassVar, Optional

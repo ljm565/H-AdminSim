@@ -1,4 +1,3 @@
-from __future__ import annotations
 from types import MappingProxyType
 from typing import Iterable, Optional
 from collections.abc import Mapping as MappingABC

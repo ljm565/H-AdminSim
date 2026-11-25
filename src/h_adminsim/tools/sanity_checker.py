@@ -1,7 +1,7 @@
 from decimal import Decimal
 from typing import Union, Optional, TYPE_CHECKING
 
-from h_adminsim.registry import STATUS_CODES
+from h_adminsim.registry.errors import STATUS_CODES
 from h_adminsim.utils import colorstr
 from h_adminsim.utils.common_utils import *
 

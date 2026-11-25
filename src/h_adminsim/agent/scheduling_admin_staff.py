@@ -9,10 +9,10 @@ from langchain.agents import (
     create_openai_tools_agent, 
     create_tool_calling_agent, 
 )
-from h_adminsim.agent import BaseAgent
-from h_adminsim.utils import colorstr, log
-from h_adminsim.tools import SchedulingRule, create_tools
 
+from h_adminsim.agent.base import BaseAgent
+from h_adminsim.tools.scheduling_rule import SchedulingRule, create_tools
+from h_adminsim.utils import colorstr, log
 
 
 

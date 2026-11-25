@@ -6,14 +6,13 @@ from typing import Union, Optional, TYPE_CHECKING
 
 from patientsim import PatientAgent
 
-from h_adminsim.task import OutpatientTask
+from h_adminsim.task.op_task import OutpatientTask
 from h_adminsim.tools.sanity_checker import SanityChecker
-from h_adminsim.simulation import OPFUSchedulingSimulation
-from h_adminsim.policy import PolicyStack, load_policy_config
-from h_adminsim.registry import (
-    SCHEDULE_STATUS,
-    OPFU_PREFERENCE_PHRASE_PATIENT,
-)
+from h_adminsim.simulation.opfu_scheduling_simulation import OPFUSchedulingSimulation
+from h_adminsim.policy.stack import PolicyStack
+from h_adminsim.policy.builder import load_policy_config
+from h_adminsim.registry.variables import SCHEDULE_STATUS
+from h_adminsim.registry.phrases import OPFU_PREFERENCE_PHRASE_PATIENT
 from h_adminsim.utils import colorstr, log
 from h_adminsim.utils.mas_utils import *
 from h_adminsim.utils.fhir_utils import *
@@ -21,7 +20,7 @@ from h_adminsim.utils.common_utils import *
 from h_adminsim.utils.policy_utils import followup_patient_records, available_patient_fields
 
 if TYPE_CHECKING:
-    from h_adminsim.pipeline import HospitalMAS
+    from h_adminsim.pipeline.h_mas import HospitalMAS
     from h_adminsim.environment.hospital import HospitalEnvironment
 
 

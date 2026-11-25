@@ -1,4 +1,3 @@
-from __future__ import annotations
 from dataclasses import dataclass, field, fields, is_dataclass
 from typing import ClassVar, Iterable, Mapping, Optional, TYPE_CHECKING
 

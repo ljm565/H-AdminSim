@@ -1,6 +1,6 @@
 from copy import deepcopy
 from typing import Optional
-from h_adminsim.tools import DataConverter
+from h_adminsim.tools.data_converter import DataConverter
 
 from h_adminsim.utils.common_utils import personal_id_to_birth_date
 

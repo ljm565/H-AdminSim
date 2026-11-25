@@ -1,6 +1,5 @@
-from __future__ import annotations
-from dataclasses import fields, is_dataclass
 from typing import ClassVar, TYPE_CHECKING
+from dataclasses import fields, is_dataclass
 
 if TYPE_CHECKING:
     from h_adminsim.policy.context import ReviewContext

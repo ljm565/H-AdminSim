@@ -5,16 +5,16 @@ from typing import Callable, Optional, TYPE_CHECKING
 from langchain.agents import AgentExecutor
 from langchain_core.messages import HumanMessage, AIMessage
 
-from h_adminsim.registry import STATUS_CODES
 from h_adminsim.registry.errors import (
+    STATUS_CODES,
     SchedulingError,
     DataNotFoundError,
     AgentSelectionError,
 )
-from h_adminsim.tools import scheduling_tool_calling
 from h_adminsim.tools.callback import TokenUsageCallback
 from h_adminsim.tools.sanity_checker import SanityChecker
 from h_adminsim.simulation.op_simulation import OPSimulation
+from h_adminsim.tools.scheduling_rule import scheduling_tool_calling
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.prompt_utils import load_prompt
 from h_adminsim.utils.common_utils import (
@@ -26,9 +26,9 @@ from h_adminsim.utils.common_utils import (
 )
 
 if TYPE_CHECKING:
-    from h_adminsim.tools import SchedulingRule
-    from h_adminsim.agent import SchedulingAdminStaffAgent
+    from h_adminsim.tools.scheduling_rule import SchedulingRule
     from h_adminsim.environment.hospital import HospitalEnvironment
+    from h_adminsim.agent.scheduling_admin_staff import SchedulingAdminStaffAgent
 
 
 

@@ -1,12 +1,11 @@
-from __future__ import annotations
 import os
 import glob
 import json
-from dataclasses import dataclass, field, fields, is_dataclass
 from typing import ClassVar, Optional, Union
+from dataclasses import dataclass, field, fields, is_dataclass
 
-from h_adminsim.utils import log, colorstr
 from h_adminsim.registry.errors import PolicyError
+from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.filesys_utils import get_files, json_load, json_save_fast
 
 

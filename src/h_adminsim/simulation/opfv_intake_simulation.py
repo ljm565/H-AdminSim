@@ -7,7 +7,7 @@ from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.common_utils import *
 
 if TYPE_CHECKING:
-    from h_adminsim.pipeline import HospitalMAS
+    from h_adminsim.pipeline.h_mas import HospitalMAS
 
 
 

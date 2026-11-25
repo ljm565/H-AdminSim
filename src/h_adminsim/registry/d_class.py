@@ -1,9 +1,8 @@
-from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from h_adminsim.agent import BaseAgent
+    from h_adminsim.agent.base import BaseAgent
 
 
 
@@ -23,7 +22,7 @@ class MASNode:
     a router that delegates to one child per turn.
     """
     name: str
-    agent: BaseAgent
+    agent: "BaseAgent"
     children: dict[str, "MASNode"] = field(default_factory=dict)
     parent: Optional["MASNode"] = None
     description: Optional[str] = None

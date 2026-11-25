@@ -1,4 +1,3 @@
-from __future__ import annotations
 import os
 import math
 from dataclasses import replace
@@ -18,9 +17,9 @@ from h_adminsim.registry.policy import (
     POLICY_REQUIRES_METRIC_PREFIX,   
     POLICY_REQUIRES_PATIENT_PREFIX,
 )
-from h_adminsim.policy.context import RestrictContext, ReviewContext, _declared
 from h_adminsim.policy.metric import Metric
 from h_adminsim.policy.evaluation import Evaluation
+from h_adminsim.policy.context import RestrictContext, ReviewContext, _declared
 
 
 

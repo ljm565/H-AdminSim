@@ -5,12 +5,12 @@ from typing import Optional
 from datetime import timedelta
 from decimal import Decimal, getcontext
 
-from h_adminsim.task import OutpatientTask
+from h_adminsim.task.op_task import OutpatientTask
 from h_adminsim.task.opfv_task import *
 from h_adminsim.task.opfu_task import *
-from h_adminsim.registry import SCHEDULE_STATUS
+from h_adminsim.registry.variables import SCHEDULE_STATUS
 from h_adminsim.task.fhir_manager import FHIRManager
-from h_adminsim.tools import DataConverter
+from h_adminsim.tools.data_converter import DataConverter
 from h_adminsim.environment.hospital import HospitalEnvironment
 from h_adminsim.utils.filesys_utils import json_load, json_save_fast, get_files
 from h_adminsim.utils.common_utils import (

@@ -6,8 +6,8 @@ from typing import Union, Optional
 from collections import defaultdict
 from decimal import Decimal, getcontext
 
-from h_adminsim.registry import SCHEDULE_STATUS
 from h_adminsim.task.fhir_manager import FHIRManager
+from h_adminsim.registry.variables import SCHEDULE_STATUS
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.fhir_utils import (
     get_all_test_info,

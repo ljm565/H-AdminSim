@@ -4,7 +4,7 @@ from importlib import resources
 from typing import Any, Union, Optional
 from datetime import datetime, timedelta
 
-from h_adminsim import registry
+from h_adminsim.registry import variables
 from h_adminsim.utils import log, colorstr
 from h_adminsim.utils.filesys_utils import txt_load, json_load
 from h_adminsim.utils.common_utils import str_to_datetime, datetime_to_str
@@ -68,17 +68,17 @@ def generate_random_names(n: int,
     if last_name_file is None:
         last_name_file = str(resources.files("h_adminsim.assets.names").joinpath("lastname.txt"))
 
-    if registry.FIRST_NAMES is None:
-        registry.FIRST_NAMES = [word.capitalize() for word in txt_load(first_name_file).split('\n') if word.strip()]
-    if registry.LAST_NAMES is None:
-        registry.LAST_NAMES = [word.capitalize() for word in txt_load(last_name_file).split('\n') if word.strip()]
+    if variables.FIRST_NAMES is None:
+        variables.FIRST_NAMES = [word.capitalize() for word in txt_load(first_name_file).split('\n') if word.strip()]
+    if variables.LAST_NAMES is None:
+        variables.LAST_NAMES = [word.capitalize() for word in txt_load(last_name_file).split('\n') if word.strip()]
 
     # Ensure unique names
     names = set()
     duplicate_name_num = {rn: 1 for rn in set(reject_list)}
     while len(names) < n:
-        first_name = random.choice(registry.FIRST_NAMES)
-        last_name = random.choice(registry.LAST_NAMES)
+        first_name = random.choice(variables.FIRST_NAMES)
+        last_name = random.choice(variables.LAST_NAMES)
         full_name = f'{first_name} {last_name}'
 
         if full_name in names or full_name in reject_list:
@@ -105,22 +105,22 @@ def generate_random_address(address_file_path: Optional[str] = None,
     if address_file_path == None:
         address_file_path = str(resources.files("h_adminsim.assets.country").joinpath("address.json"))
 
-    if registry.ADDRESSES is None:
-        registry.ADDRESSES = json_load(address_file_path)
+    if variables.ADDRESSES is None:
+        variables.ADDRESSES = json_load(address_file_path)
     
     kwargs = dict()
     if 'street' in format:
-        kwargs['street'] = f'{generate_random_number_string(random.randint(1, 2))}, {random.choice(registry.ADDRESSES["street"])}'
+        kwargs['street'] = f'{generate_random_number_string(random.randint(1, 2))}, {random.choice(variables.ADDRESSES["street"])}'
     if 'neighborhood' in format:
-        kwargs['neighborhood'] = random.choice(registry.ADDRESSES['neighborhood'])
+        kwargs['neighborhood'] = random.choice(variables.ADDRESSES['neighborhood'])
     if 'district' in format:
-        kwargs['district'] = random.choice(registry.ADDRESSES['district'])
+        kwargs['district'] = random.choice(variables.ADDRESSES['district'])
     if 'county' in format:
-        kwargs['county'] = random.choice(registry.ADDRESSES['county'])
+        kwargs['county'] = random.choice(variables.ADDRESSES['county'])
     if 'city' in format:
-        kwargs['city'] = random.choice(registry.ADDRESSES['city'])
+        kwargs['city'] = random.choice(variables.ADDRESSES['city'])
     if 'state' in format:
-        kwargs['state'] = random.choice(registry.ADDRESSES['state'])
+        kwargs['state'] = random.choice(variables.ADDRESSES['state'])
     
     return format.format(**kwargs)
 
@@ -171,21 +171,21 @@ def generate_random_symptom(department: str,
     if symptom_file_path == None:
         symptom_file_path = str(resources.files("h_adminsim.assets.departments").joinpath("symptom.json"))
 
-    if registry.SYMPTOM_MAP is None:
-        registry.SYMPTOM_MAP = json_load(symptom_file_path)
+    if variables.SYMPTOM_MAP is None:
+        variables.SYMPTOM_MAP = json_load(symptom_file_path)
     
-    if department in registry.SYMPTOM_MAP:
+    if department in variables.SYMPTOM_MAP:
         # Ensure that the disease can only be treated in a single medical specialty
         if ensure_unique_department:
-            unique_diseases = [dis for dis in registry.SYMPTOM_MAP[department] if len(dis[list(dis.keys())[0]]['department']) == 1]
+            unique_diseases = [dis for dis in variables.SYMPTOM_MAP[department] if len(dis[list(dis.keys())[0]]['department']) == 1]
             if not len(unique_diseases):
                 log(f"In the specified {department}, there is no disease that can be treated within that specialty.\
                       As a result, if the department prediction later turns out to be a different specialty,\
                       it may not align with the patient’s preferred primary physician’s department, which can cause errors in the scheduling simulation.", 'warning')
-            disease_list = unique_diseases if len(unique_diseases) else registry.SYMPTOM_MAP[department]
+            disease_list = unique_diseases if len(unique_diseases) else variables.SYMPTOM_MAP[department]
             disease_info = random.choice(disease_list)
         else:
-            disease_info = random.choice(registry.SYMPTOM_MAP[department])
+            disease_info = random.choice(variables.SYMPTOM_MAP[department])
         disease = list(disease_info.keys())[0]
         disease_info = {'disease': disease, **disease_info[disease]}
         symptom_n = min(random.randint(min_n, max_n), len(disease_info['symptom']))
@@ -220,11 +220,11 @@ def generate_random_telecom(min_length: int = 8,
     if country_to_dial_map_file == None:
         country_to_dial_map_file = str(resources.files("h_adminsim.assets.country").joinpath("country_code.json"))
 
-    if registry.TELECOM_COUNTRY_CODE is None:
-        registry.TELECOM_COUNTRY_CODE = json_load(country_to_dial_map_file)
+    if variables.TELECOM_COUNTRY_CODE is None:
+        variables.TELECOM_COUNTRY_CODE = json_load(country_to_dial_map_file)
     
     try:
-        dial_code = registry.TELECOM_COUNTRY_CODE[country_code.upper()]
+        dial_code = variables.TELECOM_COUNTRY_CODE[country_code.upper()]
     except KeyError:
         dial_code = ''
     
@@ -351,13 +351,13 @@ def generate_random_specialty(department: str,
     if specialty_path == None:
         specialty_path = str(resources.files("h_adminsim.assets.departments").joinpath("department.json"))
 
-    if registry.SPECIALTIES is None:
+    if variables.SPECIALTIES is None:
         department_data = json_load(specialty_path)['specialty']
-        registry.SPECIALTIES = {k2: {'code': v2['code'], 'field': v2['field']} for v1 in department_data.values() for k2, v2 in v1['subspecialty'].items()}
+        variables.SPECIALTIES = {k2: {'code': v2['code'], 'field': v2['field']} for v1 in department_data.values() for k2, v2 in v1['subspecialty'].items()}
     
-    if department in registry.SPECIALTIES:
-        index = random.choice(range(len(registry.SPECIALTIES[department]['field'])))
-        return registry.SPECIALTIES[department]['field'][index], f"{registry.SPECIALTIES[department]['code']}-{index}"
+    if department in variables.SPECIALTIES:
+        index = random.choice(range(len(variables.SPECIALTIES[department]['field'])))
+        return variables.SPECIALTIES[department]['field'][index], f"{variables.SPECIALTIES[department]['code']}-{index}"
     
     if verbose:
         log(f'No matched department {department}. `{{PLACEHOLDER}}` string will return.', 'warning')
@@ -378,10 +378,10 @@ def generate_random_occupation(occupation_file_path: Optional[str] = None) -> st
     if occupation_file_path == None:
         occupation_file_path = str(resources.files("h_adminsim.assets.patient").joinpath("occupation.json"))
 
-    if registry.OCCUPATION is None:
-        registry.OCCUPATION = json_load(occupation_file_path)
+    if variables.OCCUPATION is None:
+        variables.OCCUPATION = json_load(occupation_file_path)
     
-    return random.choice(list(registry.OCCUPATION))
+    return random.choice(list(variables.OCCUPATION))
 
 
 
@@ -392,7 +392,7 @@ def generate_random_test_preference(distance: str,
     """
     Generate a first-priority test scheduling preference based on distance and occupation data.
     The occupation-based distribution is mixed with a `visit_min` one-hot distribution, where the
-    mixing weight grows with distance (see `registry.DISTANCE_VISIT_MIN_WEIGHT`):
+    mixing weight grows with distance (see `variables.DISTANCE_VISIT_MIN_WEIGHT`):
         - near: occupation only
         - medium: partially shifted toward `visit_min`
         - far: strongly shifted toward `visit_min`, weakening the occupation effect
@@ -411,16 +411,16 @@ def generate_random_test_preference(distance: str,
     Returns:
         str: First-priority test scheduling preference.
     """
-    if distance not in registry.DISTANCE_VISIT_MIN_WEIGHT:
+    if distance not in variables.DISTANCE_VISIT_MIN_WEIGHT:
         raise ValueError(colorstr("red", f"Unsupported distance: {distance}"))
 
     if occupation_file_path == None:
         occupation_file_path = str(resources.files("h_adminsim.assets.patient").joinpath("occupation.json"))
 
-    if registry.OCCUPATION is None:
-        registry.OCCUPATION = json_load(occupation_file_path)
+    if variables.OCCUPATION is None:
+        variables.OCCUPATION = json_load(occupation_file_path)
 
-    occupation_pref = registry.OCCUPATION[occupation]['test_schedule_preference']['preference']
+    occupation_pref = variables.OCCUPATION[occupation]['test_schedule_preference']['preference']
     preferred_type = occupation_pref['type']
     preferred_prob = occupation_pref['prob']
 
@@ -436,7 +436,7 @@ def generate_random_test_preference(distance: str,
                             for p in preference_candidates]
 
     # Shift the distribution toward `visit_min` as the distance increases
-    visit_min_weight = registry.DISTANCE_VISIT_MIN_WEIGHT[distance] if 'visit_min' in preference_candidates else 0.0
+    visit_min_weight = variables.DISTANCE_VISIT_MIN_WEIGHT[distance] if 'visit_min' in preference_candidates else 0.0
     probs = [(1 - visit_min_weight) * prob + (visit_min_weight if p == 'visit_min' else 0.0)
              for p, prob in zip(preference_candidates, occupation_probs)]
 
@@ -462,10 +462,10 @@ def generate_random_occupation_unavailable(occupation: str,
     if occupation_file_path == None:
         occupation_file_path = str(resources.files("h_adminsim.assets.patient").joinpath("occupation.json"))
 
-    if registry.OCCUPATION is None:
-        registry.OCCUPATION = json_load(occupation_file_path)
+    if variables.OCCUPATION is None:
+        variables.OCCUPATION = json_load(occupation_file_path)
 
-    unavailable_info = registry.OCCUPATION[occupation]['test_schedule_preference']['unavailable']
+    unavailable_info = variables.OCCUPATION[occupation]['test_schedule_preference']['unavailable']
     unavailable_type = unavailable_info['type']
     unavailable_prob = unavailable_info['prob']
     unavailable_detail = unavailable_info['detail']

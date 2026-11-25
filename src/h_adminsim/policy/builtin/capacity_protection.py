@@ -1,6 +1,5 @@
-from __future__ import annotations
-from dataclasses import dataclass
 from typing import ClassVar
+from dataclasses import dataclass
 
 from h_adminsim.utils import colorstr
 from h_adminsim.registry.errors import PolicyError

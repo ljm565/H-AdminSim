@@ -2,7 +2,7 @@ import os
 from typing import Optional
 from importlib import resources
 
-from h_adminsim.agent import BaseAgent
+from h_adminsim.agent.base import BaseAgent
 from h_adminsim.utils import colorstr, log
 
 

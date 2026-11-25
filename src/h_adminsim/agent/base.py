@@ -1,12 +1,13 @@
-from __future__ import annotations
 import re
 import json
-from abc import ABC, abstractmethod
 from typing import Optional, Union
+from abc import ABC, abstractmethod
 from patientsim.utils.common_utils import set_seed
 from patientsim.client import GeminiVertexClient, GPTAzureClient
 
-from h_adminsim.client import GeminiClient, GPTClient, VLLMClient
+from h_adminsim.client.vllm_client import VLLMClient
+from h_adminsim.client.openai_client import GPTClient
+from h_adminsim.client.google_client import GeminiClient
 from h_adminsim.utils import colorstr
 
 

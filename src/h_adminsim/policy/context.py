@@ -1,13 +1,12 @@
-from __future__ import annotations
 from types import MappingProxyType
 from typing import Iterable, Mapping, Optional
 from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass, field, replace
 
-from h_adminsim.utils.common_utils import get_iso_time, str_to_datetime
-from h_adminsim.utils.policy_utils import deep_freeze, thaw
 from h_adminsim.registry.errors import PolicyRequirementError
 from h_adminsim.registry.policy import POLICY_REQUIRES_PATIENT_PREFIX, POLICY_REQUIRES_METRIC_PREFIX
+from h_adminsim.utils.policy_utils import deep_freeze, thaw
+from h_adminsim.utils.common_utils import get_iso_time, str_to_datetime
 
 
 
