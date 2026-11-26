@@ -1029,3 +1029,24 @@ def encode_non_finite(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [encode_non_finite(v) for v in value]
     return value
+
+
+
+def decode_non_finite(value: Any) -> Any:
+    """
+    Recursively copy `value` with every `'inf'` / `'-inf'` string turned back into an infinite float (the inverse of
+    `encode_non_finite`). Apply it only to values that hold numbers, since it converts any such string.
+
+    Args:
+        value (Any): Structure loaded from JSON (dicts, lists, scalars).
+
+    Returns:
+        Any: A copy with infinities restored.
+    """
+    if isinstance(value, str) and value in ('inf', '-inf'):
+        return float(value)
+    if isinstance(value, dict):
+        return {k: decode_non_finite(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [decode_non_finite(v) for v in value]
+    return value

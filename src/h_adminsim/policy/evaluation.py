@@ -6,6 +6,7 @@ from dataclasses import dataclass, field, fields, is_dataclass
 
 from h_adminsim.registry.errors import PolicyError
 from h_adminsim.utils import log, colorstr
+from h_adminsim.utils.common_utils import decode_non_finite
 from h_adminsim.utils.filesys_utils import get_files, json_load, json_save_fast
 
 
@@ -51,7 +52,8 @@ class RunData:
         The successful follow-up bookings (the ``pred`` of every passed record that holds a patient booking).
 
         Each booking carries ``patient``, ``urgency``, ``preference``, ``test`` (booked slots with ``result_ready_at``),
-        ``negotiation_metrics`` (built-in and user metrics, the decision, ``decided_by``), ``restrictions``
+        ``negotiation_metrics`` (built-in and user metrics, the decision, ``decided_by``; infinite values such as a free
+        win's ``gpc`` are floats), ``restrictions``
         (``{policy id: [[test_code, date], ...]}`` blocked for this booking's tests) and ``capacity_protection``.
 
         Returns:
@@ -102,6 +104,10 @@ class RunData:
         keys = ('gt', 'pred', 'status', 'status_code')
         columns = {k: _flat(task.get(k) or []) for k in keys}
         records = [dict(zip(keys, values)) for values in zip(*(columns[k] for k in keys))]
+        for r in records:   # infinite metrics (a free win's gpc / ti) are saved as 'inf'; give evaluations floats
+            pred = r['pred']
+            if isinstance(pred, dict) and isinstance(pred.get('negotiation_metrics'), dict):
+                r['pred'] = {**pred, 'negotiation_metrics': decode_non_finite(pred['negotiation_metrics'])}
         return cls(path=path, result_file=files[0], metadata=metadata, records=records)
 
 

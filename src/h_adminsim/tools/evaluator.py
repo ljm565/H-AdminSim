@@ -12,6 +12,7 @@ from h_adminsim.utils.common_utils import (
     hours_between,
     str_to_datetime,
     encode_non_finite,
+    decode_non_finite,
     convert_time_to_segment,
 )
 from h_adminsim.tools.negotiation_metrics import frontload_pairs
@@ -402,11 +403,10 @@ class NegotiationRecordMixin:
         Returns:
             Iterator[dict]: The metric dicts (None values stay None).
         """
-        restore = {'inf': float('inf'), '-inf': float('-inf')}
         for fp in cls._iter_preds(files):
             m = fp.get('negotiation_metrics')
             if isinstance(m, dict):
-                yield {k: (restore[v] if isinstance(v, str) and v in restore else v) for k, v in m.items()}
+                yield decode_non_finite(m)
 
 
     @staticmethod
