@@ -23,7 +23,6 @@ from openai import (
 from typing import Optional, Union, Any, Callable, Iterable
 
 from h_adminsim.registry import variables
-from h_adminsim.registry.models import Hospital
 from h_adminsim.registry.d_class import ConversationState
 from h_adminsim.registry.phrases import OPFU_UNAVAILABLE_PHRASE_PATIENT, OPFU_UNAVAILABLE_PHRASE_STAFF
 from h_adminsim.registry.variables import HALF_DAY_BOUNDARY_HOUR, HALF_DAY_ALIASES, HALF_DAY_WORD, HALF_DAY_RANGE
@@ -95,80 +94,6 @@ def to_dict(obj: Any) -> Any:
         return [to_dict(v) for v in obj]
     else:
         return obj
-
-
-
-def convert_info_to_obj(data: Information) -> Hospital:
-    """
-    Convert hospital data held in an Information object to a Hospital object.
-
-    Args:
-        data (Information): Hospital data with ``metadata``, ``department``, ``doctor``, and ``patient``.
-
-    Returns:
-        Hospital: The Hospital object.
-    """
-    data = to_dict(data)  # Convert Information to dict for easier access
-    
-    # Make doctor to patient map due to weakly linked patient data in the data dictionary
-    doctor_to_patient = dict()
-    for patient, patient_values in data['patient'].items():
-        doctor = patient_values['attending_physician']
-        if doctor in doctor_to_patient:
-            doctor_to_patient[doctor].append(patient)
-        else:
-            doctor_to_patient[doctor] = [patient]
-    
-    hospital_obj = Hospital(**data.get('metadata'))
-    for department, department_values in data.get('department').items():
-        filtered_values1 = {k: v for k, v in department_values.items() if k != 'doctor'}
-        department_obj = hospital_obj.add_department(department, **filtered_values1)
-        
-        for doctor in department_values['doctor']:
-            doctor_values = data.get('doctor').get(doctor)
-            filtered_values2 = {k: v for k, v in doctor_values.items() if k != 'department'}
-            doctor_obj = department_obj.add_doctor(doctor, **filtered_values2)
-            for patient in doctor_to_patient[doctor]:
-                patient_values = data.get('patient').get(patient)
-                filtered_values3 = {k: v for k, v in patient_values.items() if k != 'attending_physician'}
-                doctor_obj.add_patient(patient, **filtered_values3)
-    
-    return hospital_obj
-
-
-
-def convert_obj_to_info(hospital_obj: Hospital) -> Information:
-    """
-    Convert a Hospital object to an Information object.
-
-    Args:
-        hospital_obj (Hospital): The Hospital object to convert.
-
-    Returns:
-        Information: Hospital data with ``metadata``, ``department``, ``doctor``, and ``patient``.
-    """
-    filtered_values = {k: v for k, v in hospital_obj.__dict__.items() if k not in ['department', 'time']}
-    filtered_values['time'] = Information(**hospital_obj.time)
-    metadata = Information(**filtered_values)
-    
-    department_info, doctor_info, patient_info = dict(), dict(), dict()
-    for department_obj in hospital_obj.department:
-        filtered_values = {k: v for k, v in department_obj.__dict__.items() if k not in ['name', 'doctor']}
-        filtered_values['doctor'] = [doctor_obj.name for doctor_obj in department_obj.doctor]
-        department_info[department_obj.name] = {**filtered_values}
-        
-        for doctor_obj in department_obj.doctor:
-            filtered_values2 = {k: v for k, v in doctor_obj.__dict__.items() if k not in ['name', 'department', 'patient']}
-            filtered_values2['department'] = doctor_obj.department.name
-            doctor_info[doctor_obj.name] = {**filtered_values2}
-
-            for patient_obj in doctor_obj.patient:
-                filtered_values3 = {k: v for k, v in patient_obj.__dict__.items() if k not in ['name', 'department', 'attending_physician']}
-                filtered_values3['department'] = doctor_obj.department.name
-                filtered_values3['attending_physician'] = doctor_obj.name
-                patient_info[patient_obj.name] = {**filtered_values3}
-
-    return Information(metadata=metadata, department=department_info, doctor=doctor_info, patient=patient_info)
 
 
 
@@ -626,27 +551,6 @@ def convert_time_list_to_merged_time(start: float,
         grouped = group_consecutive_segments(segments)
         time_list = [list(convert_segment_to_time(start, end, interval, group)) for group in grouped]
     return time_list
-
-
-
-def calculate_age(birthdate_str: str) -> int:
-    """
-    Current age in years from a birthdate.
-
-    Args:
-        birthdate_str (str): Birthdate in 'YYYY-MM-DD' format.
-
-    Returns:
-        int: Age in years.
-    """
-    birthdate = datetime.strptime(birthdate_str, "%Y-%m-%d").date()
-    today = datetime.today().date()
-    
-    age = today.year - birthdate.year
-    # Subtract 1 if the birthday has not occurred yet this year
-    if (today.month, today.day) < (birthdate.month, birthdate.day):
-        age -= 1
-    return age
 
 
 

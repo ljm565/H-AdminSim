@@ -234,66 +234,6 @@ class Evaluator:
             log(f"total            : ${avg['total']:.6f}")
 
 
-    def supervisor_evaluation(self):
-        """
-        Log how often the supervisor (or feedback) intervened and with what outcome.
-        """
-        aggregated_results = dict()
-        for file in self.files:
-            data = json_load(file)
-
-            for task, value in data.items():
-                if not task in aggregated_results:
-                    aggregated_results[task] = {'status': [], 'trial': []}
-
-                aggregated_results[task]['status'].append(value['status'])
-                aggregated_results[task]['trial'].append(value['trial'])
-
-        log('-----Supervisor (or feedback) Evaluation----')
-        for task, value in aggregated_results.items():
-            status = sum(value['status'], [])
-            trial = sum(value['trial'], [])
-
-            if task == 'first_visit_intake':
-                total_length = len(status)
-                supervisor_effect_cnt, correct, error, tie = 0, 0, 0, 0
-                for t in trial:
-                    if 'mismatch' in t[0]:
-                        supervisor_effect_cnt += 1
-                        if 'better' in t[0]:
-                            correct += 1
-                        elif 'worse' in t[0]:
-                            error += 1
-                        else:
-                            tie += 1
-
-                correct_p = correct/supervisor_effect_cnt*100 if supervisor_effect_cnt > 0 else 0
-                error_p = error/supervisor_effect_cnt*100 if supervisor_effect_cnt > 0 else 0
-                tie_p = tie/supervisor_effect_cnt*100 if supervisor_effect_cnt > 0 else 0
-                log(f'{colorstr(task):<27} | length: {total_length}, effected: {supervisor_effect_cnt} ({(supervisor_effect_cnt/total_length)*100:.2f}%)')
-                log(f'    - {colorstr("green", "correct")}: {correct} ({correct_p:.2f}%), {colorstr("red", "worse")}: {error} ({error_p:.2f}%), {colorstr("yellow", "tie")}: {tie} ({tie_p:.2f}%)')
-
-            elif task == 'first_visit_scheduling':
-                feedback_n = dict()
-                total_length = len(status)
-                supervisor_effect_cnt, correct, tie = 0, 0, 0
-                for t in trial:
-                    if isinstance(t, list) and len(t) > 1:
-                        supervisor_effect_cnt += 1
-                        if t[-1] == 'pass':
-                            correct += 1
-                            feedback_n[len(t)-1] = feedback_n.setdefault(len(t)-1, 0) + 1
-                        else:
-                            tie += 1
-
-                desc = ', '.join([f'{f}-feedback: {n}' for f, n in sorted(feedback_n.items())])
-                correct_p = correct/supervisor_effect_cnt*100 if supervisor_effect_cnt > 0 else 0
-                tie_p = tie/supervisor_effect_cnt*100 if supervisor_effect_cnt > 0 else 0
-                log(f'{colorstr(task):<27} | length: {total_length}, effected: {supervisor_effect_cnt} ({(supervisor_effect_cnt/total_length)*100:.2f}%)')
-                log(f'    - {colorstr("green", "correct")}: {correct} ({correct_p:.2f}%), {colorstr("yellow", "tie")}: {tie} ({tie_p:.2f}%)')
-                log(f'    - Feedback distribution: {desc}')
-
-
     def human_evaluation(self):
         """
         Log arena wins and average scores per model from the tab-separated human evaluation files.

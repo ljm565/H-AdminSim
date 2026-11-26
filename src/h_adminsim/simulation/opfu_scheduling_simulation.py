@@ -1446,42 +1446,6 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
         return prediction
 
 
-    def test_canceling(self,
-                       client: AgentExecutor,
-                       patient_intention: str,
-                       chat_history: list = []) -> dict:
-        """
-        Follow-up naming for `canceling`, which cancels the patient's scheduled tests.
-
-        Args:
-            client (AgentExecutor): The agent executor to handle tool calls or conversation.
-            patient_intention (str): The patient's utterance expressing a cancellation request.
-            chat_history (list, optional): Chat history. Defaults to [].
-
-        Returns:
-            dict: Cancelling processed result.
-        """
-        return self.canceling(client, patient_intention, chat_history)
-
-
-    def test_rescheduling(self,
-                          client: AgentExecutor,
-                          patient_intention: str,
-                          chat_history: list = []) -> dict:
-        """
-        Follow-up naming for `rescheduling`, which moves the patient's whole test set earlier.
-
-        Args:
-            client (AgentExecutor): The agent executor to handle tool calls or conversation.
-            patient_intention (str): The patient's utterance expressing a rescheduling request.
-            chat_history (list, optional): Chat history. Defaults to [].
-
-        Returns:
-            dict: Rescheduling processed result.
-        """
-        return self.rescheduling(client, patient_intention, chat_history=chat_history)
-
-
     def test_scheduling_simulate(self,
                                  gt_data: list[dict],
                                  staff_known_data: dict,
