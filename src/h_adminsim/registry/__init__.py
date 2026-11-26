@@ -1,4 +1,3 @@
-from .pydantic_models import PromptRequest
 from .variables import (
     FIRST_NAMES,
     LAST_NAMES,
