@@ -54,7 +54,7 @@ class FirstVisitDataSynthesizer(DataSynthesizer):
                 data = DataSynthesizer.define_hospital_info(
                     self.config, hospital, department_info_path, with_follow_up=self.with_follow_up
                 )
-                data = FirstVisitDataSynthesizer.generate_first_visit_patients(self.config, data)
+                data = FirstVisitDataSynthesizer._generate_first_visit_patients(self.config, data)
                 json_save_fast(self.data_save_dir / f'hospital_{padded_int(i, len(str(self._n)))}.json', to_dict(data))
                 all_data.append(data)
             log(f"Total {len(hospitals)} data synthesizing completed. Path: `{self.data_save_dir}`", color=True)
@@ -66,7 +66,7 @@ class FirstVisitDataSynthesizer(DataSynthesizer):
 
 
     @staticmethod
-    def generate_first_visit_patients(config: 'Config', data: Information) -> Information:
+    def _generate_first_visit_patients(config: 'Config', data: Information) -> Information:
         """
         Fill the doctors' vacant slots within the simulation dates with first-visit patients.
 

@@ -25,9 +25,9 @@ class ScheduleAssigner:
         self.segments = convert_time_to_segment(self.start, self.end, self.interval)
 
 
-    def schedule_segment_assign(self,
-                                p: float,
-                                segments: Optional[list[int]] = None) -> list[list[int]]:
+    def _schedule_segment_assign(self,
+                                 p: float,
+                                 segments: Optional[list[int]] = None) -> list[list[int]]:
         """
         Randomly pick ``round(len(segments) * p)`` segments and group them into consecutive runs.
 
@@ -52,10 +52,10 @@ class ScheduleAssigner:
         return []
     
 
-    def block_segment_assign(self,
-                             p: float,
-                             block_size: int,
-                             segments: Optional[list[int]] = None) -> list[list[int]]:
+    def _block_segment_assign(self,
+                              p: float,
+                              block_size: int,
+                              segments: Optional[list[int]] = None) -> list[list[int]]:
         """
         Randomly place non-overlapping fixed-size blocks until about a proportion `p` of segments is covered.
 
@@ -96,11 +96,11 @@ class ScheduleAssigner:
         return group_consecutive_segments(sorted(used))
 
 
-    def appointment_segment_assign(self,
-                                   p: float,
-                                   min_chunk_size: int,
-                                   max_chunk_size: int,
-                                   segments: Optional[list[int]] = None) -> list[list[int]]:
+    def _appointment_segment_assign(self,
+                                    p: float,
+                                    min_chunk_size: int,
+                                    max_chunk_size: int,
+                                    segments: Optional[list[int]] = None) -> list[list[int]]:
         """
         Randomly assign appointment time segments from the remaining (unassigned) segments.
 
@@ -156,18 +156,18 @@ class ScheduleAssigner:
             segments (Optional[list[int]], optional): Specific segments (None -> all). Defaults to None.
             block_size (Optional[int], optional): If given (and not an appointment), place `block_size`-long
                                                   blocks instead of scattering single segments. Defaults to None.
-            **kwargs (Any): ``min_chunk_size`` / ``max_chunk_size`` for `appointment_segment_assign`.
+            **kwargs (Any): ``min_chunk_size`` / ``max_chunk_size`` for `_appointment_segment_assign`.
 
         Returns:
             tuple[list[list[int]], list[list[float]]]: The segment groups (e.g. [[2, 3], [5, 6, 7]]) and the
                                                        corresponding time values in hours (``([], [])`` if none).
         """
         if is_appointment:
-            time_segments = self.appointment_segment_assign(p, segments=segments, **kwargs)
+            time_segments = self._appointment_segment_assign(p, segments=segments, **kwargs)
         elif block_size:
-            time_segments = self.block_segment_assign(p, block_size, segments)
+            time_segments = self._block_segment_assign(p, block_size, segments)
         else:
-            time_segments = self.schedule_segment_assign(p, segments)
+            time_segments = self._schedule_segment_assign(p, segments)
 
         if len(time_segments):
             return time_segments, [list(convert_segment_to_time(self.start, self.end, self.interval, segments)) for segments in  time_segments]

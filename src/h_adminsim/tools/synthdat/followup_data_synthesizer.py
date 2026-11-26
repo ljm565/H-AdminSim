@@ -86,10 +86,10 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                     hospital_data = json_load(data_file)
                     
                     # Make fixed schedule of tests
-                    hospital_data['test'] = FollowUpDataSynthesizer.generate_test_schedule(
+                    hospital_data['test'] = FollowUpDataSynthesizer._generate_test_schedule(
                         self.config, hospital_data, department_info_path
                     )
-                    merged_data = FollowUpDataSynthesizer.generate_followup_patients(self.config, hospital_data)
+                    merged_data = FollowUpDataSynthesizer._generate_followup_patients(self.config, hospital_data)
 
                     if sanity_check:
                         FollowUpDataSynthesizer._sanity_check(merged_data)
@@ -113,10 +113,10 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                     hospital_data = to_dict(data)
                     
                     # Make fixed schedule of tests
-                    hospital_data['test'] = FollowUpDataSynthesizer.generate_test_schedule(
+                    hospital_data['test'] = FollowUpDataSynthesizer._generate_test_schedule(
                         self.config, hospital_data, department_info_path
                     )
-                    merged_data = FollowUpDataSynthesizer.generate_followup_patients(self.config, hospital_data)
+                    merged_data = FollowUpDataSynthesizer._generate_followup_patients(self.config, hospital_data)
 
                     if sanity_check:
                         FollowUpDataSynthesizer._sanity_check(merged_data)
@@ -137,9 +137,9 @@ class FollowUpDataSynthesizer(DataSynthesizer):
     
     
     @staticmethod
-    def generate_test_schedule(config: 'Config', 
-                               hospital_data: dict,
-                               department_info_path: Optional[str] = None) -> dict:
+    def _generate_test_schedule(config: 'Config', 
+                                hospital_data: dict,
+                                department_info_path: Optional[str] = None) -> dict:
         """
         Pick each department's tests and generate their devices' fixed schedules.
 
@@ -165,7 +165,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
         # Initialize eligible tests
         departments = list(hospital_data['department'].keys())
         eligible_tests = {
-            d: FollowUpDataSynthesizer.test_list_generator(
+            d: FollowUpDataSynthesizer._test_list_generator(
                 d,
                 fu_config.test_per_department.min,
                 fu_config.test_per_department.max,
@@ -423,7 +423,7 @@ class FollowUpDataSynthesizer(DataSynthesizer):
     
 
     @staticmethod
-    def generate_followup_patients(config: 'Config', hospital_data: dict) -> dict:
+    def _generate_followup_patients(config: 'Config', hospital_data: dict) -> dict:
         """
         Add a follow-up visit (tests and optional consultation) for each first-visit patient.
 
@@ -626,10 +626,10 @@ class FollowUpDataSynthesizer(DataSynthesizer):
     
 
     @staticmethod
-    def test_list_generator(department: str,
-                            min_n_per_department: int, 
-                            max_n_per_department: int, 
-                            file_path: Optional[str] = None) -> list[dict]:
+    def _test_list_generator(department: str,
+                             min_n_per_department: int, 
+                             max_n_per_department: int, 
+                             file_path: Optional[str] = None) -> list[dict]:
         """
         Randomly pick a department's tests, always including their dependencies.
 
@@ -704,14 +704,14 @@ class FollowUpDataSynthesizer(DataSynthesizer):
                 assert dep in final_codes, \
                     colorstr("red",
                         (
-                            f"[test_list_generator] {t['code']} depends on {dep}, "
+                            f"[_test_list_generator] {t['code']} depends on {dep}, "
                             f"but {dep} is missing in selected tests for department '{department}'"
                         )
                     )
 
         if not (min_n_per_department <= len(selected) <= max_n_per_department):
             log(
-                f"[test_list_generator] department '{department}': selected {len(selected)} tests, "
+                f"[_test_list_generator] department '{department}': selected {len(selected)} tests, "
                 f"expected [{min_n_per_department}, {max_n_per_department}]",
                 level='warning'
             )

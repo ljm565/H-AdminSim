@@ -100,7 +100,7 @@ class OutpatientFirstIntake(OutpatientTask):
     
     
     @staticmethod
-    def postprocessing_department(text: str) -> str:
+    def _postprocessing_department(text: str) -> str:
         """
         Post-processing method of text output, especially for the department decision.
 
@@ -120,7 +120,7 @@ class OutpatientFirstIntake(OutpatientTask):
 
     
     @staticmethod
-    def postprocessing_information(text: str) -> Union[str, dict]:
+    def _postprocessing_information(text: str) -> Union[str, dict]:
         """
         Post-processing method of text output, especially for the patient information extraction.
 
@@ -287,7 +287,7 @@ class OutpatientFirstIntake(OutpatientTask):
             results['token'].append(self.token_stats)
             return results
         dialogs, patient_token, admin_staff_token = output['dialog_history'], output.get('patient_token_usage'), output.get('admin_staff_token_usage')
-        prediction_department = OutpatientFirstIntake.postprocessing_department(dialogs[-1]['content'])
+        prediction_department = OutpatientFirstIntake._postprocessing_department(dialogs[-1]['content'])
 
         # LLM call: Agent which should extract demographic information of the patient and evaluation the department decision result
         dialogs = preprocess_dialog(dialogs)
@@ -314,7 +314,7 @@ class OutpatientFirstIntake(OutpatientTask):
                 **self.staff_reasoning_kwargs,
             )
 
-        prediction_supervision = OutpatientFirstIntake.postprocessing_information(prediction_supervision)
+        prediction_supervision = OutpatientFirstIntake._postprocessing_information(prediction_supervision)
         
         # Append token data
         self.save_token_data(
@@ -450,7 +450,7 @@ class OutpatientFirstScheduling(OutpatientTask):
         return sim_environment
 
 
-    def get_intake_information(self, gt: dict, agent_results: dict, doctor_information: dict) -> tuple[dict, str, bool]:
+    def _get_intake_information(self, gt: dict, agent_results: dict, doctor_information: dict) -> tuple[dict, str, bool]:
         """
         Extracts the patient name and predicted department from agent results.
         If predictions are not available, falls back to using ground truth labels.
@@ -768,7 +768,7 @@ class OutpatientFirstScheduling(OutpatientTask):
         self._TIME_UNIT = self._metadata.get('time').get('interval_hour')
         self.sanity_checker = SanityChecker(self._START_HOUR, self._END_HOUR, self._TIME_UNIT)
         doctor_information = environment.get_general_doctor_info_from_fhir() if self.fhir_integration else agent_test_data.get('doctor')
-        patient_info, department, sanity = self.get_intake_information(gt, agent_results, doctor_information)
+        patient_info, department, sanity = self._get_intake_information(gt, agent_results, doctor_information)
         intake_executed = 'first_visit_intake' in agent_results   # end-to-end if intake ran for this patient
         results = init_result_dict()
         self.reset_token_data()

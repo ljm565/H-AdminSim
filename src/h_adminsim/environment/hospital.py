@@ -544,7 +544,7 @@ class HospitalEnvironment:
         if idx >= 0:
             for turn, (i, _) in enumerate(self.waiting_list):
                 if i == idx:
-                    self.pop_waiting_list(turn, verbose)
+                    self._pop_waiting_list(turn, verbose)
                     break
             self.patient_schedules[idx]['status'] = SCHEDULE_STATUS['cancelled']
             self.patient_schedules[idx]['last_updated_time'] = self.current_time
@@ -570,7 +570,7 @@ class HospitalEnvironment:
                     log(f'{colorstr("[WAITING LIST ADDED]")}: {requested_schedule} schedule is appended to the waiting list.')
 
     
-    def pop_waiting_list(self, idx: Union[list[int], int], verbose: bool = False) -> None:
+    def _pop_waiting_list(self, idx: Union[list[int], int], verbose: bool = False) -> None:
         """
         Remove entries from the waiting list and renumber the rest.
 
@@ -698,7 +698,7 @@ class HospitalEnvironment:
                     test_info['status'] = _update_status(is_not_yet=True)
 
 
-    def reset_variable(self) -> None:
+    def _reset_variable(self) -> None:
         """
         Reset per-booking variables (currently a no-op).
         """
@@ -726,5 +726,5 @@ class HospitalEnvironment:
             if patient_schedule['schedule']:
                 self.booking_num[patient_schedule['attending_physician']] += 1
 
-        self.reset_variable()
+        self._reset_variable()
  

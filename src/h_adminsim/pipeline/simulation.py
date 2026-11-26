@@ -113,7 +113,7 @@ class Simulator:
         return task
     
     
-    def shuffle_data(self, data: dict) -> None:
+    def _shuffle_data(self, data: dict) -> None:
         """
         Shuffle the agent test data in place and (when applicable) split follow-ups into a pending pool that the run
         loop activates only after each patient's first-visit appointment has passed.
@@ -361,7 +361,7 @@ class Simulator:
 
 
     @staticmethod
-    def resume_results(agent_simulation_data: dict, results_path: str) -> tuple[dict, dict, dict, list]:
+    def _resume_results(agent_simulation_data: dict, results_path: str) -> tuple[dict, dict, dict, list]:
         """
         Resume a previously saved simulation by aligning agent results.
 
@@ -552,7 +552,7 @@ class Simulator:
             for path in agent_simulation_data_files:
                 agent_simulation_data = json_load(path)
                 agent_results, done_patients = dict(), dict()
-                self.shuffle_data(agent_simulation_data)
+                self._shuffle_data(agent_simulation_data)
                 environment = HospitalEnvironment(
                     agent_simulation_data,
                     self.fhir_url,
@@ -566,7 +566,7 @@ class Simulator:
                 # Resume the results and the virtual hospital environment
                 if resume and os.path.exists(save_path):
                     agent_simulation_data, agent_results, done_patients, virtual_first_visits = \
-                        Simulator.resume_results(agent_simulation_data, save_path)
+                        Simulator._resume_results(agent_simulation_data, save_path)
                     environment.resume(agent_results, virtual_first_visits=virtual_first_visits)
 
                 # Data per patient

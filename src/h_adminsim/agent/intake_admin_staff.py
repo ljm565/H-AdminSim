@@ -119,7 +119,7 @@ class IntakeAdminStaffAgent(BaseAgent):
         )
     
 
-    def update_system_prompt(self) -> None:
+    def _update_system_prompt(self) -> None:
         """
         Identify the current inference round stage and update the system prompt accordingly.
         """
@@ -187,7 +187,7 @@ class IntakeAdminStaffAgent(BaseAgent):
         Returns:
             str: The staff's reply.
         """
-        self.update_system_prompt()
+        self._update_system_prompt()
         response = self.client(
             user_prompt=user_prompt,
             system_prompt=self.system_prompt,

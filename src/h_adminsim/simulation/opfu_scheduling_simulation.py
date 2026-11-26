@@ -215,9 +215,9 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
                 f"Idle waiting between same-day tests: {idle} hour(s).")
 
 
-    def init_negotiation_agent(self,
-                               patient_preference: str,
-                               negotiation_metrics: dict) -> Optional["SchedulingAdminStaffAgent"]:
+    def _init_negotiation_agent(self,
+                                patient_preference: str,
+                                negotiation_metrics: dict) -> Optional["SchedulingAdminStaffAgent"]:
         """
         Standalone persuasion agent used to negotiate the patient toward ``throughput_max``.
 
@@ -1201,7 +1201,7 @@ class OPFUSchedulingSimulation(OPSchedulingSimulation):
             Information: The staff utterance for this negotiation round.
         """
         # Negotiation algorithm
-        negotiation_agent = self.init_negotiation_agent(
+        negotiation_agent = self._init_negotiation_agent(
             patient_preference=patient_preference,
             negotiation_metrics=negotiation_metrics,
         )

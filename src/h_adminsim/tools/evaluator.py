@@ -522,7 +522,7 @@ class NegotiationRecordMixin:
         R / G / U are per group: `targeted` (all targets), `switched` (accepted / forced / auto), `unswitched` (kept).
 
         Args:
-            cohort (list[dict]): Rows from `eligible_cohort`.
+            cohort (list[dict]): Rows from `_eligible_cohort`.
 
         Returns:
             dict: The statistics (group-keyed dicts for R / G / U and per-preference counts).
@@ -602,7 +602,7 @@ class NegotiationRecordMixin:
 
     
     @classmethod
-    def eligible_cohort(cls, files: Union[list[str], str]) -> list[dict]:
+    def _eligible_cohort(cls, files: Union[list[str], str]) -> list[dict]:
         """
         Negotiation-eligible patients (GPC > 0, free wins included), whatever the run's policy did.
 
@@ -1015,7 +1015,7 @@ class FollowUpVisitEvaluator(NegotiationRecordMixin, Evaluator):
             dict: ``eligible`` (per-run cohorts), ``devices`` (`_device_delta_u`), ``stats`` (per-run cohort and device summaries), ``meta``.
         """
         # Per-run eligible cohorts and their stats, in `self.all_files` order (hospital -> interpolated -> patient)
-        cohorts = [self.eligible_cohort(f) for f in self.all_files]
+        cohorts = [self._eligible_cohort(f) for f in self.all_files]
         stats = {
             'runs': list(self.all_files),
             'cohort': [{'n_total': sum(1 for _ in self._iter_metrics([f])), **self._cohort_stats(c)}

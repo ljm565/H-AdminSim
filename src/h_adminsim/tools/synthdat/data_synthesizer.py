@@ -137,7 +137,7 @@ class DataSynthesizer:
 
         # Define detailed hospital department and doctoral information
         department_info, doctor_info = dict(), dict()
-        departments = DataSynthesizer.department_list_generator(department_n, file_path=department_info_path)
+        departments = DataSynthesizer._department_list_generator(department_n, file_path=department_info_path)
         doctors = DataSynthesizer.name_list_generator(doctor_n, prefix='Dr. ')   # Doctor names are unique across all departments
         for department_data, doc_n in zip(departments, doctor_n_per_department):
             department, dep_code = department_data
@@ -234,8 +234,8 @@ class DataSynthesizer:
 
     
     @staticmethod
-    def department_list_generator(department_n: int,
-                                  file_path: Optional[str] = None) -> list[tuple[str, Optional[str]]]:
+    def _department_list_generator(department_n: int,
+                                   file_path: Optional[str] = None) -> list[tuple[str, Optional[str]]]:
         """
         Generate a list of department names based on the number of departments.
         

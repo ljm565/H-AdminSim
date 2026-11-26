@@ -171,9 +171,9 @@ class OutpatientFollowUpScheduling(OutpatientTask):
         self._patient_records_cache, self._patient_records_source_cache = records, agent_test_data
 
 
-    def get_first_visit_patient_information(self, 
-                                            gt: dict, 
-                                            environment: "HospitalEnvironment") -> tuple[int, Optional[dict]]:
+    def _get_first_visit_patient_information(self, 
+                                             gt: dict, 
+                                             environment: "HospitalEnvironment") -> tuple[int, Optional[dict]]:
         """
         Find the patient's completed first-visit booking in the environment.
 
@@ -557,7 +557,7 @@ class OutpatientFollowUpScheduling(OutpatientTask):
         self._load_patient_records(agent_test_data)
         doctor_information = environment.get_general_doctor_info_from_fhir() if self.fhir_integration else agent_test_data.get('doctor')
         test_information = environment.get_general_test_info_from_fhir() if self.fhir_integration else agent_test_data.get('test')
-        gt_idx, fv_patient_info = self.get_first_visit_patient_information(gt, environment)
+        gt_idx, fv_patient_info = self._get_first_visit_patient_information(gt, environment)
         code_to_test_name = {test['code']: test['name'] for _, tests in test_information.items() for test in tests}
         results = init_result_dict()
         self.reset_token_data()
