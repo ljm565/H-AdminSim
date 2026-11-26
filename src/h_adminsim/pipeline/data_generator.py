@@ -57,8 +57,8 @@ class DataGenerator:
 
         # Initialize necessary information
         self.config = self.load_config(config)
-        self.task = self.__task_builder(task)
-        self.__env_setup(self.config)
+        self.task = self._task_builder(task)
+        self._env_setup(self.config)
         self.fhir_url = self.config.get('fhir_url', None)
         log(f'Data saving directory: {colorstr(self.task.save_dir)}')
 
@@ -109,7 +109,7 @@ class DataGenerator:
         )
     
 
-    def __task_builder(self, task: list[str]) -> Information:
+    def _task_builder(self, task: list[str]) -> Information:
         """
         Build the synthesizers for the requested tasks.
         `follow_up_visit` cannot run standalone, so `first_visit` is added automatically when missing.
@@ -151,7 +151,7 @@ class DataGenerator:
         return _task
 
 
-    def __env_setup(self, config: Config) -> None:
+    def _env_setup(self, config: Config) -> None:
         """
         Initialize environment-level random seeds using the given configuration.
 

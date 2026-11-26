@@ -28,7 +28,7 @@ class VLLMClient:
         self.histories = list()
         self.token_usages = dict()
         self.__first_turn = True
-        self.__sanity_check()
+        self._sanity_check()
 
 
     def _init_environment(self) -> None:
@@ -41,7 +41,7 @@ class VLLMClient:
         )
 
 
-    def __sanity_check(self) -> None:
+    def _sanity_check(self) -> None:
         """
         Check that the vLLM server lists ``self.model``.
 
@@ -74,10 +74,10 @@ class VLLMClient:
             log('Conversation history has been reset.', color=True)
 
     
-    def __make_payload(self,
-                       user_prompt: str,
-                       image_path: Optional[str] = None,
-                       image_size: Optional[tuple[int, int]] = None) -> list[dict]:
+    def _make_payload(self,
+                      user_prompt: str,
+                      image_path: Optional[str] = None,
+                      image_size: Optional[tuple[int, int]] = None) -> list[dict]:
         """
         Build the user message for the chat completions API.
 
@@ -162,7 +162,7 @@ class VLLMClient:
                 self.__first_turn = False
 
             # User prompt
-            self.histories += self.__make_payload(user_prompt, image_path, image_size)
+            self.histories += self._make_payload(user_prompt, image_path, image_size)
             
             # Model response
             response = self.client.chat.completions.create(

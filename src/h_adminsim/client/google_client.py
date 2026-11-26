@@ -60,10 +60,10 @@ class GeminiClient:
             log('Conversation history has been reset.', color=True)
 
 
-    def __make_payload(self,
-                       user_prompt: str,
-                       image_path: Optional[str] = None,
-                       image_size: Optional[tuple[int, int]] = None) -> list[types.Content]:
+    def _make_payload(self,
+                      user_prompt: str,
+                      image_path: Optional[str] = None,
+                      image_size: Optional[tuple[int, int]] = None) -> list[types.Content]:
         """
         Build the user message for the Gemini API.
 
@@ -138,7 +138,7 @@ class GeminiClient:
                 self.__first_turn = False
             
             # User prompt
-            self.histories += self.__make_payload(user_prompt, image_path, image_size)
+            self.histories += self._make_payload(user_prompt, image_path, image_size)
 
             # System prompt and model response, including handling None cases
             count = 0

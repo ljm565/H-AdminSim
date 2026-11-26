@@ -70,10 +70,10 @@ class HospitalEnvironment:
             date=datetime_to_str(str_to_datetime(self._START_DATE) - timedelta(days=self._days_before), "%Y-%m-%d"),
             utc_offset=self._utc_offset
         )
-        self.avg_gap = self.__calculate_max_time_increment()
+        self.avg_gap = self._calculate_max_time_increment()
 
         # Total capacity and fixed (pre-booked) hours per (test, date)
-        self.test_capacity, self._test_fixed_booked, self.test_duration = self.__calculate_test_capacity(agent_test_data.get('test') or {})
+        self.test_capacity, self._test_fixed_booked, self.test_duration = self._calculate_test_capacity(agent_test_data.get('test') or {})
 
         # Misc.
         self.patient_schedules = list()
@@ -90,7 +90,7 @@ class HospitalEnvironment:
         self._fhir_slot_cache = None
 
 
-    def __calculate_max_time_increment(self) -> float:
+    def _calculate_max_time_increment(self) -> float:
         """
         Average gap between patient bookings: the scheduling period divided by the number of patients.
 
@@ -104,7 +104,7 @@ class HospitalEnvironment:
         return avg_gap
 
 
-    def __calculate_test_capacity(self, test_information: dict) -> tuple[dict, dict, dict]:
+    def _calculate_test_capacity(self, test_information: dict) -> tuple[dict, dict, dict]:
         """
         Working hours and fixed (pre-booked) hours of every test per date, pooled over its devices.
         A fully booked device-date is a closed day and counts toward neither.
@@ -327,7 +327,7 @@ class HospitalEnvironment:
         Returns:
             dict: ``{'doctor': {doctor name: {'department', 'specialty', 'schedule', 'workload', 'outpatient_duration'}}}``.
         """
-        def __build_single_doctor_schedule(practitioner_role: dict) -> tuple[str, dict]:
+        def _build_single_doctor_schedule(practitioner_role: dict) -> tuple[str, dict]:
             """
             Build scheduling information for a single doctor.
 
@@ -408,7 +408,7 @@ class HospitalEnvironment:
                                   if hospital_id in resource['resource']['id']]
 
             for practitioner_role in practitioner_roles:
-                doctor_name, doctor_schedule = __build_single_doctor_schedule(practitioner_role)
+                doctor_name, doctor_schedule = _build_single_doctor_schedule(practitioner_role)
                 filtered_doctor_information['doctor'][doctor_name] = doctor_schedule
         
         # Get filtered doctor information from the simulation data

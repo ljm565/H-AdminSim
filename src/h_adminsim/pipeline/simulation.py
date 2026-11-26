@@ -59,7 +59,7 @@ class Simulator:
         self.random_seed = random_seed
 
 
-    def __env_setup(self, random_seed: int, resume: bool) -> None:
+    def _env_setup(self, random_seed: int, resume: bool) -> None:
         """
         Initialize environment-level random seeds; on a fresh FHIR-integrated run, delete the server's Appointment and
         Patient resources.
@@ -537,7 +537,7 @@ class Simulator:
             verbose (bool, optional): Whether to print detailed logs during task execution. Defaults to False.
         """
         # Initialize environment
-        self.__env_setup(self.random_seed, resume)
+        self._env_setup(self.random_seed, resume)
         
         # Load agent simulation data
         is_file = os.path.isfile(simulation_data_path)

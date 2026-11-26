@@ -81,12 +81,12 @@ class SanityChecker:
             {'patient': patient_agent_status_code, 'staff': STATUS_CODES['correct']}
     
 
-    def __check_is_earliest(self, 
-                            prediction: dict, 
-                            gt_patient_condition: dict, 
-                            doctor_information: dict, 
-                            environment: "HospitalEnvironment",
-                            min_time: Optional[str] = None ) -> bool:
+    def _check_is_earliest(self, 
+                           prediction: dict, 
+                           gt_patient_condition: dict, 
+                           doctor_information: dict, 
+                           environment: "HospitalEnvironment",
+                           min_time: Optional[str] = None ) -> bool:
         """
         Check that no earlier free consultation slot exists than the predicted one.
 
@@ -246,7 +246,7 @@ class SanityChecker:
             if compare_iso_time(gt_patient_condition.get('valid_from'), date):
                 return False, STATUS_CODES['preference']['date']
         
-        is_earliest = self.__check_is_earliest(
+        is_earliest = self._check_is_earliest(
             prediction, 
             gt_patient_condition,
             doctor_information,
@@ -451,7 +451,7 @@ class SanityChecker:
                     return False, STATUS_CODES['preference']['physician']
 
                 # Check whether the schedule is the earliest or not
-                is_earliest = self.__check_is_earliest(
+                is_earliest = self._check_is_earliest(
                     {'schedule': pred_fu},
                     {**gt_patient_condition, 'preference': 'doctor', 'valid_from': None},
                     doctor_information,

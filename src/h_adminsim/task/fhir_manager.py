@@ -17,7 +17,7 @@ class FHIRManager:
         self.fhir_url = fhir_url
         
     
-    def __logging(self, response: requests.Response, verbose: bool = True) -> Optional[requests.Response]:
+    def _logging(self, response: requests.Response, verbose: bool = True) -> Optional[requests.Response]:
         """
         Log the response status code and content.
 
@@ -72,7 +72,7 @@ class FHIRManager:
         )
 
         # Log and return the response
-        return self.__logging(response, verbose)
+        return self._logging(response, verbose)
     
     
     def read(self, 
@@ -99,7 +99,7 @@ class FHIRManager:
         )
 
         # Log and return the response
-        return self.__logging(response, verbose)
+        return self._logging(response, verbose)
     
 
     def update(self, 
@@ -129,7 +129,7 @@ class FHIRManager:
         )
 
         # Log and return the response
-        return self.__logging(response, verbose)
+        return self._logging(response, verbose)
 
 
     def delete(self, resource_type: str, id: str, verbose: bool = True) -> Optional[requests.Response]:
@@ -150,7 +150,7 @@ class FHIRManager:
         )
 
         # Log and return the response
-        return self.__logging(response, verbose)
+        return self._logging(response, verbose)
 
 
     def read_all(self,
@@ -183,7 +183,7 @@ class FHIRManager:
 
         while url:
             response = requests.get(url, headers=headers)
-            self.__logging(response, verbose)
+            self._logging(response, verbose)
             try:
                 bundle = response.json()
             except Exception:
