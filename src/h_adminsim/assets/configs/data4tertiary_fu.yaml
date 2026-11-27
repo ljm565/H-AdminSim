@@ -1,0 +1,73 @@
+# Base
+seed: 9999
+
+# FHIR server url
+fhir_url: http://localhost:8080/fhir
+
+# Data configs
+project: ./hospital_data/
+data_name: tertiary_fu
+hospital_data:
+    hospital_n: 1
+    start_date:
+        min: 2025-03-17      # ISO format: YYYY-MM-DD
+        max: 2025-09-21      # ISO format: YYYY-MM-DD
+    days: 10
+    interval_hour: 0.05
+    start_hour:
+        min: 9
+        max: 10
+    end_hour:
+        min: 18
+        max: 19
+    department_per_hospital:
+        min: 9
+        max: 9
+    doctor_per_department:
+        min: 4
+        max: 5
+    working_days:                   # Number of days each doctor works within `days`, randomly assigned. Scaled up by the same ratio when `doctor_schedule_extra_days_after` extends the window
+        min: 5
+        max: 6
+    doctor_capacity_per_hour:
+        min: 1
+        max: 20
+    doctor_has_schedule_prob: 0     # The probability that a doctor has at least one fixed schedule.
+    schedule_coverage_ratio:        # If the doctor has a fixed schedule, the proportion of that schedule relative to the total working hours.
+        min: 0.4
+        max: 0.6
+    appointment_coverage_ratio:   # Proportion of appointment time scheduled with patients outside the doctor's fixed schedule.
+        min: 0.7
+        max: 0.9
+    first_visit:
+        preference:
+            type: ['asap', 'doctor', 'date']    # Types of patient preferences.
+            probs: [0.4, 0.4, 0.2]           # Types probability distribution.
+        symptom:
+            type: ['simple', 'with_history']    # Types of patient history.
+            probs: [0.2, 0.8]                   # Types probability distribution.
+    follow_up_visit:
+        doctor_schedule_extra_days_before: 9    # Clinic days added before `start_date`, holding each patient's prior first visit. Must exceed `booking_days_before_simulation` (simulation config)
+        doctor_schedule_extra_days_after: 7     # Clinic days added after `end_date`, so a late follow-up consultation still has a clinic day. Tests and the simulation clock stay within `days`
+        n_machines_per_test:
+            min: 1
+            max: 2
+        test_per_department:
+            min: 4
+            max: 6
+        test_has_schedule_prob: 1             # Probability that a test has at least one fixed schedule
+        test_fixed_schedule_ratio:              # Proportion of a test's fixed schedules relative to total working hours
+            min: 0.3
+            max: 0.4
+        test_day_closed_prob: 0.3
+        test_per_patient:
+            trial: 30
+            min: 4
+            max: 4
+        test_schedule_appointment_ratio:            # Proportion of a test's appontment schedules relative to vacant slots
+            min: 1.0
+            max: 1.0
+        cross_department_test_prob: 0.2             # Probability of tests from other departments
+        include_consultation: True                 # Whether to include post-test doctor consultation
+        preference:
+            type: ['throughput_max', 'visit_min', 'stay_min', 'indifferent']    # Types of patient preferences.

@@ -20,3 +20,4 @@ langchain-community==0.3.27
 vllm==0.10.2
 beautifulsoup4==4.13.5
 patientsim==1.1.0
+pytz==2025.2
