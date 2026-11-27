@@ -22,7 +22,7 @@ from h_adminsim.policy.context import RestrictContext, ReviewContext, PatientVie
 from h_adminsim.policy.stack import PolicyStack
 from h_adminsim.policy.metric import Metric
 from h_adminsim.policy.evaluation import Evaluation, RunData
-from h_adminsim.policy.builder import load_policy_config
+from h_adminsim.policy.builder import builtin_policy_config_dir, load_policy_config
 from h_adminsim.policy.registry import registered_policies
 from h_adminsim.tools.negotiation_metrics import NegotiationMetrics
 from h_adminsim.harness.validate import load_patient_records
@@ -50,12 +50,12 @@ def system_prompt() -> str:
 def bundled_policy_dir() -> str:
     """
     Directory of the policy configs shipped with the package (``tau.yaml``, ``capacity_protection.yaml``), which a new
-    policy can be listed with under ``schedule_task.policy_config``.
+    policy can be listed with under ``schedule_task.policy_config`` (as ``builtin:<name>`` or by path).
 
     Returns:
         str: The directory path.
     """
-    return str(resources.files('h_adminsim').joinpath('assets', 'policy'))     # `assets` has no __init__.py
+    return builtin_policy_config_dir()
 
 
 

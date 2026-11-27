@@ -12,6 +12,7 @@ from h_adminsim.registry.harness import (
 )
 from h_adminsim.registry.policy import (
     POLICY_HOOKS,
+    POLICY_FILE_PREFIX,
     POLICY_CONFIG_API_VERSION,
     POLICY_REQUIRES_PATIENT_PREFIX,
     POLICY_REQUIRES_METRIC_PREFIX,
@@ -119,7 +120,7 @@ def _config(kind: str, name: str, file_name: str, class_name: str, params: dict)
     Returns:
         str: The YAML text.
     """
-    entry = {'id': name, 'source': f"file:{file_name}:{class_name}"}
+    entry = {'id': name, 'source': f"{POLICY_FILE_PREFIX}{file_name}:{class_name}"}
     if params:
         entry['params'] = params
     return yaml.safe_dump({'api_version': POLICY_CONFIG_API_VERSION, kind: [entry]}, sort_keys=False)

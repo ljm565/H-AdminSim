@@ -4,7 +4,7 @@ seed: 9999
 # LLM model
 supervisor_model: gpt-5-nano
 task_model: gpt-5-nano
-vllm_url: http://0.0.0.0:8000     # Used only when using vllm.
+vllm_url: http://localhost:8000   # Used only when using vllm.
 
 # Simulation environment
 agent_test_data: hospital_data/primary/agent_data
@@ -14,15 +14,13 @@ integration_with_fhir: False
 # Hospital environment
 booking_days_before_simulation: 3       # Number of days before the simulation date when appointment booking can start
 fhir_max_connection_retries: 5          # Maximum number of retry attempts when retrieving data from the FHIR server
-schedule_cancellation_prob: 0.05
-request_early_schedule_prob: 0.1
 
 # Simulation conditions
 outpatient_intake:
     use_supervisor: False
     intake_max_inference: 5
 schedule_task:
-    scheduling_strategy: tool_calling   # ['llm', 'tool_calling']
+    scheduling_strategy: tool_calling   # ['reasoning', 'tool_calling']
     opfv_schedule_cancellation_prob: 0.1    # First-visit scheduling cancellation prob.
     opfv_request_early_schedule_prob: 0.15  # First-visit scheduling rescheduling prob.
     opfu_schedule_cancellation_prob: 0.05   # Follow-up-visit scheduling cancellation prob.

@@ -10,7 +10,7 @@ from typing import Callable, Iterable, Optional, Union
 import h_adminsim
 from h_adminsim.registry.errors import PolicyError, PolicyCompositionError, PolicyRequirementError
 from h_adminsim.registry.harness import HARNESS_MAX_PATIENT_VARIANTS
-from h_adminsim.registry.policy import POLICY_HOOKS
+from h_adminsim.registry.policy import POLICY_HOOKS, POLICY_FILE_PREFIX
 from h_adminsim.policy.base import Policy
 from h_adminsim.policy.builder import build_policy, load_policy_config
 from h_adminsim.policy.context import ReviewContext
@@ -165,8 +165,8 @@ def _source_files(stack: PolicyStack) -> dict:
     """
     files = {}
     for obj in stack.policies + stack.metrics:
-        if obj.source and obj.source.startswith('file:'):
-            path = obj.source[len('file:'):].rpartition(':')[0]
+        if obj.source and obj.source.startswith(POLICY_FILE_PREFIX):
+            path = obj.source[len(POLICY_FILE_PREFIX):].rpartition(':')[0]
         else:
             path = inspect.getsourcefile(type(obj))
         if path:
@@ -501,7 +501,7 @@ def validate_policy(path: str,
     _static_checks(tree, path, report)
 
     try:
-        policy = build_policy(f"file:{os.path.abspath(path)}:{class_name}", params)
+        policy = build_policy(f"{POLICY_FILE_PREFIX}{os.path.abspath(path)}:{class_name}", params)
     except Exception as e:
         cause = e.__cause__ if isinstance(e, PolicyError) and e.__cause__ else e
         message = plain_text(e) if isinstance(e, PolicyError) else f"{type(e).__name__}: {e}"

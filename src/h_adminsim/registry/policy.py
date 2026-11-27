@@ -23,6 +23,10 @@ POLICY_ENTRY_KEYS = frozenset({'id', 'source', 'params'})
 # Param value naming a file declared under the config's `assets:` (`asset:<id>`), replaced by that file's path
 POLICY_ASSET_PREFIX = 'asset:'
 
+# Policy file prefixes: `builtin:<name>` / `file:<path.py>:<ClassName>`
+POLICY_BUILTIN_PREFIX = 'builtin:'
+POLICY_FILE_PREFIX = 'file:'
+
 # `requires` entry prefixes: `patient.<field>` / `metric.<id>`
 POLICY_REQUIRES_PATIENT_PREFIX = 'patient.'
 POLICY_REQUIRES_METRIC_PREFIX = 'metric.'

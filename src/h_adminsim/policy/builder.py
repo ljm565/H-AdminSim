@@ -4,13 +4,16 @@ import yaml
 import shutil
 import hashlib
 import importlib.util
+from importlib import resources
 from typing import Any, Callable, Optional, Union
 
 from h_adminsim.utils import colorstr
 from h_adminsim.registry.errors import PolicyError
 from h_adminsim.registry.policy import (
     POLICY_ENTRY_KEYS,
+    POLICY_FILE_PREFIX,
     POLICY_ASSET_PREFIX,
+    POLICY_BUILTIN_PREFIX,
     POLICY_CONFIG_KEYS,
     POLICY_CONFIG_API_VERSION,
 )
@@ -49,9 +52,49 @@ def _unique_name(name: str, taken: set) -> str:
 
 
 
+def builtin_policy_config_dir() -> str:
+    """
+    Directory of the policy configs shipped with the package (``tau.yaml``, ``capacity_protection.yaml``), which
+    `policy_config` lists as ``builtin:<name>``.
+
+    Returns:
+        str: The directory path.
+    """
+    return str(resources.files('h_adminsim').joinpath('assets', 'policy'))     # `assets` has no __init__.py
+
+
+def _config_path(entry: Union[str, os.PathLike]) -> str:
+    """
+    The absolute path of one `policy_config` entry: a file path, or ``builtin:<name>`` for a config shipped with the
+    package (``h_adminsim/assets/policy/<name>.yaml``).
+
+    Args:
+        entry (Union[str, os.PathLike]): The entry.
+
+    Raises:
+        PolicyError: If a ``builtin:`` name is not a shipped config.
+
+    Returns:
+        str: The absolute path.
+    """
+    entry = os.fspath(entry)
+    if not entry.startswith(POLICY_BUILTIN_PREFIX):
+        return os.path.abspath(entry)
+
+    name = entry[len(POLICY_BUILTIN_PREFIX):]
+    directory = builtin_policy_config_dir()
+    path = os.path.join(directory, f'{name}.yaml')
+    if not name or os.path.basename(name) != name or not os.path.isfile(path):
+        shipped = sorted(f[:-len('.yaml')] for f in os.listdir(directory) if f.endswith('.yaml'))
+        raise PolicyError(colorstr("red", f"Unknown built-in policy config {entry!r}; available: "
+                                          f"{', '.join(POLICY_BUILTIN_PREFIX + n for n in shipped)}."))
+    return path
+
+
 def _config_paths(paths: Optional[Union[str, os.PathLike, list]] = None) -> list:
     """
-    Normalize a `policy_config` value into a list of absolute paths.
+    Normalize a `policy_config` value into a list of absolute paths (``builtin:<name>`` entries become the shipped
+    configs' paths).
 
     Args:
         paths (Optional[Union[str, os.PathLike, list]], optional): One policy config path, or a list of paths in
@@ -74,7 +117,7 @@ def _config_paths(paths: Optional[Union[str, os.PathLike, list]] = None) -> list
     except TypeError:
         raise PolicyError(colorstr("red", f"`policy_config` must be a path or a list of paths, got {type(paths).__name__}."))
     
-    return [os.path.abspath(os.fspath(p)) for p in paths]
+    return [_config_path(p) for p in paths]
 
 
 
@@ -191,13 +234,13 @@ def build_policy(source: str,
         raise PolicyError(colorstr("red", f"Policy `source` must be a non-empty string, got {source!r}."))
 
     digest = None
-    if source.startswith('file:'):
-        cls, path, digest = _load_file_class(source[len('file:'):], base_dir, validate=validate_policy_class, kind='policy')
-        source = f"file:{path}:{cls.__name__}"
+    if source.startswith(POLICY_FILE_PREFIX):
+        cls, path, digest = _load_file_class(source[len(POLICY_FILE_PREFIX):], base_dir, validate=validate_policy_class, kind='policy')
+        source = f"{POLICY_FILE_PREFIX}{path}:{cls.__name__}"
     else:
-        name = source[len('builtin:'):] if source.startswith('builtin:') else source
+        name = source[len(POLICY_BUILTIN_PREFIX):] if source.startswith(POLICY_BUILTIN_PREFIX) else source
         cls = get_policy_class(name)
-        source = f"builtin:{name}"
+        source = f"{POLICY_BUILTIN_PREFIX}{name}"
 
     try:
         policy = cls(**dict(params or {}))
@@ -237,13 +280,13 @@ def build_metric(source: str,
         raise PolicyError(colorstr("red", f"Metric `source` must be a non-empty string, got {source!r}."))
 
     digest = None
-    if source.startswith('file:'):
-        cls, path, digest = _load_file_class(source[len('file:'):], base_dir, validate=validate_metric_class, kind='metric')
-        source = f"file:{path}:{cls.__name__}"
+    if source.startswith(POLICY_FILE_PREFIX):
+        cls, path, digest = _load_file_class(source[len(POLICY_FILE_PREFIX):], base_dir, validate=validate_metric_class, kind='metric')
+        source = f"{POLICY_FILE_PREFIX}{path}:{cls.__name__}"
     else:
-        name = source[len('builtin:'):] if source.startswith('builtin:') else source
+        name = source[len(POLICY_BUILTIN_PREFIX):] if source.startswith(POLICY_BUILTIN_PREFIX) else source
         cls = get_metric_class(name)
-        source = f"builtin:{name}"
+        source = f"{POLICY_BUILTIN_PREFIX}{name}"
 
     try:
         metric = cls(**dict(params or {}))
@@ -282,13 +325,13 @@ def build_evaluation(source: str,
         raise PolicyError(colorstr("red", f"Evaluation `source` must be a non-empty string, got {source!r}."))
 
     digest = None
-    if source.startswith('file:'):
-        cls, path, digest = _load_file_class(source[len('file:'):], base_dir, validate=validate_evaluation_class, kind='evaluation')
-        source = f"file:{path}:{cls.__name__}"
+    if source.startswith(POLICY_FILE_PREFIX):
+        cls, path, digest = _load_file_class(source[len(POLICY_FILE_PREFIX):], base_dir, validate=validate_evaluation_class, kind='evaluation')
+        source = f"{POLICY_FILE_PREFIX}{path}:{cls.__name__}"
     else:
-        name = source[len('builtin:'):] if source.startswith('builtin:') else source
+        name = source[len(POLICY_BUILTIN_PREFIX):] if source.startswith(POLICY_BUILTIN_PREFIX) else source
         cls = get_evaluation_class(name)
-        source = f"builtin:{name}"
+        source = f"{POLICY_BUILTIN_PREFIX}{name}"
 
     try:
         evaluation = cls(**dict(params or {}))
@@ -466,8 +509,10 @@ def load_policy_config(paths: Optional[Union[str, os.PathLike, list]] = None) ->
     Load one or more policy config YAML files into the run's policies.
 
     Several files are applied in the given order (priority order: the first file's policies come first), so
-    independent policies such as `capacity_protection.yaml` and `tau.yaml` can be kept in separate files. Relative
-    ``file:`` sources resolve against the directory of the YAML file that names them.
+    independent policies such as `capacity_protection.yaml` and `tau.yaml` can be kept in separate files. A file is a
+    path, or ``builtin:<name>`` for a config shipped with the package (``builtin:tau``,
+    ``builtin:capacity_protection``). Relative ``file:`` sources resolve against the directory of the YAML file that
+    names them.
 
     Format of one file::
 
@@ -488,11 +533,11 @@ def load_policy_config(paths: Optional[Union[str, os.PathLike, list]] = None) ->
     Asset files are copied into the run folder with the policies (see `snapshot_policy_config`).
 
     Args:
-        paths (Optional[Union[str, os.PathLike, list]], optional): A policy config file, or a list of them in priority
-            order. None (or an empty list) builds `default_policies()`. Defaults to None.
+        paths (Optional[Union[str, os.PathLike, list]], optional): A policy config file (path or ``builtin:<name>``),
+            or a list of them in priority order. None (or an empty list) builds `default_policies()`. Defaults to None.
 
     Raises:
-        PolicyError: If a file is missing or is not valid YAML.
+        PolicyError: If a file is missing (or not a shipped ``builtin:`` config) or is not valid YAML.
 
     Returns:
         PolicyStack: The run's policies and metrics.
@@ -577,13 +622,13 @@ def snapshot_policy_config(paths: Union[str, os.PathLike, list],
             rewritten = True
         for entry in [e for key in ('policies', 'metrics', 'evaluations') for e in (data.get(key) or [])]:
             source = entry.get('source')
-            if not (isinstance(source, str) and source.startswith('file:')):
+            if not (isinstance(source, str) and source.startswith(POLICY_FILE_PREFIX)):
                 continue
-            code_path, class_name = _resolve_file_source(source[len('file:'):], os.path.dirname(path))
+            code_path, class_name = _resolve_file_source(source[len(POLICY_FILE_PREFIX):], os.path.dirname(path))
             if code_path not in copied_code:
                 copied_code[code_path] = _unique_name(f"{i:02d}_{os.path.basename(code_path)}", taken)
                 shutil.copyfile(code_path, os.path.join(snapshot_dir, copied_code[code_path]))
-            entry['source'] = f"file:{copied_code[code_path]}:{class_name}"
+            entry['source'] = f"{POLICY_FILE_PREFIX}{copied_code[code_path]}:{class_name}"
             rewritten = True
 
         target = os.path.join(snapshot_dir, name)
