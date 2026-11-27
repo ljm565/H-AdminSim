@@ -10,6 +10,7 @@ from h_adminsim.utils import colorstr
 from h_adminsim.registry.errors import PolicyError
 from h_adminsim.registry.policy import (
     POLICY_ENTRY_KEYS,
+    POLICY_ASSET_PREFIX,
     POLICY_CONFIG_KEYS,
     POLICY_CONFIG_API_VERSION,
 )
@@ -135,11 +136,12 @@ def _load_file_class(spec: str,
     path, class_name = _resolve_file_source(spec, base_dir, kind)
 
     with open(path, 'rb') as f:
-        digest = hashlib.sha256(f.read()).hexdigest()
+        source = f.read()
+    digest = hashlib.sha256(source).hexdigest()
 
     # One module per file content, so a re-load of the same file reuses it and an edited file gets a fresh module
     module_name = f"h_adminsim_user_code_{digest[:16]}"
-    
+
     # Reuse the module if this file content was already imported
     module = sys.modules.get(module_name)
 
@@ -149,7 +151,9 @@ def _load_file_class(spec: str,
         module = importlib.util.module_from_spec(spec_obj)
         sys.modules[module_name] = module      # Register before executing, as `import` does (dataclasses look the module up)
         try:
-            spec_obj.loader.exec_module(module)
+            # Run the bytes hashed above instead of `loader.exec_module`, so no `__pycache__` is written next to the
+            # user's file and the code run is exactly the content recorded by its sha256
+            exec(compile(source, path, 'exec'), module.__dict__)
         except Exception as e:
             del sys.modules[module_name]       # Drop the half-initialized module so a retry imports the file again
             raise PolicyError(colorstr("red", f"Failed to import {kind} file {path}: {type(e).__name__}: {e}")) from e
@@ -311,7 +315,66 @@ def default_policies() -> PolicyStack:
 
 
 
-def _build_entries(entries: list[dict], kind: str, builder: Callable, base_dir: str, where: str) -> list:
+def _config_assets(data: dict, base_dir: str, where: str) -> dict:
+    """
+    The files one policy config declares under ``assets:`` (``{id: path}``, paths relative to the config's directory).
+
+    Args:
+        data (dict): The parsed policy config.
+        base_dir (str): Directory relative asset paths are resolved against (the YAML file's own directory).
+        where (str): Label of the config, prefixed to error messages.
+
+    Raises:
+        PolicyError: If `assets` is not a mapping of identifiers to file paths, or a file does not exist.
+
+    Returns:
+        dict: ``{asset id: absolute path}``.
+    """
+    assets = data.get('assets') or {}
+    if not isinstance(assets, dict):
+        raise PolicyError(colorstr("red", f"{where}: `assets` must map ids to file paths, e.g. `soft_prompt: soft_prompt.txt`."))
+    resolved = {}
+    for key, path in assets.items():
+        if not (isinstance(key, str) and key.isidentifier() and isinstance(path, str) and path):
+            raise PolicyError(colorstr("red", f"{where}: asset `{key}` must map an identifier to a file path, got {path!r}."))
+        path = os.path.abspath(path if os.path.isabs(path) else os.path.join(base_dir, path))
+        if not os.path.isfile(path):
+            raise PolicyError(colorstr("red", f"{where}: asset `{key}` not found: {path}"))
+        resolved[key] = path
+    return resolved
+
+
+
+def _resolve_asset_refs(value: Any, assets: dict, where: str) -> Any:
+    """
+    `value` with every ``asset:<id>`` string (also inside lists and mappings) replaced by the path of that asset.
+
+    Args:
+        value (Any): A parameter value.
+        assets (dict): ``{asset id: absolute path}`` of the config (see `_config_assets`).
+        where (str): Label of the entry, prefixed to error messages.
+
+    Raises:
+        PolicyError: If an ``asset:<id>`` names no declared asset.
+
+    Returns:
+        Any: The value with asset references resolved.
+    """
+    if isinstance(value, str) and value.startswith(POLICY_ASSET_PREFIX):
+        key = value[len(POLICY_ASSET_PREFIX):]
+        if key not in assets:
+            raise PolicyError(colorstr("red", f"{where}: `{value}` names no asset of this config; declared: {sorted(assets)}."))
+        return assets[key]
+    if isinstance(value, dict):
+        return {k: _resolve_asset_refs(v, assets, where) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_resolve_asset_refs(v, assets, where) for v in value]
+    return value
+
+
+
+def _build_entries(entries: list[dict], kind: str, builder: Callable, base_dir: str, where: str,
+                   assets: Optional[dict] = None) -> list:
     """
     Build the policy, metric or evaluation entries of one config file, in file order.
 
@@ -321,6 +384,8 @@ def _build_entries(entries: list[dict], kind: str, builder: Callable, base_dir: 
         builder (Callable): `build_policy`, `build_metric` or `build_evaluation`.
         base_dir (str): Directory relative ``file:`` sources are resolved against (the YAML file's own directory).
         where (str): Label of the config, prefixed to error messages.
+        assets (Optional[dict], optional): The config's ``{asset id: path}``, substituted for ``asset:<id>`` parameter
+                                           values. Defaults to None.
 
     Raises:
         PolicyError: If `entries` is not a list, or an entry is not a mapping, has unknown keys, has no `source` or
@@ -355,6 +420,7 @@ def _build_entries(entries: list[dict], kind: str, builder: Callable, base_dir: 
         if not isinstance(params, dict):
             raise PolicyError(colorstr("red", f"{where}: {kind}[{i}].params must be a mapping."))
         
+        params = _resolve_asset_refs(params, assets or {}, f"{where}: {kind}[{i}]")
         built.append(builder(entry['source'], params, entry.get('id'), base_dir))
     
     return built
@@ -386,9 +452,10 @@ def _entries_to_policies(data: dict, base_dir: str, where: str) -> tuple:
     if data.get('api_version') != POLICY_CONFIG_API_VERSION:
         raise PolicyError(colorstr("red", f"{where}: `api_version` must be {POLICY_CONFIG_API_VERSION}, got {data.get('api_version')!r}."))
 
-    policies = _build_entries(data.get('policies') or [], 'policies', build_policy, base_dir, where)
-    metrics = _build_entries(data.get('metrics') or [], 'metrics', build_metric, base_dir, where)
-    evaluations = _build_entries(data.get('evaluations') or [], 'evaluations', build_evaluation, base_dir, where)
+    assets = _config_assets(data, base_dir, where)
+    policies = _build_entries(data.get('policies') or [], 'policies', build_policy, base_dir, where, assets)
+    metrics = _build_entries(data.get('metrics') or [], 'metrics', build_metric, base_dir, where, assets)
+    evaluations = _build_entries(data.get('evaluations') or [], 'evaluations', build_evaluation, base_dir, where, assets)
     
     return policies, metrics, evaluations
 
@@ -415,6 +482,10 @@ def load_policy_config(paths: Optional[Union[str, os.PathLike, list]] = None) ->
         evaluations:                         # optional user-defined evaluations of finished runs (see `Evaluation`)
           - id: negotiated_share
             source: file:my_evaluations/share.py:NegotiatedShare
+        assets:                              # optional files the entries read, e.g. a negotiation prompt
+          soft_prompt: prompts/soft.txt      # a param value `asset:soft_prompt` becomes this file's path
+
+    Asset files are copied into the run folder with the policies (see `snapshot_policy_config`).
 
     Args:
         paths (Optional[Union[str, os.PathLike, list]], optional): A policy config file, or a list of them in priority
@@ -454,7 +525,8 @@ def snapshot_policy_config(paths: Union[str, os.PathLike, list],
                            output_dir: Union[str, os.PathLike]) -> Optional[list]:
     """
     Validate the policy config files before a run starts (so a broken config fails before any worker spawns) and copy
-    them into `output_dir/policy/`, so the run folder alone holds the exact policies it used and can be re-run.
+    them into `output_dir/policy/`, so the run folder alone holds the exact policies (and the asset files they read) it
+    used and can be re-run.
 
     Each config file becomes ``NN_<name>.yaml`` (``NN`` = its priority position). The Python file of every ``file:``
     source is copied next to it as ``NN_<file>.py`` and the copied YAML's ``source`` is rewritten to point at that copy
@@ -482,7 +554,7 @@ def snapshot_policy_config(paths: Union[str, os.PathLike, list],
     os.makedirs(snapshot_dir, exist_ok=True)
 
     taken = set()
-    copied_code = {}    # absolute path of a policy .py file -> its file name in the snapshot directory
+    copied_code = {}    # absolute path of a policy .py file or asset -> its file name in the snapshot directory
     snapshot_paths = []
     for i, path in enumerate(paths):
         # Already a snapshot of this run folder: keep it as is
@@ -497,6 +569,12 @@ def snapshot_policy_config(paths: Union[str, os.PathLike, list],
 
         # Copy the code of every `file:` source (policies, metrics and evaluations) and point the copied YAML at it
         rewritten = False
+        for key, asset_path in _config_assets(data, os.path.dirname(path), path).items():
+            if asset_path not in copied_code:
+                copied_code[asset_path] = _unique_name(f"{i:02d}_{os.path.basename(asset_path)}", taken)
+                shutil.copyfile(asset_path, os.path.join(snapshot_dir, copied_code[asset_path]))
+            data['assets'][key] = copied_code[asset_path]
+            rewritten = True
         for entry in [e for key in ('policies', 'metrics', 'evaluations') for e in (data.get(key) or [])]:
             source = entry.get('source')
             if not (isinstance(source, str) and source.startswith('file:')):
@@ -511,7 +589,7 @@ def snapshot_policy_config(paths: Union[str, os.PathLike, list],
         target = os.path.join(snapshot_dir, name)
         if rewritten:
             with open(target, 'w') as f:
-                f.write(f"# Snapshot of {path}\n# `file:` sources point to the policy code copied next to this file.\n")
+                f.write(f"# Snapshot of {path}\n# `file:` sources and `assets` point to the copies next to this file.\n")
                 yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
         else:
             shutil.copyfile(path, target)

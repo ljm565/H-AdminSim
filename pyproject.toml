@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "h_adminsim"
-version = "2.0.0"
+version = "2.1.0dev"
 description = "A Python package for simulating hospital administrative tasks."
 authors = ["Jun-Min Lee <ljm56897@gmail.com>"]
 readme = "README.md"
@@ -20,8 +20,17 @@ include = [
     { path = "src/h_adminsim/assets/country/*.json", format = "sdist" },
     { path = "src/h_adminsim/assets/country/*.json", format = "wheel" },
     { path = "src/h_adminsim/assets/configs/*.json", format = "sdist" },
-    { path = "src/h_adminsim/assets/configs/*.json", format = "wheel" }
+    { path = "src/h_adminsim/assets/configs/*.json", format = "wheel" },
+    { path = "src/h_adminsim/assets/harness/*.md", format = "sdist" },
+    { path = "src/h_adminsim/assets/harness/*.md", format = "wheel" },
+    { path = "src/h_adminsim/assets/harness/templates/*.txt", format = "sdist" },
+    { path = "src/h_adminsim/assets/harness/templates/*.txt", format = "wheel" },
+    { path = "src/h_adminsim/assets/policy/*.yaml", format = "sdist" },
+    { path = "src/h_adminsim/assets/policy/*.yaml", format = "wheel" }
 ]
+
+[tool.poetry.scripts]
+h-adminsim-policy-server = "h_adminsim.harness.server:main"
 
 [tool.poetry.urls]
 "Source" = "https://github.com/ljm565/H-AdminSim"

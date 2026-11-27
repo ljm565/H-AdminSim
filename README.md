@@ -606,36 +606,120 @@ fu_scheduling_task = OutpatientFollowUpScheduling(
 )
 ##############################################################
 
-# 3.2. Staff negotiation and urgent capacity protection
-negotiation_params = {
-    'type': 'result_gain',                  # Negotiation policy type
-    'mode': 'threshold',                    # ['threshold', 'hospital-side', 'patient-side']
-    'tcl_temperature': 1.0,
-    'trigger_temperature_visit': 1.0,       # τ for `visit_min` patients
-    'trigger_temperature_stay': 1.0,        # τ for `stay_min` patients
-    'negotiation_trigger_threshold': 1.0,   # Higher = stricter, fewer negotiations (`threshold` mode only)
-    'capacity_protection': {                # Hold back part of each test's capacity for `urgent` patients
-        'enabled': True,
-        'ratio': 0.2,                       # Share of each (test, date) capacity reserved, in [0, 1)
-        'horizon_days': 3,                  # Protect only dates opening within this many days
-        'release_hours': 24,                # Release a protected date to normal patients within this many hours
-    },
-}
+# 3.2. Staff negotiation and urgent capacity protection, from a policy config file
+#      (see config/policy/tau.yaml and config/policy/capacity_protection.yaml)
 fu_scheduling_task = OutpatientFollowUpScheduling(
     patient_model='gpt-5-nano',
     admin_staff_mas=staff_mas,
-    negotiation_params=negotiation_params,
+    policy_config=['config/policy/capacity_protection.yaml', 'config/policy/tau.yaml'],   # one file, or several in priority order
 )
 ##############################################################
 ```
 <details>
-<summary>Negotiation modes</summary>
+<summary>Policy config files and negotiation modes</summary>
 
-* `patient-side`: The staff never negotiates and always follows the patient's preference. This is the default when `negotiation_params=None`.
+A policy config file lists policies; the simulation config lists one or more of them under `schedule_task.policy_config` in priority order, and they are copied to `policy/` in the output folder together with the Python code of any `file:` policy. The saved `args.yaml` points `policy_config` at these copies (the original paths are kept under `policy_config_original`), so a run folder can be re-run on its own. Independent policies (e.g. `capacity_protection.yaml` and `tau.yaml`) can therefore live in separate files:
+```yaml
+schedule_task:
+    policy_config:
+        - config/policy/capacity_protection.yaml
+        - config/policy/tau.yaml
+```
+One policy file looks like this (a single file may also hold several policies):
+```yaml
+api_version: 1
+policies:
+  - id: tau
+    source: builtin:result_gain          # τ negotiation
+    params: {mode: threshold, negotiation_trigger_threshold: 1.0}
+  - id: protection
+    source: builtin:capacity_protection  # urgent capacity protection
+    params: {ratio: 0.2, horizon_days: 3, release_hours: 24}
+```
+
+* `patient-side`: The staff never negotiates and always follows the patient's preference. This is the default when no policy config is given.
 * `hospital-side`: The staff negotiates whenever the hospital has anything to gain.
 * `threshold`: The staff negotiates once the trigger index reaches `negotiation_trigger_threshold`.
 
-The policy used (type, mode, and every parameter) is saved under `_metadata` in each result file, so a run can be reproduced from its results.
+The policies used (source, file hash, and every parameter) are saved under `_metadata.policies` in each result file, so a run can be reproduced from its results. Results from before the policy plugin (with the old `_metadata.policy` block) must be converted before the follow-up evaluator can read them.
+</details>
+
+<details>
+<summary>Custom policies</summary>
+
+Policies plug into the simulation through two optional hooks: `restrict(ctx)` returns the `(test_code, date)` pairs a patient may not book, and `review(ctx)` returns a `Decision` (`keep`, `auto`, or `negotiate`) for a patient whose preferred schedule differs from the hospital-preferred one. Both receive read-only snapshots (`RestrictContext`, `ReviewContext`). The built-in policies use the same API. A custom policy is a Python file outside the package:
+```python
+# my_policies/urgent_keep.py
+from dataclasses import dataclass
+from typing import ClassVar
+from h_adminsim.policy import Policy, Decision
+
+@dataclass
+class UrgentKeepPolicy(Policy):
+    name: ClassVar[str] = 'urgent_keep'
+    requires: ClassVar[tuple] = ('patient.urgency',)
+    prompt_path: str = 'my_prompt.txt'
+
+    def review(self, ctx):
+        return Decision.keep() if ctx.patient['urgency'] == 'urgent' else Decision.negotiate(prompt_path=self.prompt_path)
+```
+```yaml
+# policy.yaml (relative `file:` paths resolve against this file's folder)
+api_version: 1
+policies:
+  - source: file:my_policies/urgent_keep.py:UrgentKeepPolicy
+  - source: builtin:capacity_protection
+    params: {ratio: 0.2}
+```
+Several policies may share a hook. `review` policies are asked in priority order (the order of `policy_config` files, then of entries within a file) and the first one that returns a `Decision` decides; a policy returns `None` to abstain and pass the patient to the next one (all abstain → the patient keeps their preference). Every `restrict` policy applies, and their blocked pairs are combined.
+
+What a policy can read:
+* `RestrictContext`: `current_time`, `test_capacity`, `test_duration`, `booked_hours` (per `(test_code, date)`), `lead_hours(date)`, and `patient`.
+* `ReviewContext`: `preference`, `metrics` (`gpc`, `tcl`, `G`, `R`, `U`, ...), `schedules` (`preferred` and the `throughput_max` counterfactual `hospital`), and `patient`.
+* `patient` is the patient's agent-data record: every field of the follow-up ground-truth entry (`department`, `attending_physician`, `preference`, `occupation`, `distance`, `unavailable`, `required_tests`, ...) plus `urgency`, `disease` and `symptoms`. A policy must declare each patient field it reads in `requires` (the built-in `capacity_protection` declares `patient.urgency`); reading an undeclared field raises `PolicyRequirementError`, and a run whose agent data lacks a declared field stops before it starts, so add the field to the data first.
+```python
+@dataclass
+class FarKeepPolicy(Policy):
+    name: ClassVar[str] = 'far_keep'
+    requires: ClassVar[tuple] = ('patient.distance',)
+
+    def review(self, ctx):
+        return Decision.keep() if ctx.patient['distance'] == 'far' else None   # None: let the next policy decide
+```
+
+A policy config may also list user-defined negotiation metrics under `metrics`. Each metric turns one negotiation (the same `ReviewContext`, with the built-in metrics) into a value; the values are computed before the `review` policies are asked, appear in their `ctx.metrics[<id>]`, and are saved in each booking's `negotiation_metrics` record. Metric ids may not reuse built-in metric or record names.
+```python
+@dataclass
+class AddedVisitDays(Metric):
+    name: ClassVar[str] = 'added_visit_days'
+
+    def compute(self, ctx):
+        return len(ctx.schedules['hospital']['test_visit_dates']) - len(ctx.schedules['preferred']['test_visit_dates'])
+```
+```yaml
+metrics:
+  - id: added_visit_days
+    source: file:custom/visit_cost.py:AddedVisitDays
+```
+
+Each booking also records what every `restrict` policy blocked for its tests, as `restrictions: {policy id: [[test_code, date], ...]}`. A policy config may list user-defined evaluations under `evaluations`; each turns a finished run (`RunData`: its bookings, every result record and its metadata) into a JSON-serializable dict, and runs with `evaluate.py -t fu_custom --fu_custom_paths <runs>` (or `Evaluator(..., fu_custom_paths=...)`).
+```python
+@dataclass
+class RestrictionSummary(Evaluation):
+    name: ClassVar[str] = 'restriction_summary'
+
+    def evaluate(self, run):
+        blocked = {}
+        for booking in run.bookings:
+            for policy_id, pairs in (booking['restrictions'] or {}).items():
+                blocked[policy_id] = blocked.get(policy_id, 0) + bool(pairs)
+        return {'bookings': len(run.bookings), 'bookings_blocked': blocked}
+```
+```yaml
+evaluations:
+  - id: restriction_summary
+    source: file:custom/far_rules.py:RestrictionSummary
+```
 </details>
 
 &nbsp;
@@ -751,6 +835,7 @@ taus = outputs['fu_tau']    # τ values to use for the `threshold` runs
 * `fu_tau`: Computes τ (`trigger_temperature_visit`, `trigger_temperature_stay`) values from the `hospital-side` run, to use for the `threshold` runs.
 * `fu_dashboard`: Compares the negotiation results across the `hospital-side`, `threshold`, and `patient-side` runs.
 * `fu_protection`: Compares the effect of urgent capacity protection across `fu_protection_paths`. Each run's mode and protection ratio are read from its `_metadata`.
+* `fu_custom`: Runs user-defined evaluations (the `evaluations` of a policy config, see Custom policies) on `fu_custom_paths`, using each run's own policy snapshot, or `fu_custom_configs` for evaluations written after the runs. Saved as `custom_report.json`.
 
 All runs must share the same hospital operating hours and time unit.
 </details>

@@ -1,0 +1,13 @@
+# τ negotiation policy: the staff decides per patient whether to persuade them from their stated
+# preference toward the hospital-preferred `throughput_max` schedule.
+#   Trigger index ti = GPC * TCL / τ  (τ = trigger_temperature_visit / trigger_temperature_stay)
+api_version: 1
+policies:
+  - id: tau
+    source: builtin:result_gain
+    params:
+      mode: threshold                    # [threshold, hospital-side, patient-side]
+      negotiation_trigger_threshold: 1.0 # Negotiate once ti >= this (threshold mode only; higher = fewer negotiations)
+      tcl_temperature: 1.0               # Softmax temperature of TCL (hospital-fixed)
+      trigger_temperature_visit: 1.0     # τ for `visit_min` patients
+      trigger_temperature_stay: 1.0      # τ for `stay_min` patients

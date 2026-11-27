@@ -1,0 +1,13 @@
+    def restrict(self, ctx: RestrictContext) -> set:
+        """
+        (test_code, date) pairs this patient may not book.
+
+        Args:
+            ctx (RestrictContext): Snapshot for the patient about to be scheduled.
+
+        Returns:
+            set: Blocked ``(test_code, date)`` pairs.
+        """
+        blocked = set()
+        # TODO: add pairs from ctx.test_capacity keys, e.g. using ctx.booked_hours / ctx.lead_hours(date)
+        return blocked

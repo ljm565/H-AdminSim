@@ -1,0 +1,12 @@
+    def review(self, ctx: ReviewContext) -> Optional[Decision]:
+        """
+        What to do with the patient's proposed schedule.
+
+        Args:
+            ctx (ReviewContext): The proposal and its negotiation metrics.
+
+        Returns:
+            Optional[Decision]: The decision, or None to abstain.
+        """
+        # TODO: return Decision.keep() / Decision.auto() / Decision.negotiate(prompt_path=...), or None to abstain
+        return None

@@ -17,8 +17,11 @@ POLICY_METRIC_RESERVED_IDS = frozenset({'ti'})
 
 # Policy config YAML format: version, top-level keys, per-entry keys
 POLICY_CONFIG_API_VERSION = 1
-POLICY_CONFIG_KEYS = frozenset({'api_version', 'policies', 'metrics', 'evaluations'})
+POLICY_CONFIG_KEYS = frozenset({'api_version', 'assets', 'policies', 'metrics', 'evaluations'})
 POLICY_ENTRY_KEYS = frozenset({'id', 'source', 'params'})
+
+# Param value naming a file declared under the config's `assets:` (`asset:<id>`), replaced by that file's path
+POLICY_ASSET_PREFIX = 'asset:'
 
 # `requires` entry prefixes: `patient.<field>` / `metric.<id>`
 POLICY_REQUIRES_PATIENT_PREFIX = 'patient.'

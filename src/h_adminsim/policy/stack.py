@@ -1,5 +1,6 @@
 import os
 import math
+import hashlib
 from dataclasses import replace
 from typing import Any, Optional, Sequence, Iterable
 
@@ -20,6 +21,41 @@ from h_adminsim.registry.policy import (
 from h_adminsim.policy.metric import Metric
 from h_adminsim.policy.evaluation import Evaluation
 from h_adminsim.policy.context import RestrictContext, ReviewContext, _declared
+
+
+
+def _file_fingerprints(params: dict) -> dict:
+    """
+    Path and sha256 of every parameter that names an existing file (e.g. a negotiation prompt), so the run metadata
+    tells exactly which file content a run used.
+
+    Args:
+        params (dict): A policy's, metric's or evaluation's parameters.
+
+    Returns:
+        dict: ``{param: {'path', 'sha256'}}`` (empty when no parameter names a file).
+    """
+    files = {}
+    for key, value in params.items():
+        if isinstance(value, str) and value and os.path.isfile(value):
+            with open(value, 'rb') as f:
+                files[key] = {'path': os.path.abspath(value), 'sha256': hashlib.sha256(f.read()).hexdigest()}
+    return files
+
+
+
+def _with_files(record: dict) -> dict:
+    """
+    A metadata record with the fingerprints of its parameter files added under ``files`` (left out when none).
+
+    Args:
+        record (dict): A `describe*` record holding ``params``.
+
+    Returns:
+        dict: The record.
+    """
+    files = _file_fingerprints(record['params'])
+    return {**record, 'files': files} if files else record
 
 
 
@@ -267,11 +303,11 @@ class PolicyStack:
             list: One ``{'id', 'name', 'source', 'source_sha256', 'api_version', 'requires', 'params'}`` per metric.
         """
         return [
-            {
+            _with_files({
                 'id': m.id, 'name': m.name, 'source': m.source, 
                 'source_sha256': m.source_sha256, 'api_version': m.api_version, 
                 'requires': list(m.requires), 'params': m.params()
-            } for m in self.metrics
+            }) for m in self.metrics
         ]
 
 
@@ -283,11 +319,11 @@ class PolicyStack:
             list: One ``{'id', 'name', 'source', 'source_sha256', 'api_version', 'params'}`` per evaluation.
         """
         return [
-            {
+            _with_files({
                 'id': e.id, 'name': e.name, 'source': e.source, 
                 'source_sha256': e.source_sha256, 'api_version': e.api_version, 
                 'params': e.params()
-            } for e in self.evaluations
+            }) for e in self.evaluations
         ]
 
 
@@ -297,14 +333,14 @@ class PolicyStack:
 
         Returns:
             list: One ``{'id', 'name', 'source', 'source_sha256', 'api_version', 'hooks', 'requires', 'params'}`` per policy, in
-                  priority order.
+                  priority order, plus ``files`` (``{param: {'path', 'sha256'}}``) for parameters naming a file.
         """
         return [
-            {
+            _with_files({
                 'id': p.id, 'name': p.name, 'source': p.source, 
                 'source_sha256': p.source_sha256, 'api_version': p.api_version, 
                 'hooks': list(p.hooks()), 'requires': list(p.requires), 'params': p.params()
-            } for p in self.policies
+            }) for p in self.policies
         ]
 
 

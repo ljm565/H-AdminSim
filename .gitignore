@@ -35,6 +35,7 @@ legacy/
 new/*
 demo/human_dialogs/*
 custom_test_data/*
+policies/*
 
 # Data and configuration folders
 data/

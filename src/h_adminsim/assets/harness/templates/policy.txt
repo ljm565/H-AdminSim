@@ -1,0 +1,16 @@
+from dataclasses import dataclass
+from typing import $typing_imports
+
+from h_adminsim.policy import $api_imports
+
+
+
+@dataclass
+class $class_name(Policy):
+    """
+    TODO: What the policy does, in one or two sentences.$fields_doc
+    """
+    name: ClassVar[str] = $name
+    requires: ClassVar[tuple] = $requires$fields
+
+$methods

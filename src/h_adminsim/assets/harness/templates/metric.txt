@@ -1,0 +1,28 @@
+from dataclasses import dataclass
+from typing import $typing_imports
+
+from h_adminsim.policy import Metric, ReviewContext
+
+
+
+@dataclass
+class $class_name(Metric):
+    """
+    TODO: What the metric measures and in which unit, in one or two sentences.$fields_doc
+    """
+    name: ClassVar[str] = $name
+    requires: ClassVar[tuple] = $requires$fields
+
+
+    def compute(self, ctx: ReviewContext) -> Optional[float]:
+        """
+        The metric's value for one negotiation.
+
+        Args:
+            ctx (ReviewContext): The proposal, its built-in metrics (and the user metrics listed before this one) and the patient.
+
+        Returns:
+            Optional[float]: The value (None when it does not apply).
+        """
+        # TODO: compute from ctx.schedules['preferred'] / ['hospital'] and the declared ctx.metrics / ctx.patient keys
+        return None
