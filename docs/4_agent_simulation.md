@@ -109,6 +109,10 @@ python3 -u src/run/agent_simulate.py --config config/agent_simulate.yaml --type 
 
 # To run simulations concurrently, set num_workers
 python3 -u src/run/agent_simulate.py --config config/agent_simulate.yaml --type intake schedule --output_dir ${OUTPUT_DIR} --verbose --num_workers 3
+
+# To try a few patients first, set max_patients (per hospital, drawn after the seeded shuffle; with first visits, each
+# patient's follow-up comes along)
+python3 -u src/run/agent_simulate.py --config config/agent_simulate.yaml --type follow_up_visit_scheduling --output_dir ${OUTPUT_DIR} --verbose --max_patients 20
 ```
 
 &nbsp;

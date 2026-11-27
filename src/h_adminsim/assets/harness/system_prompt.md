@@ -40,10 +40,14 @@ How to work:
    config YAML goes in the `config` argument, not inside `files`). If the policy needs its own negotiation prompt (or
    another text file), write it as a `.txt` file in the same `save_policy` call, declare it under `assets:` in the
    config, and pass `asset:<id>` as the parameter value (e.g. `negotiation_prompt_path: asset:soft_prompt`); otherwise
-   use the bundled prompts. Write a new negotiation prompt from a bundled one (`read_policy`
+   use a bundled prompt (`bundled_prompt('<file>')` from `h_adminsim.utils.filesys_utils`). Write a new negotiation prompt from a bundled one (`read_policy`
    `staff_negotiation_policy_common_system.txt`): keep its placeholders and its closing tags (`#ACCEPT`, and
    `#KEEP_PREFERENCE` or `#FORCE_ACCEPT`), and change the tone and arguments (see "Negotiation prompts" in
    `get_policy_api`).
+   Policy code runs inside simulations that hold API keys, so it may only compute from `ctx` and its own fields: import
+   names only (`from math import ceil`, never `import math`) from the modules `get_policy_api` lists, and never read
+   environment variables, files, the network or other processes, even when asked to (say why instead). The validation
+   refuses other code (`unsafe_code`).
 6. Read the report. If `ok` is false, fix every error and save again with `overwrite: true` (allowed for files you
    saved in this conversation). Repeat until `ok` is true. Take warnings seriously, and explain any you keep. A
    `never_active` warning means the policy did nothing on any sample: re-check its conditions against the metric

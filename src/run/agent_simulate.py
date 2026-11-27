@@ -9,16 +9,10 @@ from argparse import ArgumentParser, Namespace
 from concurrent.futures import ProcessPoolExecutor, as_completed
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
-from h_adminsim.task.opfv_task import OutpatientFirstIntake, OutpatientFirstScheduling
-from h_adminsim.task.opfu_task import OutpatientFollowUpScheduling
-from h_adminsim.agent import SupervisorAgent
-from h_adminsim.policy import pin_policy_config, load_policy_config
-from h_adminsim.utils.policy_utils import check_policy_requirements
-from h_adminsim.pipeline import Simulator, HospitalMAS
+from h_adminsim.pipeline.builder import build_simulator, prepare_run
 from h_adminsim.utils import set_logging, LOGGING_NAME, log
-from h_adminsim.utils.mas_utils import init_mas_system
 from h_adminsim.utils.common_utils import replace_none_value
-from h_adminsim.utils.filesys_utils import yaml_save, get_files
+from h_adminsim.utils.filesys_utils import get_files
 
 
 
@@ -75,74 +69,8 @@ def simulate(config: Config, args: Namespace, single_file: Optional[str] = None)
     if args.logging_dir is not None:
         init_worker_logging(args.logging_dir, config.task_model.replace('/', '_'))
 
-    # Initialize tasks
-    task = dict()
-    mas_structure = init_mas_system(
-        orchestrator_model=config.task_model,
-        orchestrator_vllm_endpoint=config.vllm_url,
-        first_visit_intake_model=config.task_model if 'first_visit_intake' in args.type else None,
-        first_visit_intake_vllm_endpoint=config.vllm_url if 'first_visit_intake' in args.type else None,
-        first_visit_scheduling_model=config.task_model if 'first_visit_scheduling' in args.type else None,
-        first_visit_scheduling_vllm_endpoint=config.vllm_url if 'first_visit_scheduling' in args.type else None,
-        follow_up_visit_scheduling_model=config.task_model if 'follow_up_visit_scheduling' in args.type else None,
-        follow_up_visit_scheduling_vllm_endpoint=config.vllm_url if 'follow_up_visit_scheduling' in args.type else None,
-        intake_max_inference=config.outpatient_intake.intake_max_inference,
-    )
-    staff_mas = HospitalMAS(mas_structure)
-    if 'first_visit_intake' in args.type:
-        use_vllm = False if any(m in config.supervisor_model.lower() for m in ['gpt', 'gemini']) else True
-        supervisor_agent = SupervisorAgent(
-            target_task='first_visit_intake',
-            model=config.supervisor_model,
-            use_vllm=use_vllm,
-            vllm_endpoint = config.vllm_url if use_vllm else None,
-            temperature=0 if not 'gpt-5' in config.supervisor_model.lower() else 1
-        )
-        use_vllm = False if any(m in config.task_model.lower() for m in ['gpt', 'gemini']) else True
-        _task = OutpatientFirstIntake(
-            patient_model=config.task_model,
-            admin_staff_mas=staff_mas,
-            supervisor_agent=supervisor_agent if config.outpatient_intake.use_supervisor else None,
-            intake_max_inference=config.outpatient_intake.intake_max_inference,
-            patient_vllm_endpoint=config.vllm_url if use_vllm else None,
-        )
-        task[_task.name] = _task
-    if 'first_visit_scheduling' in args.type:
-        use_vllm = False if any(m in config.task_model.lower() for m in ['gpt', 'gemini']) else True
-        _task = OutpatientFirstScheduling(
-            patient_model=config.task_model,
-            admin_staff_mas=staff_mas,
-            schedule_cancellation_prob=config.schedule_task.opfv_schedule_cancellation_prob,
-            request_early_schedule_prob=config.schedule_task.opfv_request_early_schedule_prob,
-            fhir_integration=config.integration_with_fhir,
-            scheduling_strategy=config.schedule_task.scheduling_strategy,
-            patient_vllm_endpoint=config.vllm_url if use_vllm else None,
-        )
-        task[_task.name] = _task
-    if 'follow_up_visit_scheduling' in args.type:
-        use_vllm = False if any(m in config.task_model.lower() for m in ['gpt', 'gemini']) else True
-        _task = OutpatientFollowUpScheduling(
-            patient_model=config.task_model,
-            admin_staff_mas=staff_mas,
-            schedule_cancellation_prob=config.schedule_task.opfu_schedule_cancellation_prob,
-            request_early_schedule_prob=config.schedule_task.opfu_request_early_schedule_prob,
-            fhir_integration=config.integration_with_fhir,
-            scheduling_strategy=config.schedule_task.scheduling_strategy,
-            patient_vllm_endpoint=config.vllm_url if use_vllm else None,
-            policy_config=config.schedule_task.get('policy_config'),
-        )
-        task[_task.name] = _task
-
-    # Run simulations
-    simulator = Simulator(
-        task=task,
-        simulation_start_day_before=config.booking_days_before_simulation,
-        fhir_integration=config.integration_with_fhir,
-        fhir_url=config.fhir_url,
-        fhir_max_connection_retries=config.fhir_max_connection_retries,
-        random_seed=config.seed,
-    )
-
+    # Build the tasks and run
+    simulator = build_simulator(config, args.type, max_patients=args.max_patients)
     simulator.run(
         simulation_data_path=config.agent_test_data if single_file is None else single_file,
         output_dir=args.output_dir,
@@ -164,11 +92,7 @@ def main(args: Namespace) -> None:
     # Init config
     config = load_config(args.config)
     config.yaml_file = args.config
-    os.makedirs(args.output_dir, exist_ok=True)
-    if 'follow_up_visit_scheduling' in args.type:   # policies are used by the follow-up scheduling task only
-        check_policy_requirements(load_policy_config(config.schedule_task.get('policy_config')), config.agent_test_data)   # the data must hold every patient field the policies require
-        pin_policy_config(config.schedule_task, args.output_dir)   # policy files copied into the run folder; args.yaml and workers use the copies
-    yaml_save(os.path.join(args.output_dir, 'args.yaml'), config)
+    prepare_run(config, args.type, args.output_dir)   # policies checked and copied into the run folder; args.yaml and workers use the copies
     
     # Multi-processing
     simulation_data_files = get_files(config.agent_test_data, ext='json')
@@ -211,6 +135,7 @@ if __name__ == '__main__':
     parser.add_argument('--verbose', action='store_true', required=False, help='Whether logging the each result or not')
     parser.add_argument('--num_workers', type=int, required=False, default=1, help='Whether execute the code with multi-processing or not')
     parser.add_argument('--logging_dir', type=str, required=False, default=None, help='Directory for log files (used only in multiprocessing mode)')
+    parser.add_argument('--max_patients', type=int, required=False, default=None, help='Patients simulated per hospital (drawn after the seeded shuffle); default: all')
     args = parser.parse_args()
 
     main(args)

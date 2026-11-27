@@ -16,6 +16,37 @@ HARNESS_CHAT_ID_HEADERS = ('X-Chat-Id', 'X-OpenWebUI-Chat-Id')
 HARNESS_DEFAULT_CHAT_DIR = 'default'
 HARNESS_CHAT_MARKER = '.chat_id'
 
+# What user policy code (`file:` sources a chat writes) may use. Simulations run it next to the API keys of the agents'
+# models, so it gets no way to the environment, files, the network or other processes: names imported from these
+# modules only (`from <module> import <name>`, never a module object), none of these built-in names (or `getattr` /
+# `hasattr` with a computed or dunder name), and none of these attributes (escape routes to globals, frames, `sys` /
+# `os`, and `str.format`, which can walk attributes). A best-effort guard against casual or accidental access, not a
+# sandbox
+HARNESS_CODE_MODULES = (
+    'abc', 'bisect', 'collections', 'copy', 'dataclasses', 'datetime', 'decimal', 'enum', 'fractions', 'functools',
+    'heapq', 'itertools', 'json', 'math', 'numbers', 'operator', 're', 'statistics', 'types', 'typing',
+    'h_adminsim.policy', 'h_adminsim.registry', 'h_adminsim.utils',
+)
+# Names policy code may import from H-AdminSim (`HARNESS_CODE_MODULES` under `h_adminsim`), besides upper-case
+# constants: the policy API, not its loaders or file helpers
+HARNESS_CODE_H_ADMINSIM_NAMES = (
+    'CapacityProtectionPolicy', 'Decision', 'Evaluation', 'Metric', 'MetricView', 'PatientView', 'Policy',
+    'PolicyCompositionError', 'PolicyError', 'PolicyRequirementError', 'RestrictContext', 'ResultGainPolicy',
+    'ReviewContext', 'RunData', 'bundled_prompt', 'colorstr', 'log',
+)
+HARNESS_CODE_FORBIDDEN_NAMES = (
+    '__build_class__', '__builtins__', '__import__', '__loader__', '__spec__', 'attrgetter', 'breakpoint', 'compile',
+    'copyright', 'credits', 'delattr', 'eval', 'exec', 'exit', 'globals', 'help', 'input', 'license', 'locals',
+    'methodcaller', 'open', 'quit', 'setattr', 'vars',
+)
+HARNESS_CODE_FORBIDDEN_ATTRS = (
+    '__base__', '__bases__', '__builtins__', '__closure__', '__code__', '__dict__', '__getattribute__', '__globals__',
+    '__import__', '__loader__', '__mro__', '__reduce__', '__reduce_ex__', '__spec__', '__subclasses__',
+    '_os', '_sys', 'ag_frame', 'builtins', 'codecs', 'cr_frame', 'environ', 'environb', 'f_back', 'f_builtins',
+    'f_globals', 'f_locals', 'format', 'format_map', 'getenv', 'gi_frame', 'import_module', 'modules', 'open', 'os',
+    'popen', 'putenv', 'subprocess', 'sys', 'system', 'tb_frame',
+)
+
 # Smoke-test inputs, built from the agent data with the simulator's scheduler: cache file (in the policy directory),
 # review samples per (preference, urgency, gain kind), most review samples, time budget for building them, how far
 # ahead the first open date lies in the shifted restrict snapshot, and the search cap of each sample schedule

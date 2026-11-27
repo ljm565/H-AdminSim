@@ -1,4 +1,3 @@
-from importlib import resources
 from dataclasses import dataclass
 from typing import ClassVar, Mapping, Optional
 
@@ -6,20 +5,7 @@ from h_adminsim.registry.errors import PolicyError
 from h_adminsim.policy.base import Policy, Decision
 from h_adminsim.policy.context import ReviewContext
 from h_adminsim.utils import log, colorstr
-
-
-
-def _prompt(name: str) -> str:
-    """
-    Path of a bundled prompt file.
-
-    Args:
-        name (str): File name under ``h_adminsim/assets/prompts``.
-
-    Returns:
-        str: The prompt's path.
-    """
-    return str(resources.files("h_adminsim.assets.prompts").joinpath(name))
+from h_adminsim.utils.filesys_utils import bundled_prompt
 
 
 
@@ -80,11 +66,11 @@ class ResultGainPolicy(Policy):
             self._pin_trigger_knobs()
             log(f"Cleared negotiation prompt for '{self.mode}' policy (it never negotiates).", level='warning')
         elif self.mode == 'hospital-side':
-            self.negotiation_prompt_path = _prompt(self.HOSPITAL_PROMPT)
+            self.negotiation_prompt_path = bundled_prompt(self.HOSPITAL_PROMPT)
             self._pin_trigger_knobs()
             log(f"Set negotiation prompt for '{self.mode}' policy.", level='info')
         elif not self.negotiation_prompt_path:
-            self.negotiation_prompt_path = _prompt(self.COMMON_PROMPT)
+            self.negotiation_prompt_path = bundled_prompt(self.COMMON_PROMPT)
 
         # τ divides the trigger index, so it must be positive (checked before any patient is simulated)
         for knob in ('trigger_temperature_visit', 'trigger_temperature_stay'):

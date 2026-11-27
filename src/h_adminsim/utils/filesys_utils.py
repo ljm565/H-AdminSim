@@ -2,6 +2,7 @@ import os
 import json
 import orjson
 from pathlib import Path
+from importlib import resources
 from typing import TYPE_CHECKING, Any, Optional
 
 from h_adminsim.utils import log
@@ -24,6 +25,20 @@ def txt_load(path: str) -> str:
     with open(path, 'r') as f:
         content = f.read()
     return content    
+
+
+
+def bundled_prompt(name: str) -> str:
+    """
+    Path of a prompt file shipped with H-AdminSim, e.g. for a policy's `Decision.negotiate(prompt_path)`.
+
+    Args:
+        name (str): File name under ``h_adminsim/assets/prompts`` (e.g. ``staff_negotiation_policy_common_system.txt``).
+
+    Returns:
+        str: The prompt's path.
+    """
+    return str(resources.files('h_adminsim.assets.prompts').joinpath(name))
 
 
 

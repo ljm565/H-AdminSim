@@ -1,8 +1,8 @@
 import os
 import random
 import numpy as np
-from typing import Optional
 from datetime import timedelta
+from typing import Callable, Optional
 from decimal import Decimal, getcontext
 
 from h_adminsim.task.op_task import OutpatientTask
@@ -35,7 +35,8 @@ class Simulator:
                  fhir_integration: bool = False,
                  fhir_url: Optional[str] = None,
                  fhir_max_connection_retries: int = 5,
-                 random_seed: int = 9999):
+                 random_seed: int = 9999,
+                 max_patients: Optional[int] = None):
         """
         Set up the simulator.
 
@@ -48,7 +49,17 @@ class Simulator:
             fhir_url (Optional[str], optional): FHIR server URL (used only with `fhir_integration`). Defaults to None.
             fhir_max_connection_retries (int, optional): Max FHIR connection retries. Defaults to 5.
             random_seed (int, optional): Random seed. Defaults to 9999.
+            max_patients (Optional[int], optional): Patients simulated per agent data file (hospital), drawn after
+                                                    the seeded shuffle, so a smaller run follows a larger one's
+                                                    order; with first visits, a patient's follow-up comes along with
+                                                    the first visit. None simulates every patient. Defaults to None.
+
+        Raises:
+            ValueError: If `max_patients` is below 1.
         """
+        if max_patients is not None and max_patients < 1:
+            raise ValueError(f'max_patients must be at least 1 (or None for every patient), got {max_patients}.')
+
         # Initialize
         getcontext().prec = 10
         self.simulation_start_day_before = simulation_start_day_before
@@ -57,6 +68,7 @@ class Simulator:
         self.fhir_max_connection_retries = fhir_max_connection_retries
         self.task = self._init_task(task)
         self.random_seed = random_seed
+        self.max_patients = max_patients
 
 
     def _env_setup(self, random_seed: int, resume: bool) -> None:
@@ -115,19 +127,22 @@ class Simulator:
     
     def _shuffle_data(self, data: dict) -> None:
         """
-        Shuffle the agent test data in place and (when applicable) split follow-ups into a pending pool that the run
-        loop activates only after each patient's first-visit appointment has passed.
+        Shuffle the agent test data in place, keep the first `max_patients` patients, and (when applicable) split
+        follow-ups into a pending pool that the run loop activates only after each patient's first-visit appointment
+        has passed.
 
         Args:
             data (dict): An agent test data to simulate a hospital environmnet.
         """
         has_followup = 'follow_up_visit_scheduling' in self.task
         has_first = any(t in self.task for t in ['first_visit_intake', 'first_visit_scheduling'])
+        limit = slice(self.max_patients)     # slice(None): every patient
 
         # Only follow-up visit case
         if has_followup and not has_first:
             followups = [x for x in data['agent_data'] if x[0]['visit_type'] == 'follow_up_visit']
             random.shuffle(followups)
+            followups = followups[limit]
             data['agent_data'] = followups
             data['_pending_followups'] = {}
             data['_ready_followups'] = list(followups)
@@ -136,6 +151,7 @@ class Simulator:
         elif has_first and not has_followup:
             data['agent_data'] = list(filter(lambda x: x[0]['visit_type'] == 'first_visit', data['agent_data']))
             random.shuffle(data['agent_data'])
+            data['agent_data'] = data['agent_data'][limit]
             data['_pending_followups'] = {}
             data['_ready_followups'] = []
         
@@ -144,6 +160,9 @@ class Simulator:
             first_list = [x for x in data['agent_data'] if x[0]['visit_type'] == 'first_visit']
             followup_list = [x for x in data['agent_data'] if x[0]['visit_type'] == 'follow_up_visit']
             random.shuffle(first_list)
+            first_list = first_list[limit]
+            kept = {gt['patient'] for gt, _ in first_list}
+            followup_list = [x for x in followup_list if x[0]['patient'] in kept]
             data['agent_data'] = first_list
             data['_pending_followups'] = {gt['patient']: (gt, td) for gt, td in followup_list}
             data['_ready_followups'] = []
@@ -525,16 +544,21 @@ class Simulator:
             simulation_data_path: str,
             output_dir: str,
             resume: bool = False,
-            verbose: bool = False) -> None:
+            verbose: bool = False,
+            on_patient: Optional[Callable[[dict], None]] = None) -> None:
         """
-        Run the agent-based hospital administrative simulation. On an error, the partial results are saved and the
-        error is re-raised.
+        Run the agent-based hospital administrative simulation. On an error or an interruption (Ctrl+C, a stop), the
+        results so far are saved (so `resume` can continue) and the exception is re-raised.
 
         Args:
             simulation_data_path (str): Path to a JSON file or directory containing agent simulation input data.
             output_dir (str): Directory to store simulation results.
             resume (bool, optional): Whether to resume a previous simulation if result files exist. Defaults to False.
             verbose (bool, optional): Whether to print detailed logs during task execution. Defaults to False.
+            on_patient (Optional[Callable[[dict], None]], optional): Called after each patient with the progress:
+                ``{'hospital', 'hospital_index', 'hospitals', 'done', 'total', 'visit_type'}`` (`done` and `total`
+                count this hospital's patients, follow-ups included; `total` is the plan, a follow-up whose first
+                visit never happens is not simulated). Defaults to None.
         """
         # Initialize environment
         self._env_setup(self.random_seed, resume)
@@ -549,7 +573,7 @@ class Simulator:
             os.makedirs(output_dir, exist_ok=True)
 
             # Data per hospital
-            for path in agent_simulation_data_files:
+            for hospital_index, path in enumerate(agent_simulation_data_files):
                 agent_simulation_data = json_load(path)
                 agent_results, done_patients = dict(), dict()
                 self._shuffle_data(agent_simulation_data)
@@ -575,6 +599,7 @@ class Simulator:
                 pending = dict(agent_simulation_data.get('_pending_followups', {}))
                 ready = list(agent_simulation_data.get('_ready_followups', []))
                 processed_first_patients = set(done_patients.get('first_visit_scheduling', set()))
+                total = len(first_queue) + len(pending) + len(ready)
 
                 while first_queue or ready or pending:
                     Simulator._promote_eligible_followups(pending, ready, environment, processed_first_patients)
@@ -623,6 +648,10 @@ class Simulator:
                     
                     # Index for debugging
                     index += 1
+                    if on_patient is not None:
+                        on_patient({'hospital': basename, 'hospital_index': hospital_index,
+                                    'hospitals': len(agent_simulation_data_files), 'done': index, 'total': total,
+                                    'visit_type': test_data['visit_type']})
 
                 # Logging the results
                 Simulator._record_virtual_first_visits(agent_results, environment)
@@ -645,12 +674,15 @@ class Simulator:
 
             log(f"Agent completed the tasks successfully", color=True)
 
-        except Exception as e:
+        except BaseException as e:    # interruptions too (KeyboardInterrupt and the like), which `except Exception` misses
             if len(agent_results):
                 metadata = None
                 if environment is not None:
                     Simulator._record_virtual_first_visits(agent_results, environment)
                     metadata = self._collect_metadata(environment)
                 self._save_agent_results(save_path, agent_results, metadata=metadata)
-            log(f"Error occured while execute the tasks: {e}", level='error')
+            if isinstance(e, Exception):
+                log(f"Error occured while execute the tasks: {e}", level='error')
+            else:
+                log(f"Interrupted ({type(e).__name__}); the results so far are saved", level='warning')
             raise

@@ -2,7 +2,6 @@ import os
 import re
 import string
 from typing import Iterable
-from importlib import resources
 
 from h_adminsim.registry.harness import (
     HARNESS_PROMPT_KEYS,
@@ -11,6 +10,7 @@ from h_adminsim.registry.harness import (
     HARNESS_PROMPT_CLOSE_TAGS,
     HARNESS_REFERENCE_PROMPTS,
 )
+from h_adminsim.utils.filesys_utils import bundled_prompt
 
 
 
@@ -21,8 +21,8 @@ def bundled_prompt_files() -> list[str]:
     Returns:
         list[str]: Their paths.
     """
-    root = resources.files('h_adminsim.assets.prompts')
-    return [str(root.joinpath(name)) for name in HARNESS_REFERENCE_PROMPTS if root.joinpath(name).is_file()]
+    paths = [bundled_prompt(name) for name in HARNESS_REFERENCE_PROMPTS]
+    return [path for path in paths if os.path.isfile(path)]
 
 
 

@@ -87,7 +87,16 @@ A negotiation prompt is the staff agent's system prompt, filled with `str.format
 validation checks every prompt a policy negotiates with: placeholders the simulator does not fill (or unescaped braces)
 and a missing `#ACCEPT` / `#KEEP_PREFERENCE` or `#FORCE_ACCEPT` instruction are errors, since such a negotiation
 fails or never closes. `get_policy_api` lists the placeholders, and the LLM starts from a bundled prompt
-(`staff_negotiation_policy_common_system.txt`).
+(`staff_negotiation_policy_common_system.txt`; a policy names a bundled prompt with `bundled_prompt('<file>')` from
+`h_adminsim.utils.filesys_utils`).
+
+Policy code a chat writes runs inside simulations, next to the API keys of the agents' models, so the validation reads
+it before importing it (`h_adminsim.harness.code_check`) and refuses (`unsafe_code`) code that could reach the
+environment, files, the network or other processes: it may import names only (`from math import ceil`, not a module)
+from the modules in `HARNESS_CODE_MODULES` and, from H-AdminSim, the policy API names in `HARNESS_CODE_H_ADMINSIM_NAMES`;
+`open`, `eval` / `exec`, `__import__`, dunder attributes, `.format`, and `getattr` with a computed name (except on
+`self`) are refused. `config_code_issues(paths)` runs the same check on the code files policy configs load. It is a
+best-effort guard against casual or accidental access, not a sandbox.
 
 When a simulation runs, asset files are copied into `<run>/policy/` with the policies, and the run metadata records
 the path and sha256 of every file a policy parameter names (bundled prompts included). List the YAML under

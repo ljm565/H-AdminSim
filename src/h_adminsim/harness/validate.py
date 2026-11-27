@@ -17,6 +17,7 @@ from h_adminsim.policy.context import ReviewContext
 from h_adminsim.policy.stack import PolicyStack
 from h_adminsim.harness.report import Report, plain_text, summarize_values
 from h_adminsim.harness.prompts import check_negotiation_prompt
+from h_adminsim.harness.code_check import check_code, config_code_issues
 from h_adminsim.harness.samples import sample_contexts, agent_data_digest
 from h_adminsim.utils.filesys_utils import get_files, json_load
 from h_adminsim.utils.policy_utils import followup_patient_records, available_patient_fields
@@ -544,6 +545,12 @@ def validate_policy(path: str,
     tree = _parse(path, report)
     if tree is None:
         return report
+    with open(path) as f:
+        unsafe = check_code(f.read(), path)
+    for line, message in unsafe:    # checked before the file is imported (loading runs it)
+        report.error('unsafe_code', message, f"{os.path.basename(path)}:{line}")
+    if unsafe:
+        return report
 
     if class_name is None:
         candidates = _class_names(tree, 'Policy')
@@ -612,6 +619,16 @@ def validate_config(paths: Union[str, os.PathLike, list],
     report = Report(info={'configs': [os.path.abspath(os.fspath(p)) for p in paths]})
     if not paths:
         report.error('no_config', "No policy config given.")
+        return report
+
+    # The user code is checked before it is imported (loading runs it)
+    try:
+        unsafe = config_code_issues(paths)
+    except PolicyError:
+        unsafe = []    # a missing file or bad YAML: loading reports it
+    for issue in unsafe:
+        report.error('unsafe_code', issue['message'], f"{os.path.basename(issue['file'])}:{issue['line']}")
+    if unsafe:
         return report
 
     try:

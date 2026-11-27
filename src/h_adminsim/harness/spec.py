@@ -5,7 +5,12 @@ from importlib import resources
 from dataclasses import MISSING, fields, is_dataclass
 from typing import Any, Optional, Union
 
-from h_adminsim.registry.harness import HARNESS_SYSTEM_PROMPT
+from h_adminsim.registry.harness import (
+    HARNESS_CODE_FORBIDDEN_NAMES,
+    HARNESS_CODE_H_ADMINSIM_NAMES,
+    HARNESS_CODE_MODULES,
+    HARNESS_SYSTEM_PROMPT,
+)
 from h_adminsim.registry.policy import (
     POLICY_HOOKS,
     POLICY_ACTIONS,
@@ -144,7 +149,15 @@ def _rules() -> list[str]:
         f"{list(POLICY_SUPPORTED_OBJECTIVES)}; `negotiate` needs an existing prompt file.",
         f"A decision's `record` keys may not reuse {sorted(POLICY_RESERVED_RECORD_KEYS)} or user metric ids.",
         f"Files a policy reads (e.g. its own negotiation prompt) are declared under `assets:` in its config and passed "
-        f"as parameter values `'{POLICY_ASSET_PREFIX}<id>'` (resolved to the file path; copied into each run).",
+        f"as parameter values `'{POLICY_ASSET_PREFIX}<id>'` (resolved to the file path; copied into each run). A "
+        f"prompt shipped with H-AdminSim: `bundled_prompt('<file>')` from `h_adminsim.utils.filesys_utils`.",
+        f"Policy code runs next to the agents' API keys, so it computes from `ctx` and its own fields only. Import names, "
+        f"never modules (`from math import ceil`, not `import math`), from "
+        f"{', '.join(f'`{m}`' for m in HARNESS_CODE_MODULES if not m.startswith('h_adminsim'))}, and from H-AdminSim "
+        f"only {', '.join(f'`{n}`' for n in HARNESS_CODE_H_ADMINSIM_NAMES)} and upper-case constants. Not allowed: "
+        f"{', '.join(f'`{n}`' for n in HARNESS_CODE_FORBIDDEN_NAMES if not n.startswith('__'))}, dunder attributes, "
+        f"`.format` (use f-strings), and `getattr` / `hasattr` with a computed name except on `self` (for a mapping use "
+        f"`.get(key)`). The validation refuses such code (`unsafe_code`) before running it.",
     ]
 
 
