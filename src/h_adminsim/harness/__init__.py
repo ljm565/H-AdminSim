@@ -1,5 +1,6 @@
 from .report import Issue, Report
 from .spec import policy_api_spec, system_prompt, bundled_policy_dir
+from .prompts import bundled_prompt_files, check_negotiation_prompt
 from .scaffold import policy_template, metric_template
 from .validate import validate_policy, validate_config, load_patient_records
 from .samples import sample_contexts, build_sample_contexts
@@ -16,7 +17,9 @@ __all__ = [
     # LLM-facing tools
     'policy_api_spec', 'describe_data', 'policy_template', 'metric_template', 'validate_policy', 'validate_config', 'save_policy',
     # LLM-facing material
-    'system_prompt', 'bundled_policy_dir',
+    'system_prompt', 'bundled_policy_dir', 'bundled_prompt_files',
+    # Checks
+    'check_negotiation_prompt',
     # Smoke-test inputs
     'sample_contexts', 'build_sample_contexts', 'load_patient_records', 'describe_patient_data',
 ]

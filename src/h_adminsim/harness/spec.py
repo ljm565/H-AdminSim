@@ -26,6 +26,7 @@ from h_adminsim.policy.builder import builtin_policy_config_dir, load_policy_con
 from h_adminsim.policy.registry import registered_policies
 from h_adminsim.tools.negotiation_metrics import NegotiationMetrics
 from h_adminsim.harness.validate import load_patient_records
+from h_adminsim.harness.prompts import prompt_contract
 from h_adminsim.utils.policy_utils import available_patient_fields
 
 _IMPORT_LINE = "from h_adminsim.policy import Policy, Decision, PolicyError, RestrictContext, ReviewContext"
@@ -212,6 +213,7 @@ def policy_api_spec(agent_data_path: Optional[str] = None, fmt: str = 'markdown'
         'evaluation': {'doc': inspect.getdoc(Evaluation), 'evaluate': _method(Evaluation, 'evaluate'),
                        'run_data': inspect.getdoc(RunData), 'bookings': inspect.getdoc(RunData.bookings)},
         'config_format': _config_format(),
+        'negotiation_prompts': prompt_contract(),
         'builtin_policies': [
             {'name': name, 'hooks': list(cls.hooks()), 'requires': list(cls.requires),
              'params': _default_params(cls), 'source': _module_source(cls) if include_sources else None}
@@ -297,6 +299,7 @@ def _to_markdown(spec: dict) -> str:
     out += ["## User-defined evaluations (`Evaluation`)", e['doc'], ""] + _code(f"def {e['evaluate']['signature']}: ...")
     out += [e['evaluate']['doc'], "", "### `RunData`", e['run_data'], "", "`RunData.bookings`: " + e['bookings'], ""]
     out += ["## Policy config file"] + _code(spec['config_format'], 'yaml') + [""]
+    out += ["## Negotiation prompts"] + [f"- {r}" for r in spec['negotiation_prompts']] + [""]
 
     out += ["## Built-in policies (examples)"]
     for p in spec['builtin_policies']:

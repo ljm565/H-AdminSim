@@ -22,8 +22,9 @@ class MetricTemplateRequest(BaseModel):
 
 
 class SaveRequest(BaseModel):
-    files: dict[str, str] = Field(..., description="{file name: full content}: the policy file, metric files "
-                                                   "('<name>_metric.py') and text assets ('<name>.txt').")
+    files: dict[str, Any] = Field(..., description="{file name: full content}: the policy file, metric files "
+                                                   "('<name>_metric.py') and text assets ('<name>.txt'). The config YAML "
+                                                   "goes in `config`, not here.")
     config: Optional[str] = Field(None, description="Policy config YAML loading the files: `file:<file>:<Class>` "
                                                     "sources, `metrics:` before the policies reading them, `assets:` "
                                                     "for text files. Required when saving more than one file.")

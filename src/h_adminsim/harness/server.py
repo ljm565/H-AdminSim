@@ -35,6 +35,7 @@ from h_adminsim.harness.samples import sample_contexts
 from h_adminsim.harness.scaffold import policy_template, metric_template
 from h_adminsim.harness.validate import validate_policy, validate_config
 from h_adminsim.harness.spec import policy_api_spec, system_prompt, bundled_policy_dir
+from h_adminsim.harness.prompts import bundled_prompt_files
 from h_adminsim.harness.workspace import save_policy, chat_policy_dir, list_policy_files, resolve_policy_file
 
 
@@ -68,7 +69,8 @@ def create_app(agent_data_path: str,
                                     ``X-OpenWebUI-Chat-Id``) header, and sees only that folder and the reference
                                     configs. Defaults to 'policies'.
         reference_dirs (Optional[list], optional): Read-only directories of existing policy configs; None uses the
-                                                   configs shipped with the package. Defaults to None.
+                                                   configs shipped with the package. The bundled staff negotiation
+                                                   prompts are always listed too, read only. Defaults to None.
         api_key (Optional[str], optional): Bearer key every request must carry; None leaves the server open.
                                            Defaults to None.
 
@@ -77,6 +79,7 @@ def create_app(agent_data_path: str,
     """
     policy_dir = os.path.abspath(policy_dir)
     reference_dirs = [os.path.abspath(d) for d in (reference_dirs if reference_dirs is not None else [bundled_policy_dir()])]
+    reference_files = bundled_prompt_files()    # negotiation prompts to start one's own from (read only)
     agent_data_path = os.path.abspath(agent_data_path)
     os.makedirs(policy_dir, exist_ok=True)
 
@@ -92,7 +95,7 @@ def create_app(agent_data_path: str,
 
     def resolve(file_name: str, own_dir: str) -> str:
         try:
-            path = resolve_policy_file(file_name, own_dir, reference_dirs)
+            path = resolve_policy_file(file_name, own_dir, reference_dirs, reference_files)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         if path is None:
@@ -140,7 +143,7 @@ def create_app(agent_data_path: str,
         Returns:
             dict: ``{'chat_folder', 'files': [{'file_name', 'editable', 'path'}, ...]}``.
         """
-        return {'chat_folder': own_dir, 'files': list_policy_files(own_dir, reference_dirs)}
+        return {'chat_folder': own_dir, 'files': list_policy_files(own_dir, reference_dirs, reference_files)}
 
 
     @app.post('/read_policy', operation_id='read_policy', description=HARNESS_TOOL_DESCRIPTIONS['read_policy'])

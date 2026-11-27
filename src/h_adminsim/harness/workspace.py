@@ -60,53 +60,93 @@ def chat_policy_dir(policy_dir: str, chat_id: Optional[str] = None, today: Optio
 
 
 
-def list_policy_files(own_dir: str, reference_dirs: Optional[list] = None) -> list[dict]:
+def list_policy_files(own_dir: str, reference_dirs: Optional[list] = None, reference_files: Optional[list] = None) -> list[dict]:
     """
-    Policy files (``.py``), configs (``.yaml``) and text assets (``.txt`` / ``.md``) one chat can see: its own folder (editable), then the reference
-    directories (read only; a name already listed is skipped). Chats are independent: other chats' folders are not
-    shown, so a chat may write a policy with the same name or rule as another chat.
+    Policy files (``.py``), configs (``.yaml``) and text assets (``.txt`` / ``.md``) one chat can see: its own folder
+    (editable), then the reference directories and files (read only; a name already listed is skipped). Chats are
+    independent: other chats' folders are not shown, so a chat may write a policy with the same name or rule as
+    another chat.
 
     Args:
         own_dir (str): The chat's folder (see `chat_policy_dir`).
         reference_dirs (Optional[list], optional): Read-only directories of existing configs. Defaults to None.
+        reference_files (Optional[list], optional): Other read-only files, e.g. the bundled negotiation prompts
+                                                    (`bundled_prompt_files`). Defaults to None.
 
     Returns:
         list[dict]: ``{'file_name', 'editable', 'path'}`` per file.
     """
     files, seen = [], set()
+
+    def add(path: str, editable: bool) -> None:
+        name = os.path.basename(path)
+        if name.endswith(_POLICY_FILE_EXTS) and os.path.isfile(path) and name not in seen:
+            seen.add(name)
+            files.append({'file_name': name, 'editable': editable, 'path': path})
+
     for directory, editable in [(own_dir, True)] + [(d, False) for d in reference_dirs or []]:
         directory = os.path.abspath(directory)
-        if not os.path.isdir(directory):
-            continue
-        for name in sorted(os.listdir(directory)):
-            path = os.path.join(directory, name)
-            if name.endswith(_POLICY_FILE_EXTS) and os.path.isfile(path) and name not in seen:
-                seen.add(name)
-                files.append({'file_name': name, 'editable': editable, 'path': path})
+        if os.path.isdir(directory):
+            for name in sorted(os.listdir(directory)):
+                add(os.path.join(directory, name), editable)
+    for path in reference_files or []:
+        add(os.path.abspath(path), False)
     return files
 
 
 
-def resolve_policy_file(file_name: str, own_dir: str, reference_dirs: Optional[list] = None) -> Optional[str]:
+def resolve_policy_file(file_name: str, own_dir: str, reference_dirs: Optional[list] = None,
+                        reference_files: Optional[list] = None) -> Optional[str]:
     """
-    Path of a file named as `list_policy_files` names it: looked up in the chat's folder, then in the reference
-    directories.
+    Path of a file as `list_policy_files` lists it: by file name (looked up in the chat's folder, then in the reference
+    directories and files), or by the exact path it lists.
 
     Args:
-        file_name (str): The file name.
+        file_name (str): The file name, or a listed path.
         own_dir (str): The chat's folder.
         reference_dirs (Optional[list], optional): Read-only directories of existing configs. Defaults to None.
+        reference_files (Optional[list], optional): Other read-only files. Defaults to None.
 
     Raises:
-        ValueError: If the name is not a bare file name (empty, absolute or with a directory part).
+        ValueError: If the name is neither a bare file name nor the path of a listed file.
 
     Returns:
         Optional[str]: The absolute path, or None if no such file exists.
     """
+    if file_name and os.path.isabs(file_name):
+        listed = {f['path'] for f in list_policy_files(own_dir, reference_dirs, reference_files)}
+        if os.path.normpath(file_name) in listed:
+            return os.path.normpath(file_name)
     if not file_name or os.path.basename(file_name) != file_name or file_name in ('.', '..'):
-        raise ValueError(f"Use a file name from `list_policies`, without directories, got {file_name!r}.")
+        raise ValueError(f"Use a file name (or path) from `list_policies`, got {file_name!r}.")
     candidates = [os.path.join(os.path.abspath(d), file_name) for d in [own_dir] + list(reference_dirs or [])]
+    candidates += [os.path.abspath(p) for p in reference_files or [] if os.path.basename(p) == file_name]
     return next((p for p in candidates if os.path.isfile(p)), None)
+
+
+
+def _hoist_arguments(files: dict, config: Optional[str], config_name: Optional[str],
+                     overwrite: bool) -> tuple[dict, Optional[str], Optional[str], bool]:
+    """
+    Undo a common slip of LLM callers: `save_policy` arguments, or the config file itself, put inside `files`. Only
+    unambiguous cases are moved: the keys ``config`` / ``config_name`` / ``overwrite``, and a single ``.yaml`` entry
+    when no `config` is given.
+
+    Returns:
+        tuple[dict, Optional[str], Optional[str], bool]: The corrected `files`, `config`, `config_name` and `overwrite`.
+    """
+    files = dict(files or {})
+    if config is None and isinstance(files.get('config'), str):
+        config = files.pop('config')
+    if config_name is None and isinstance(files.get('config_name'), str):
+        config_name = files.pop('config_name')
+    if isinstance(files.get('overwrite'), bool):
+        overwrite = files.pop('overwrite') or overwrite
+    yamls = [n for n in files if isinstance(n, str) and n.endswith(('.yaml', '.yml'))]
+    if config is None and len(yamls) == 1 and isinstance(files[yamls[0]], str):
+        config_name = config_name or yamls[0]
+        config = files.pop(yamls[0])
+    return files, config, config_name, overwrite
 
 
 
@@ -140,13 +180,19 @@ def save_policy(files: dict,
                 holds the written paths and ``info['backups']`` the copies of replaced files.
     """
     report = Report()
+    files, config, config_name, overwrite = _hoist_arguments(files, config, config_name, overwrite)
     names = list(files or {})
     allowed = ('.py',) + HARNESS_ASSET_EXTS
     bad = [n for n in names if os.path.basename(n) != n or not n.endswith(allowed) or n in [e for e in allowed]]
     code_names = [n for n in names if n.endswith('.py')]
     if not names or bad:
         report.error('bad_file_name', f"`files` must map bare file names ending with {list(allowed)} to their content, "
-                                      f"got {bad or 'none'}.")
+                                      f"got {bad or 'none'}. Pass the policy config YAML in the separate `config` "
+                                      f"argument (with `config_name`), not inside `files`.")
+        return report
+    if any(not isinstance(content, str) for content in files.values()):
+        report.error('bad_file_content', f"`files` values must be the files' text, got "
+                                         f"{sorted(n for n, c in files.items() if not isinstance(c, str))}.")
         return report
     if config is None and (len(names) != 1 or not code_names):
         report.error('config_required', "Several files (or a non-Python file) are saved together with the policy config "

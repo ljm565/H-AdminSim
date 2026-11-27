@@ -8,12 +8,13 @@ Open WebUI only calls it over HTTP, so nothing is installed in the Open WebUI co
 |---|---|
 | `get_policy_api` | Policy API reference built from the installed package |
 | `describe_data` | What the agent data holds per patient field, what the simulator always provides, and built-in metric ranges in the samples |
-| `list_policies` / `read_policy` | This chat's policy files (editable) and the reference configs (read only) |
+| `list_policies` / `read_policy` | This chat's policy files (editable), the reference configs and the bundled negotiation prompts (read only) |
 | `make_policy_template` / `make_metric_template` | Runnable policy or user-defined metric skeleton and its config |
 | `save_policy` | Save the policy file, metric files (`<name>_metric.py`) and text assets (e.g. a prompt `.txt`) with their one config to this chat's folder, and validate them together |
 | `validate_policy` / `validate_policy_config` | Validate one file, or several configs combined in priority order |
 
-The LLM only sees bare file names: it cannot read or write outside the policy and reference directories.
+The LLM names files by bare name (or by the exact path `list_policies` gives): it cannot read or write outside the
+policy and reference directories.
 
 ## 1. Start the tool server
 
@@ -81,6 +82,12 @@ policies:
     source: file:soft_negotiate.py:SoftNegotiate
     params: {prompt_path: 'asset:soft'}
 ```
+
+A negotiation prompt is the staff agent's system prompt, filled with `str.format` when a negotiation starts. The
+validation checks every prompt a policy negotiates with: placeholders the simulator does not fill (or unescaped braces)
+and a missing `#ACCEPT` / `#KEEP_PREFERENCE` or `#FORCE_ACCEPT` instruction are errors, since such a negotiation
+fails or never closes. `get_policy_api` lists the placeholders, and the LLM starts from a bundled prompt
+(`staff_negotiation_policy_common_system.txt`).
 
 When a simulation runs, asset files are copied into `<run>/policy/` with the policies, and the run metadata records
 the path and sha256 of every file a policy parameter names (bundled prompts included). List the YAML under

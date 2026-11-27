@@ -34,6 +34,22 @@ HARNESS_MAX_PATIENT_VARIANTS = 6
 # `describe_data`: most distinct values listed one by one per patient field
 HARNESS_DESCRIBE_MAX_VALUES = 10
 
+# Negotiation prompts (the file of `Decision.negotiate(prompt_path)`, the staff agent's system prompt): the `str.format`
+# keys the simulator fills (with the negotiation metrics, the deciding policy's record keys and the user metric ids; keep
+# in sync with `OutpatientFollowUpScheduling._init_negotiation_agent`), the keys showing the two schedules, and the
+# control tags that end a negotiation (accepted / given up, booking the preference / forced, booking the suggestion)
+HARNESS_PROMPT_KEYS = (
+    'dialogue_history', 'patient_preference', 'patient_preference_explanation', 'time_unit', '_P_summary', '_T_summary',
+    'preference', 'gpc', 'tcl', 'G', 'R', 'U', 'U_pref', 'U_thr', '_P', '_T',
+    'ti', 'negotiation_action', 'do_negotiate', 'decided_by',
+)
+HARNESS_PROMPT_SCHEDULE_KEYS = {'suggested': ('_T', '_T_summary'), 'preferred': ('_P', '_P_summary')}
+HARNESS_PROMPT_ACCEPT_TAG = '#ACCEPT'
+HARNESS_PROMPT_CLOSE_TAGS = ('#KEEP_PREFERENCE', '#FORCE_ACCEPT')
+
+# Bundled staff negotiation prompts (under `h_adminsim/assets/prompts`) a chat can read as references
+HARNESS_REFERENCE_PROMPTS = ('staff_negotiation_policy_common_system.txt', 'staff_negotiation_policy_hospital_system.txt')
+
 # System prompt for an LLM writing policies with the harness tools (under `h_adminsim/assets/harness`)
 HARNESS_SYSTEM_PROMPT = 'system_prompt.md'
 
@@ -49,8 +65,8 @@ user choose."""
 HARNESS_TOOL_DESCRIPTIONS = {
     'get_policy_api': 'The policy API reference (rules, hooks, contexts, Decision, requires, config format, examples). Read it before writing a policy.',
     'describe_data': "What the server's agent data holds for the follow-up patients (each patient field: how many patients have it and which values occur) and what the simulator always provides whatever the data (built-in metrics, schedules, hospital state). Check it before planning: a rule that needs information neither listed here nor computable from it cannot run on this data.",
-    'list_policies': "Policy files (.py) and policy configs (.yaml) available now, with whether each can be edited and its path (use the config paths in `schedule_task.policy_config`). Only this chat's own files are editable; the reference configs are read only. Other chats' policies are not shown: each chat works on its own. Call it again for every new request: files may have changed.",
-    'read_policy': 'The content of a policy file or policy config.',
+    'list_policies': "Policy files (.py), policy configs (.yaml) and text files available now, with whether each can be edited and its path (use the config paths in `schedule_task.policy_config`). Only this chat's own files are editable; the reference configs and the bundled negotiation prompts (`staff_negotiation_policy_*.txt`, to start your own prompt from) are read only. Other chats' policies are not shown: each chat works on its own. Call it again for every new request: files may have changed.",
+    'read_policy': 'The content of a policy file, policy config or text file (e.g. a bundled negotiation prompt).',
     'make_policy_template': 'A runnable policy skeleton (Python code with TODOs) and the policy config that loads it.',
     'make_metric_template': "A user-defined metric skeleton (a `Metric` computing one value per negotiation from the review context, in its own `<name>_metric.py`) and the config listing it under `metrics:`. Use it when no built-in metric measures what a rule needs; save it with the policy that reads it in one `save_policy` call and one config.",
     'save_policy': "Save files to this chat's folder in one go and validate them together: the policy's and metrics' Python files (one class kind per file) and text assets such as a negotiation prompt (.txt, declared under the config's `assets:` and passed as `asset:<id>`), with the one config that loads them all. Fix every error in the report and save again with overwrite=true until `ok` is true. Replace a file you did not save in this conversation only after the user agreed; the previous version is kept in `.backup/`.",

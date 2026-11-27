@@ -10,12 +10,13 @@ from typing import Callable, Iterable, Optional, Union
 import h_adminsim
 from h_adminsim.registry.errors import PolicyError, PolicyCompositionError, PolicyRequirementError
 from h_adminsim.registry.harness import HARNESS_MAX_PATIENT_VARIANTS
-from h_adminsim.registry.policy import POLICY_HOOKS, POLICY_FILE_PREFIX
-from h_adminsim.policy.base import Policy
+from h_adminsim.registry.policy import POLICY_HOOKS, POLICY_FILE_PREFIX, POLICY_REQUIRES_METRIC_PREFIX, POLICY_ASSET_PREFIX
+from h_adminsim.policy.base import Policy, Decision
 from h_adminsim.policy.builder import build_policy, load_policy_config
 from h_adminsim.policy.context import ReviewContext
 from h_adminsim.policy.stack import PolicyStack
 from h_adminsim.harness.report import Report, plain_text, summarize_values
+from h_adminsim.harness.prompts import check_negotiation_prompt
 from h_adminsim.harness.samples import sample_contexts, agent_data_digest
 from h_adminsim.utils.filesys_utils import get_files, json_load
 from h_adminsim.utils.policy_utils import followup_patient_records, available_patient_fields
@@ -228,7 +229,18 @@ def _with_patient_variants(contexts: list, pool: list, fields: Iterable[str],
 
 
 
-def _never_active_message(policy_id: str, hook: str, samples: int) -> str:
+def _range_text(metric_id: str, summary: dict) -> str:
+    """
+    One metric's values in the samples, e.g. ```tcl` 0.01-0.59 (median 0.05)``.
+    """
+    if 'min' not in summary:
+        return f"`{metric_id}` {summary.get('values') or 'no number'}"
+    text = f"`{metric_id}` {summary['min']:g}-{summary['max']:g} (median {summary['median']:g}"
+    return text + (f"; {summary['inf']} infinite)" if summary.get('inf') else ')')
+
+
+def _never_active_message(policy_id: str, hook: str, samples: int, ranges: Optional[dict] = None,
+                          others: Optional[list] = None) -> str:
     """
     Warning text for a policy whose hook did nothing on any sample.
 
@@ -236,33 +248,69 @@ def _never_active_message(policy_id: str, hook: str, samples: int) -> str:
         policy_id (str): The policy id.
         hook (str): ``'restrict'`` or ``'review'``.
         samples (int): Number of samples.
+        ranges (Optional[dict], optional): ``{metric id: summarize_values(...)}`` of the metrics the policy reads, over
+                                           the samples. Defaults to None.
+        others (Optional[list], optional): Ids of the other policies on the same hook, whose overlap with this one the
+                                           samples therefore cannot show. Defaults to None.
 
     Returns:
         str: The message.
     """
     what = (f"`{policy_id}`.restrict blocked no (test_code, date) pair in any of the {samples} samples" if hook == 'restrict'
             else f"`{policy_id}`.review abstained (returned None) in all {samples} samples")
-    return (f"{what}. Check its conditions (comparisons, field values, units, date handling); if it targets situations "
-            f"rarer than the samples cover, say so and confirm it with a simulation run.")
+    text = what + '.'
+    if ranges:
+        text += f" In the samples, {', '.join(_range_text(m, v) for m, v in ranges.items())}."
+    text += (" Check its conditions (comparisons, field values, units, date handling) against these values. Tell the user "
+             "it acted on no sample rather than that it will act in a real run, and offer a looser condition or a test "
+             "simulation.")
+    if others:
+        text += (f" Its overlap with {', '.join(f'`{o}`' for o in others)} is unchecked, since no sample shows patients "
+                 f"both would decide: work it out from their conditions and tell the user, instead of calling the "
+                 f"combination conflict-free.")
+    return text
 
 
 
-def _decides(policy: Policy, ctx: ReviewContext) -> bool:
+def _decision(policy: Policy, ctx: ReviewContext) -> Optional[Decision]:
     """
-    Whether a `review` policy, asked alone, decides (does not abstain on) a context. Errors count as abstaining, since
-    the stack run reports them.
+    What a `review` policy decides when asked alone. Errors count as abstaining, since the stack run reports them.
 
     Args:
         policy (Policy): The `review` policy.
         ctx (ReviewContext): The context, with every metric the stack computed.
 
     Returns:
-        bool: True if the policy returns a decision.
+        Optional[Decision]: Its decision, or None if it abstains (or fails).
     """
     try:
-        return policy.review(ctx.for_policy(policy)) is not None
+        decision = policy.review(ctx.for_policy(policy))
     except Exception:
-        return False
+        return None
+    return decision if isinstance(decision, Decision) else None
+
+
+
+def _check_prompts(stack: PolicyStack, negotiated: dict, report: Report) -> None:
+    """
+    Check the negotiation prompts the policies use: those of the `negotiate` decisions in the smoke test, and the prompt
+    files named by parameters (so a policy that negotiated on no sample is checked too).
+
+    Args:
+        stack (PolicyStack): The policies.
+        negotiated (dict): ``{prompt path: record keys of the decisions using it}`` from the smoke test.
+        report (Report): Report the findings are added to.
+    """
+    metric_ids = {m.id for m in stack.metrics}
+    prompts = {os.path.abspath(path): (set(keys), True) for path, keys in negotiated.items()}
+    for policy in stack.describe():
+        for param, file in (policy.get('files') or {}).items():
+            path = os.path.abspath(file['path'])
+            if 'prompt' in param.lower() and path not in prompts:
+                prompts[path] = (set(), False)
+    for path, (keys, strict) in prompts.items():
+        for level, code, message in check_negotiation_prompt(path, metric_ids | keys, strict=strict):
+            (report.error if level == 'error' else report.warning)(code, message, path)
 
 
 
@@ -376,6 +424,10 @@ def _smoke(stack: PolicyStack, report: Report, review_ctxs: list, restrict_ctxs:
     if stack.reviewers or stack.metrics:
         outcomes, values = Counter(), {m.id: [] for m in stack.metrics}
         would, decided, both = Counter(), Counter(), Counter()   # per policy / per (higher, lower) pair
+        negotiated = {}   # prompt path -> record keys of the decisions negotiating with it
+        read = {p.id: [r[len(POLICY_REQUIRES_METRIC_PREFIX):] for r in p.requires if r.startswith(POLICY_REQUIRES_METRIC_PREFIX)]
+                for p in stack.reviewers}
+        seen = {m: [] for ids in read.values() for m in ids}     # values of the metrics the policies read
         for i, (ctx, tag) in enumerate(review_ctxs):
             label = f"review sample {i}" + (f" ({tag})" if tag else '')
             ok, custom = run(lambda: stack.compute_metrics(ctx), label)
@@ -393,7 +445,14 @@ def _smoke(stack: PolicyStack, report: Report, review_ctxs: list, restrict_ctxs:
                                                     "be pure functions of `ctx` (no randomness, no state).", label)
             outcomes[f"{first.decided_by}: {first.action}" if first.decided_by else 'keep (every policy abstained)'] += 1
             decided[first.decided_by] += 1
-            wants = [p.id for p in stack.reviewers if _decides(p, full)]   # who would decide if asked alone
+            current = full.metrics.to_dict()
+            for m in seen:
+                seen[m].append(current.get(m))
+            alone = {p.id: _decision(p, full) for p in stack.reviewers}   # what each would decide if asked alone
+            for d in alone.values():
+                if d is not None and d.action == 'negotiate' and d.prompt_path:
+                    negotiated.setdefault(d.prompt_path, set()).update(d.record)
+            wants = [pid for pid, d in alone.items() if d is not None]
             would.update(wants)
             both.update((a, b) for x, a in enumerate(wants) for b in wants[x + 1:])
         smoke['review'] = {'samples': len(review_ctxs), 'outcomes': dict(outcomes)}
@@ -412,7 +471,10 @@ def _smoke(stack: PolicyStack, report: Report, review_ctxs: list, restrict_ctxs:
         if not any(level == 'error' for level, *_ in problems):     # a failing hook says nothing about its conditions
             for p in stack.reviewers:
                 if not would[p.id]:
-                    report.warning('never_active', _never_active_message(p.id, 'review', len(review_ctxs)))
+                    ranges = {m: summarize_values(seen[m]) for m in read[p.id]}
+                    others = [o.id for o in stack.reviewers if o.id != p.id]
+                    report.warning('never_active', _never_active_message(p.id, 'review', len(review_ctxs), ranges, others))
+        _check_prompts(stack, negotiated, report)
 
     for (level, code, message, where), samples in problems.items():
         more = f", ... ({len(samples)} in total)" if len(samples) > 3 else ''
@@ -512,6 +574,12 @@ def validate_policy(path: str,
 
     report.info.update({'class': class_name, 'id': policy.id, 'name': policy.name, 'hooks': list(policy.hooks()),
                         'requires': list(policy.requires), 'params': policy.params()})
+    assets = sorted(k for k, v in policy.params().items() if isinstance(v, str) and v.startswith(POLICY_ASSET_PREFIX))
+    if assets:
+        report.warning('smoke_skipped', f"Parameters {assets} name config assets (`{POLICY_ASSET_PREFIX}<id>`), which only "
+                                        f"resolve when the policy is loaded from its config. Validate the config "
+                                        f"(`validate_config`) instead.")
+        return report
     try:
         stack = PolicyStack([policy])
     except PolicyError as e:
